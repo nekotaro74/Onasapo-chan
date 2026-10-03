@@ -154,6 +154,7 @@ const PAGE_SCRIPT = `(async () => {
 
     return {
         pageErrors: pageErrors,
+        quietTemplate: illustrationUtils.substituteSessionNames(state.settings.comfyImagePromptTemplate),
         quietRequest: quietRequest,
         illustrationStatus: target.illustration ? target.illustration.status : null,
         illustrationError: target.illustration ? (target.illustration.error || null) : null,
@@ -197,7 +198,8 @@ const scenarioScript = (mode) => `(async () => {
     return {
         mode: '${mode}',
         apiCallCount: apiCalls.length,
-        quietUsedTemplate: apiCalls.length > 1 && /comma-delimited/.test(apiCalls[1].content),
+        quietUsedTemplate: apiCalls.length > 1
+            && apiCalls[1].content === illustrationUtils.substituteSessionNames(state.settings.comfyImagePromptTemplate),
         mainText: modelMessage ? modelMessage.content : null,
         illustrationStatus: modelMessage && modelMessage.illustration ? modelMessage.illustration.status : null,
         hasImage: !!(modelMessage && modelMessage.illustration && modelMessage.illustration.imageDataUrl),
@@ -288,6 +290,58 @@ const FAILURE_SCRIPT = `(async () => {
     };
 })()`;
 
+// 保存 → ページを開き直す → 履歴から挿絵が表示されるか
+const RELOAD_SETUP = `(async () => {
+    state.settings.apiProvider = 'gemini';
+    state.settings.apiKey = 'test-key';
+    state.settings.illustrationEnabled = true;
+    state.settings.illustrationMode = 'manual';
+    state.settings.comfyBaseUrl = location.origin + '/mock-comfy';
+    state.settings.comfyWorkflow = JSON.stringify({
+        '3': { class_type: 'CLIPTextEncode', inputs: { text: '%prompt%' } },
+        '5': { class_type: 'KSampler', inputs: { seed: '%seed%', width: '%width%', height: '%height%' } },
+        '9': { class_type: 'SaveImage', inputs: { images: null } },
+    });
+    state.settings.comfyImagePromptTemplate = 'keywords please {{char}} {{user}}';
+    state.settings.aiName = '詩織';
+    state.settings.userName = 'あなた';
+    uiUtils.showCustomAlert = async () => {};
+    uiUtils.showCustomConfirm = async () => true;
+
+    // 設定を UI 経由で保存し、開き直後に復元されることを確認する
+    uiUtils.applySettingsToUI();
+    await appLogic.saveSettings(false);
+
+    state.currentChatId = null;
+    state.illustrationJob = null;
+    state.currentMessages = [
+        { role: 'user', content: 'リロード確認', timestamp: Date.now() - 3000 },
+        { role: 'model', content: 'リロード前に表示されていた本編', timestamp: Date.now() - 2000 },
+    ];
+    uiUtils.renderChatMessages();
+    const originalHandleSend = appLogic.handleSend.bind(appLogic);
+    appLogic.handleSend = async () => ({ content: 'a bench at dusk, 1 man 1 woman' });
+    await appLogic.generateIllustration();
+    appLogic.handleSend = originalHandleSend;
+    await dbUtils.saveChat();
+    return { chatId: state.currentChatId, status: state.currentMessages[1].illustration ? state.currentMessages[1].illustration.status : null, error: state.currentMessages[1].illustration ? state.currentMessages[1].illustration.error : null, workflow: state.settings.comfyWorkflow, base: state.settings.comfyBaseUrl };
+})()`;
+
+const RELOAD_VERIFY = `(async () => {
+    // ページを開き直した直後の状態。設定も履歴も IndexedDB から復元されているはず
+    const chatId = ${'__CHAT_ID__'};
+    await appLogic.loadChat(chatId);
+    const image = document.querySelector('.message-illustration-image');
+    return {
+        settingsRestored: !!state.settings.comfyBaseUrl && state.settings.illustrationEnabled === true,
+        templateRestored: /詩織/.test(illustrationUtils.substituteSessionNames(state.settings.comfyImagePromptTemplate)),
+        illustrationStatus: state.currentMessages[1] && state.currentMessages[1].illustration
+            ? state.currentMessages[1].illustration.status : null,
+        imageRendered: !!image,
+        imageSrcIsDataUrl: !!(image && String(image.src).startsWith('data:image/')),
+    };
+})()`;
+
 async function waitForDebuggerReady() {
     for (let i = 0; i < 60; i++) {
         try {
@@ -313,6 +367,10 @@ async function main() {
 
     const server = createServer();
     await new Promise(resolve => server.listen(PORT, '127.0.0.1', resolve));
+
+    // 実行ごとにプロフィール（IndexedDB も含む）を捨てて、実行間の混入を防ぐ
+    const profileDir = path.join(require('os').tmpdir(), 'onasapo-e2e-profile');
+    fs.rmSync(profileDir, { recursive: true, force: true });
 
     const chrome = spawn(chromePath, [
         '--headless=new',
@@ -385,6 +443,13 @@ async function main() {
         historyPolls = 0;
         promptPosts = 0;
         const failureResult = await evaluate(FAILURE_SCRIPT);
+        const promptPostsAfterFailure = promptPosts;
+
+        // ページを開き直して、保存済み挿絵が履歴に表示されるか
+        const savedChat = await evaluate(RELOAD_SETUP);
+        await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });
+        await new Promise(r => setTimeout(r, 2500));
+        const reloadResult = await evaluate(RELOAD_VERIFY.replace('__CHAT_ID__', JSON.stringify(savedChat.chatId)));
         console.log('── ページ内の結果 ──');
         console.log(JSON.stringify(pageResult, null, 2));
 
@@ -401,14 +466,16 @@ async function main() {
             cfg: sent && sent.prompt ? sent.prompt['5'].inputs.cfg : null,
         }, null, 2));
 
+        console.log('\n── 開き直しの結果 ──');
+        console.log(JSON.stringify({ savedChat, reloadResult }, null, 2));
         console.log('\n── 失敗系の結果 ──');
         console.log(JSON.stringify(failureResult, null, 2));
-        console.log('promptPosts =', promptPosts);
+        console.log('promptPosts =', promptPostsAfterFailure);
 
         const checks = [
             ['ページエラーが無い', pageResult.pageErrors.length === 0],
             ['quiet 生成は背景実行で、履歴を文脈にしている', pageResult.quietRequest && pageResult.quietRequest.isBackground && pageResult.quietRequest.historyLength === 2],
-            ['quiet 指示はシステムプロンプトではなく発話として送る', pageResult.quietRequest && pageResult.quietRequest.systemPrompt === '' && /comma-delimited/.test(pageResult.quietRequest.inputText || '')],
+            ['quiet 指示はシステムプロンプトではなく発話として送る', pageResult.quietRequest && pageResult.quietRequest.systemPrompt === '' && pageResult.quietRequest.inputText === pageResult.quietTemplate],
             ['表示名がテンプレートに置換されている', pageResult.quietRequest && /詩織/.test(pageResult.quietRequest.inputText || '')],
             ['挿絵が完了状態になる', pageResult.illustrationStatus === 'done'],
             ['画像が data URL として残る', pageResult.hasDataUrl],
@@ -422,7 +489,7 @@ async function main() {
             ['寸法・steps・cfg・seed が数値で届く', !!sent && sent.prompt['5'].inputs.width === 640 && sent.prompt['5'].inputs.height === 480 && typeof sent.prompt['5'].inputs.steps === 'number' && sent.prompt['5'].inputs.seed === 12345],
 
             ['自動: 応答完了直後に本編+quietの2回だけLLMを呼ぶ', autoResult.apiCallCount === 2],
-            ['自動: quiet生成はテンプレートを発話として送る', autoResult.quietUsedTemplate],
+            ['自動: quiet生成は設定されたテンプレートを使う', autoResult.quietUsedTemplate],
             ['自動: 挿絵が生成される', autoResult.illustrationStatus === 'done' && autoResult.hasImage],
             ['自動: 本編テキストはそのまま', autoResult.mainText === '本編の応答です。'],
             ['自動: ComfyUI へ届いている', !!sentForAuto && /a park at dusk/.test(JSON.parse(sentForAuto).prompt['3'].inputs.text)],
@@ -432,11 +499,16 @@ async function main() {
             ['ComfyUI 到達不可は挿絵だけ失敗し、CORS の対処を出す', failureResult.unreachableResult.status === 'error' && failureResult.unreachableResult.mentionsCors],
             ['失敗はメッセージ直下に表示される', failureResult.unreachableResult.shownInDom],
             ['UI形式ワークフローは理由付きで拒否', failureResult.badWorkflowResult.status === 'error' && failureResult.badWorkflowResult.mentionsUiFormat],
-            ['連打でも ComfyUI への投入は1件', promptPosts === 1],
+            ['連打でも ComfyUI への投入は1件', promptPostsAfterFailure === 1],
             ['連打後もジョブは解除される', failureResult.rapidTapResult.jobReleased && failureResult.rapidTapResult.status === 'done'],
             ['Service Worker が登録される', failureResult.swRegistered],
             ['Service Worker のキャッシュ版が上がっている', failureResult.swVersion === 'gemini-pwa-cache-v3'],
             ['不正ワークフローでは LLM を消費しない', failureResult.badWorkflowResult.spentLlmCall === false],
+
+            ['開き直後に設定が復元される', reloadResult.settingsRestored && reloadResult.templateRestored],
+            ['開き直後に保存済み挿絵が履歴へ表示される',
+                savedChat.status === 'done' && reloadResult.illustrationStatus === 'done'
+                && reloadResult.imageRendered && reloadResult.imageSrcIsDataUrl],
         ];
         console.log('\n── 確認 ──');
         let failed = 0;
