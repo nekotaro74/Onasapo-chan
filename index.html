@@ -7659,6 +7659,15 @@ font-size: 1.142em !important;
                                     ※ <code>{{char}}</code> / <code>{{user}}</code> は表示名（未設定なら assistant / user）で置換します。
                                 </p>
                                 <button id="comfy-template-reset-btn" class="settings-action-button" style="font-size: 12px;">既定に戻す</button>
+                                <hr style="margin: 12px 0; border-top: 1px dashed var(--border-secondary);">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="comfy-minimal-processing-toggle">
+                                    返文の整形を最小限にする（日本語のまま ComfyUI へ渡す）
+                                </label>
+                                <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 0;">
+                                    ※ オフ（既定）は SillyTavern と同じ厳格な整形で、英数字と記号以外は除去します。<br>
+                                    ※ 厳格な整形で空になった場合は、自動的に最小限の整形へ切り替えます。
+                                </p>
                             </div>
                         </details>
 
@@ -8399,6 +8408,7 @@ elevationHoverOption: document.getElementById('elevation-hover-option'),
             comfyMaxImageEdgeInput: document.getElementById('comfy-max-image-edge'),
             comfyMaxImageBytesInput: document.getElementById('comfy-max-image-bytes'),
             comfyShowDebugToggle: document.getElementById('comfy-show-debug-toggle'),
+            comfyMinimalProcessingToggle: document.getElementById('comfy-minimal-processing-toggle'),
             comfyDebugOutput: document.getElementById('comfy-debug-output'),
             // ▲ ここまで ▲
             fileUploadDialog: document.getElementById('fileUploadDialog'),
@@ -8650,6 +8660,7 @@ geminiIncludeThoughts: false,
                 comfyMaxImageEdge: DEFAULT_COMFY_MAX_IMAGE_EDGE,
                 comfyMaxImageBytes: DEFAULT_COMFY_MAX_IMAGE_BYTES,
                 comfyShowDebug: false,
+                comfyMinimalPromptProcessing: false,
                 // ▲ ここまで ▲
 deepSeekApiKey: '',
 deepSeekApiEndpoint: '',
@@ -9584,17 +9595,33 @@ const dbUtils = {
             },
 
             // LLM の返文をキーワード列として整形する（SillyTavern の processReply 相当）
-            processReply(str) {
+            processReply(str, minimal = false) {
                 if (!str) return '';
                 let out = String(str);
-                out = out.replace(/^[\s\S]*?<\/think>/gi, ''); // reasoning を落とす
+                out = out.replace(/[\s\S]*?<\/think>/gi, ''); // reasoning を落とす
+                out = out.normalize('NFD');
+                if (minimal) {
+                    // 日本語などを保持する緩い整形（SillyTavern の minimal_prompt_processing 相当）
+                    out = out.replaceAll('"', '').replaceAll('“', '');
+                    out = out.replace(/\s+/g, ' ').trim();
+                    return out;
+                }
                 out = out.replaceAll('"', '').replaceAll('“', '');
                 out = out.replaceAll('\n', ', ');
-                out = out.normalize('NFD');
                 out = out.replace(/[^a-zA-Z0-9.,:_(){}<>[\]/\-'|#]+/g, ' ');
                 out = out.replace(/\s+/g, ' ').trim();
                 out = out.split(',').map(x => x.trim()).filter(x => x).join(', ');
                 return out;
+            },
+            // 既定は SillyTavern と同じ厳格な整形。ただし日本語の返文は全消去になるため、
+            // 空になった場合だけ緩い整形にフォールバックする。
+            processReplyAuto(str) {
+                if (state.settings.comfyMinimalPromptProcessing) {
+                    return { text: this.processReply(str, true), fellBack: false };
+                }
+                const strict = this.processReply(str, false);
+                if (strict) return { text: strict, fellBack: false };
+                return { text: this.processReply(str, true), fellBack: true };
             },
 
             // {{char}} / {{user}} をセッションの表示名へ置換する
@@ -11946,6 +11973,7 @@ elements.footerTapScrollToBottomToggle.checked = state.settings.footerTapScrollT
                 elements.comfyMaxImageEdgeInput.value = state.settings.comfyMaxImageEdge ?? DEFAULT_COMFY_MAX_IMAGE_EDGE;
                 elements.comfyMaxImageBytesInput.value = state.settings.comfyMaxImageBytes ?? DEFAULT_COMFY_MAX_IMAGE_BYTES;
                 elements.comfyShowDebugToggle.checked = !!state.settings.comfyShowDebug;
+                elements.comfyMinimalProcessingToggle.checked = !!state.settings.comfyMinimalPromptProcessing;
                 this.updateComfyDebugOutput();
                 this.updateIllustrationFooterButtons();
             },
@@ -11956,8 +11984,9 @@ elements.footerTapScrollToBottomToggle.checked = state.settings.footerTapScrollT
                     elements.comfyDebugOutput.textContent = '（まだ生成していません）';
                     return;
                 }
+                const fallbackNote = debug.fellBack ? '\n（厳格な整形では空になったため、最小限の整形に切り替えました）' : '';
                 elements.comfyDebugOutput.textContent =
-                    `--- 指示テンプレート（{{char}}/{{user}} 置換後）---\n${debug.template}\n\n--- LLM の返文（整形前）---\n${debug.rawReply}\n\n--- 整形後キーワード ---\n${debug.processedPrompt}\n\n--- ComfyUI に送った prompt ---\n${debug.finalPrompt || '（画像送信していません）'}`;
+                    `--- 指示テンプレート（{{char}}/{{user}} 置換後）---\n${debug.template}\n\n--- LLM の返文（整形前）---\n${debug.rawReply}\n\n--- 整形後キーワード ---${fallbackNote}\n${debug.processedPrompt}\n\n--- ComfyUI に送った prompt ---\n${debug.finalPrompt || '（画像送信していません）'}`;
             },
             updateIllustrationFooterButtons() {
                 if (!elements.illustrationModeToggleBtn) return;
@@ -13601,6 +13630,9 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                 // ▼ 挿絵生成 ▼
                 if (elements.illustrationModeToggleBtn) {
                     elements.illustrationModeToggleBtn.addEventListener('click', () => this.toggleIllustrationMode());
+                }
+                if (elements.illustrationGenerateLastBtn) {
+                    elements.illustrationGenerateLastBtn.addEventListener('click', () => this.generateIllustration());
                 }
                 if (elements.comfyConnectionTestBtn) {
                     elements.comfyConnectionTestBtn.addEventListener('click', async () => {
@@ -15705,6 +15737,123 @@ helpIcons.forEach(icon => {
                 uiUtils.updateIllustrationFooterButtons();
                 if (elements.illustrationModeSelect) elements.illustrationModeSelect.value = next;
                 uiUtils.showCustomAlert(`挿絵の生成タイミングを「${next === 'auto' ? '自動' : '手動'}」に切り替えました。`);
+            },
+            // 現在のセッションで使われている API 種別・キー・モデル名を handleSend と同じ順序で解決する
+            resolveSessionApiCredentials() {
+                const provider = state.settings.apiProvider;
+                let apiKey = '';
+                let modelName = '';
+                if (provider === 'llmaggregator') {
+                    const activeBackend = multiBackendUtils.getActiveBackend();
+                    apiKey = multiBackendUtils.getActiveApiKeyForBackend(activeBackend);
+                    modelName = activeBackend ? activeBackend.modelName : '';
+                } else if (state.settings.showMultiApiKeys) {
+                    apiKey = multiApiKeyUtils.getActiveApiKey(provider);
+                }
+                switch (provider) {
+                    case 'gemini': modelName = state.settings.modelName; if (!apiKey) apiKey = state.settings.apiKey; break;
+                    case 'deepseek': modelName = state.settings.deepSeekModelName; if (!apiKey) apiKey = state.settings.deepSeekApiKey; break;
+                    case 'claude': modelName = state.settings.claudeModelName; if (!apiKey) apiKey = state.settings.claudeApiKey; break;
+                    case 'openai': modelName = state.settings.openaiModelName; if (!apiKey) apiKey = state.settings.openaiApiKey; break;
+                    case 'xai': modelName = state.settings.xaiModelName; if (!apiKey) apiKey = state.settings.xaiApiKey; break;
+                    case 'llmaggregator': if (!modelName) modelName = state.settings.llmAggregatorModelName; break;
+                    case 'dummy': break;
+                    default: throw new Error(`未対応のAPIプロバイダーです: ${provider}`);
+                }
+                if (provider !== 'dummy' && !apiKey) throw new Error('挿絵のquiet生成に使うAPIキーが設定されていません。');
+                return { provider, apiKey, modelName };
+            },
+            // 対象メッセージを決める。未指定なら直近の完了済みアシスタント応答。
+            getIllustrationTargetIndex(messageIndex) {
+                if (typeof messageIndex === 'number' && state.currentMessages[messageIndex]) {
+                    const target = state.currentMessages[messageIndex];
+                    if (target.role !== 'model') throw new Error('挿絵はアシスタントの応答にだけ付けられます。');
+                    return messageIndex;
+                }
+                for (let i = state.currentMessages.length - 1; i >= 0; i--) {
+                    const msg = state.currentMessages[i];
+                    if (msg.role === 'model' && msg.content && !msg.error) return i;
+                }
+                throw new Error('挿絵を付ける対象のアシスタント応答がありません。');
+            },
+            // 直近のシーンだけをカンマ区切りキーワードにする quiet 生成（SillyTavern の Last message 相当）
+            async buildIllustrationPrompt(messageIndex) {
+                const template = (state.settings.comfyImagePromptTemplate || DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE).trim();
+                if (!template) throw new Error('quiet 指示テンプレートが空です。設定の「Last message 用 quiet 指示テンプレート」を確認してください。');
+
+                const targetIndex = this.getIllustrationTargetIndex(messageIndex);
+                const quietTemplate = illustrationUtils.substituteSessionNames(template);
+
+                // 対象応答までの履歴を文脈として渡し、指示文だけを最後の発話として添える。
+                // 返ってきた本文は通常のチャット履歴に残さない。
+                const history = state.currentMessages
+                    .slice(0, targetIndex + 1)
+                    .filter(msg => (msg.role === 'user' || msg.role === 'model') && msg.content)
+                    .map(msg => ({ role: msg.role, content: msg.content, timestamp: msg.timestamp }));
+                if (history.length === 0) throw new Error('挿絵の生成に使える会話履歴がありません。');
+
+                const credentials = this.resolveSessionApiCredentials();
+                const context = {
+                    sessionId: null,
+                    messages: history,
+                    systemPrompt: '',
+                    inputText: quietTemplate,
+                    attachments: [],
+                    apiProvider: credentials.provider,
+                    _apiKeyOverride: credentials.apiKey,
+                    _modelNameOverride: credentials.modelName,
+                    streamingOutput: false,
+                };
+
+                const response = await this.handleSend(false, -1, context, false);
+                const rawReply = (response && response.content) || '';
+                const processed = illustrationUtils.processReplyAuto(rawReply);
+                const keywords = processed.text;
+                if (!keywords) {
+                    throw new Error('画像プロンプトの生成に失敗しました（空の応答）。モデル名またはテンプレートを確認してください。');
+                }
+
+                const prefix = illustrationUtils.combinePrefixes(state.settings.comfyPromptPrefix, state.settings.comfyCharacterPrefix);
+                const finalPrompt = illustrationUtils.combinePrefixes(prefix, keywords);
+                const negativePrompt = illustrationUtils.combinePrefixes(state.settings.comfyNegativePrompt, '');
+
+                illustrationUtils.lastDebug = {
+                    at: Date.now(),
+                    template: quietTemplate,
+                    rawReply: rawReply,
+                    processedPrompt: keywords,
+                    fellBack: processed.fellBack,
+                    finalPrompt: finalPrompt,
+                };
+                uiUtils.updateComfyDebugOutput();
+
+                return {
+                    targetIndex: targetIndex,
+                    keywords: keywords,
+                    finalPrompt: finalPrompt,
+                    negativePrompt: negativePrompt,
+                };
+            },
+            // 挿絵生成の入口。同時実行は1件に制限し、実行中の再要求は断る。
+            async generateIllustration(messageIndex) {
+                if (!state.settings.illustrationEnabled) return;
+                if (state.illustrationJob) {
+                    await uiUtils.showCustomAlert('挿絵の生成中です。完了してから再度実行してください。');
+                    return;
+                }
+                state.illustrationJob = { startedAt: Date.now(), controller: new AbortController() };
+                uiUtils.updateIllustrationFooterButtons();
+                try {
+                    const built = await this.buildIllustrationPrompt(messageIndex);
+                    // 段階3: ここで ComfyUI へワークフローを送る
+                    await uiUtils.showCustomAlert(`画像プロンプト:\n${built.finalPrompt}`);
+                } catch (error) {
+                    // 挿絵の失敗は本編テキストと分離して扱う
+                    await uiUtils.showCustomAlert(`挿絵の生成に失敗しました: ${error.message}`);
+                } finally {
+                    state.illustrationJob = null;
+                    uiUtils.updateIllustrationFooterButtons();
+                }
             },
             async handleSend(isRetry = false, retryUserMessageIndex = -1, sourceSessionContext = null, isTopLevelCall = true, retryCount = 0) {
                 if (!sourceSessionContext && isTopLevelCall) {
@@ -17849,6 +17998,7 @@ newSettings.footerTapScrollToBottom = elements.footerTapScrollToBottomToggle.che
                 newSettings.comfyMaxImageEdge = Math.round(getComfyNumber(elements.comfyMaxImageEdgeInput, DEFAULT_COMFY_MAX_IMAGE_EDGE, 256, 4096));
                 newSettings.comfyMaxImageBytes = Math.round(getComfyNumber(elements.comfyMaxImageBytesInput, DEFAULT_COMFY_MAX_IMAGE_BYTES, 32768, 8388608));
                 newSettings.comfyShowDebug = elements.comfyShowDebugToggle.checked;
+                newSettings.comfyMinimalPromptProcessing = elements.comfyMinimalProcessingToggle.checked;
                 // ▲ ここまで ▲
 
                 try {
