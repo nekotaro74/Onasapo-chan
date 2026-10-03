@@ -140,8 +140,98 @@ state.settings.userName = '';
 const fallbackNames = illustrationUtils.substituteSessionNames(DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE);
 checkTrue('未設定なら assistant / user', /assistant/.test(fallbackNames) && /\buser\b/.test(fallbackNames));
 
-console.log('passed: ' + passed + ', failed: ' + failures.length);
-if (failures.length) {
-    console.log('\n' + failures.join('\n\n'));
-    process.exit(1);
+// ── ComfyUI プロトコル（fetch をスタブに差し替えて検証）────
+async function expectThrow(name, fn, pattern) {
+    try {
+        await fn();
+        failures.push(name + '\n  例外が出るはずが出ていません');
+    } catch (e) {
+        if (pattern.test(e.message)) passed++;
+        else failures.push(name + '\n  メッセージが期待と違います: ' + e.message);
+    }
 }
+
+function stubFetch(handler) {
+    const calls = [];
+    globalThis.fetch = (url, init) => {
+        calls.push({ url: url, init: init || {} });
+        return Promise.resolve(handler(url, init || {}));
+    };
+    return calls;
+}
+const jsonResponse = (body, status) => ({
+    ok: status >= 200 && status < 300, status: status,
+    json: () => Promise.resolve(body),
+});
+
+(async () => {
+    // 投入成功
+    stubFetch(() => jsonResponse({ prompt_id: 'pid-1' }, 200));
+    check('prompt_id を受け取る', await illustrationUtils.submitWorkflow('http://h:8188', apiWorkflow, 'cid'), 'pid-1');
+
+    // 投入時に node_errors を伴って拒否された場合、ノード情報を出す
+    stubFetch(() => jsonResponse({
+        error: { type: 'invalid_input', message: 'bad workflow' },
+        node_errors: { '5': [{ node_id: '5', node_type: 'KSampler', type: 'bad_value', message: 'steps out of range' }] },
+    }, 400));
+    await expectThrow('投入拒否でノード情報を出す',
+        () => illustrationUtils.submitWorkflow('http://h:8188', apiWorkflow, 'cid'),
+        /KSampler.*steps out of range/s);
+
+    // 到達できない場合は CORS の対処法を出す
+    globalThis.fetch = () => Promise.reject(new TypeError('Failed to fetch'));
+    await expectThrow('到達不可は CORS の説明を出す',
+        () => illustrationUtils.submitWorkflow('http://h:8188', apiWorkflow, 'cid'),
+        /--enable-cors-header/);
+
+    // history: 最初は空、次に完了
+    let historyCalls = 0;
+    stubFetch(() => {
+        historyCalls++;
+        if (historyCalls === 1) return jsonResponse({}, 200);
+        return jsonResponse({ 'pid-1': { outputs: { '9': { images: [{ filename: '00001-.png', subfolder: '', type: 'output' }] } }, status: { status_str: 'success' } } }, 200);
+    });
+    const completed = await illustrationUtils.waitForHistory('http://h:8188', 'pid-1', 5000, 10, null);
+    checkTrue('ポーリングで完了を待つ', historyCalls >= 2 && !!completed.outputs, 'calls=' + historyCalls);
+
+    // history: ノード実行エラー
+    stubFetch(() => jsonResponse({
+        'pid-1': { outputs: {}, status: { status_str: 'error', status_details: { exception_messages: ['KSampler: value not in range'] } } },
+    }, 200));
+    await expectThrow('ノード実行エラーを区別する',
+        () => illustrationUtils.waitForHistory('http://h:8188', 'pid-1', 5000, 10, null),
+        /ノード実行でエラー.*KSampler/s);
+
+    // history: タイムアウト
+    stubFetch(() => jsonResponse({}, 200));
+    await expectThrow('タイムアウトを区別する',
+        () => illustrationUtils.waitForHistory('http://h:8188', 'pid-1', 120, 50, null),
+        /タイムアウト/);
+
+    // /view: 画像を取り出す
+    const viewCalls = stubFetch(() => ({ ok: true, status: 200, blob: () => Promise.resolve({ size: 10 }) }));
+    const fetched = await illustrationUtils.fetchOutputImage('http://h:8188',
+        { outputs: { '9': { images: [{ filename: 'a.png', subfolder: 'sub', type: 'output' }] } } }, null);
+    check('画像ファイル名を返す', fetched.filename, 'a.png');
+    const viewUrl = viewCalls.length ? viewCalls[0].url : '';
+    checkTrue('/view のクエリが正しい',
+        /\/view\?/.test(viewUrl) && /filename=a\.png/.test(viewUrl) && /subfolder=sub/.test(viewUrl) && /type=output/.test(viewUrl), viewUrl);
+
+    // /view: 出力が空
+    globalThis.fetch = () => Promise.resolve(jsonResponse({}, 200));
+    await expectThrow('空出力は SaveImage を案内する',
+        () => illustrationUtils.fetchOutputImage('http://h:8188', { outputs: {} }, null),
+        /SaveImage/);
+
+    // 中断
+    const aborted = { aborted: true };
+    await expectThrow('中断を伝える',
+        () => illustrationUtils.waitForHistory('http://h:8188', 'pid-1', 5000, 10, aborted),
+        /中断/);
+
+    console.log('passed: ' + passed + ', failed: ' + failures.length);
+    if (failures.length) {
+        console.log('\n' + failures.join('\n\n'));
+        process.exit(1);
+    }
+})();

@@ -2808,6 +2808,75 @@ body.turf-mode {
             }
         }
 
+        .message-illustration {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px dashed var(--border-secondary);
+        }
+
+        .message-illustration-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 6px;
+        }
+
+        .message-illustration-header button {
+            font-size: 11px;
+            padding: 4px 8px;
+        }
+
+        .message-illustration-meta {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .message-illustration-status {
+            font-size: 12px;
+            color: var(--text-secondary);
+            padding: 10px 0;
+        }
+
+        .message-illustration-error {
+            font-size: 12px;
+            color: var(--text-error, inherit);
+            background-color: var(--bg-secondary);
+            border-radius: 4px;
+            padding: 8px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .message-illustration-image {
+            display: block;
+            max-width: 100%;
+            max-height: 512px;
+            height: auto;
+            border-radius: 6px;
+            border: 1px solid var(--border-tertiary);
+        }
+
+        .message-illustration-details {
+            margin-top: 6px;
+        }
+
+        .message-illustration-details summary {
+            font-size: 11px;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+
+        .message-illustration-details pre {
+            font-size: 11px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            background-color: var(--bg-secondary);
+            border-radius: 4px;
+            padding: 6px;
+            margin-top: 4px;
+        }
+
         .message-content {
             font-size: var(--message-body-font-size);
             line-height: 1.6;
@@ -9309,7 +9378,9 @@ const dbUtils = {
                             finishReason: msg.finishReason, safetyRatings: msg.safetyRatings, error: msg.error,
                             isCascaded: msg.isCascaded, isSelected: msg.isSelected, siblingGroupId: msg.siblingGroupId,
                             groundingMetadata: msg.groundingMetadata, attachments: msg.attachments,
-                            usageMetadata: msg.usageMetadata, thoughtSummaryOpen: msg.thoughtSummaryOpen
+                            usageMetadata: msg.usageMetadata, thoughtSummaryOpen: msg.thoughtSummaryOpen,
+                            // 挿絵は /view の一時URLではなく画像バイトを data URL として保存する
+                            illustration: msg.illustration || null
                         }));
 
                         const executeSave = (chatIdToUse, existingData) => {
@@ -9631,6 +9702,160 @@ const dbUtils = {
                 return String(template || '')
                     .replace(/\{\{char\}\}/gi, charName)
                     .replace(/\{\{user\}\}/gi, userName);
+            },
+
+            // 別オリジンなので ComfyUI 側は --enable-cors-header が必要。
+            // fetch の TypeError は区別がつかないため、対処法をメッセージに出す。
+            corsErrorMessage(error) {
+                return `ComfyUI に届きませんでした (${error && error.message ? error.message : 'fetch 失敗'})。`
+                    + ' ComfyUI を --enable-cors-header 付きで起動してください。'
+                    + ' Portable版は Settings → Server-Config → Enable CORS header に * を入れて再起動します。'
+                    + ' GitHub Pages 上の公開オリジンからは、利用者自身のローカルや Tailscale の ComfyUI へは届かない場合があります。';
+            },
+
+            newClientId() {
+                if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+                    const r = Math.random() * 16 | 0;
+                    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+                });
+            },
+
+            // POST {base}/prompt → prompt_id
+            async submitWorkflow(base, workflowText, clientId, signal) {
+                let substituted;
+                try {
+                    substituted = JSON.parse(workflowText);
+                } catch (e) {
+                    throw new Error(`プレースホルダ差し込み後のワークフローが JSON として壊れています: ${e.message}`);
+                }
+                let response;
+                try {
+                    response = await fetch(`${base}/prompt`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ prompt: substituted, client_id: clientId }),
+                        signal: signal,
+                    });
+                } catch (e) {
+                    throw new Error(this.corsErrorMessage(e));
+                }
+                const data = await response.json().catch(() => null);
+                if (!response.ok) {
+                    const parts = [];
+                    if (data && data.error) {
+                        parts.push(typeof data.error === 'string' ? data.error : `${data.error.type || 'error'}: ${data.error.message || ''}`.trim());
+                    }
+                    const nodeErrors = data && data.node_errors ? data.node_errors : null;
+                    if (nodeErrors) {
+                        Object.entries(nodeErrors).forEach(([nodeId, entries]) => {
+                            (Array.isArray(entries) ? entries : []).forEach(entry => {
+                                parts.push(`${entry.node_id || nodeId} [${entry.node_type || '?'}] ${entry.type || ''}: ${entry.message || ''}`.trim());
+                            });
+                        });
+                    }
+                    throw new Error('ComfyUI が投入を拒否しました' + (parts.length ? `:\n${parts.join('\n')}` : ` (HTTP ${response.status})`));
+                }
+                if (!data || !data.prompt_id) throw new Error('ComfyUI が prompt_id を返しませんでした。');
+                return data.prompt_id;
+            },
+
+            // GET {base}/history/{prompt_id} を完了までポーリングする
+            async waitForHistory(base, promptId, timeoutMs, pollIntervalMs, signal) {
+                const deadline = Date.now() + timeoutMs;
+                while (true) {
+                    if (signal && signal.aborted) throw new Error('挿絵の生成を中断しました。');
+                    let response;
+                    try {
+                        response = await fetch(`${base}/history/${encodeURIComponent(promptId)}`, { method: 'GET', signal: signal });
+                    } catch (e) {
+                        throw new Error(this.corsErrorMessage(e));
+                    }
+                    if (!response.ok) throw new Error(`ComfyUI の history 取得に失敗しました (HTTP ${response.status})。`);
+                    const history = await response.json().catch(() => null);
+                    const entry = history ? history[promptId] : null;
+                    if (entry) {
+                        const status = entry.status || {};
+                        if (status.status_str === 'error') {
+                            const details = (status.status_details && Array.isArray(status.status_details.exception_messages))
+                                ? status.status_details.exception_messages.join('\n') : '';
+                            throw new Error(`ComfyUI のノード実行でエラーになりました${details ? `:\n${details}` : ''}`);
+                        }
+                        return entry;
+                    }
+                    if (Date.now() + pollIntervalMs > deadline) {
+                        throw new Error(`ComfyUI の生成が ${Math.round(timeoutMs / 1000)} 秒以内に終わりませんでした（タイムアウト）。`);
+                    }
+                    await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+                }
+            },
+
+            // 完了ノードの images[0] から GET /view で画像を取り出す
+            async fetchOutputImage(base, historyEntry, signal) {
+                const outputs = historyEntry.outputs ? Object.values(historyEntry.outputs) : [];
+                const images = outputs.map(o => (o && Array.isArray(o.images)) ? o.images : []).flat();
+                const gifs = outputs.map(o => (o && Array.isArray(o.gifs)) ? o.gifs : []).flat();
+                const info = images[0] || gifs[0];
+                if (!info) throw new Error('ComfyUI の出力に画像がありませんでした。ワークフローに SaveImage ノードがありますか。');
+                const query = new URLSearchParams({ filename: info.filename, subfolder: info.subfolder || '', type: info.type || 'output' });
+                let response;
+                try {
+                    response = await fetch(`${base}/view?${query.toString()}`, { method: 'GET', signal: signal });
+                } catch (e) {
+                    throw new Error(this.corsErrorMessage(e));
+                }
+                if (!response.ok) throw new Error(`画像の取得に失敗しました (HTTP ${response.status})。`);
+                return { blob: await response.blob(), filename: info.filename };
+            },
+
+            // 履歴に data URL で残すため、縮小と上限バイトで容量を抑える
+            async shrinkImageBlob(blob, maxEdge, maxBytes) {
+                if (blob.size <= maxBytes && maxEdge <= 0) {
+                    return { dataUrl: await this.blobToDataUrl(blob), bytes: blob.size, resized: false };
+                }
+                const objectUrl = URL.createObjectURL(blob);
+                try {
+                    const image = await new Promise((resolve, reject) => {
+                        const img = new Image();
+                        img.onload = () => resolve(img);
+                        img.onerror = () => reject(new Error('画像として読み取れませんでした。'));
+                        img.src = objectUrl;
+                    });
+                    let width = image.naturalWidth || image.width;
+                    let height = image.naturalHeight || image.height;
+                    let scale = maxEdge > 0 ? Math.min(1, maxEdge / Math.max(width, height)) : 1;
+                    let quality = 0.9;
+                    let canvas = document.createElement('canvas');
+                    let dataUrl = '';
+                    let bytes = 0;
+                    for (let attempt = 0; attempt < 5; attempt++) {
+                        canvas.width = Math.max(1, Math.round(width * scale));
+                        canvas.height = Math.max(1, Math.round(height * scale));
+                        const context = canvas.getContext('2d');
+                        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+                        dataUrl = canvas.toDataURL('image/jpeg', quality);
+                        bytes = Math.round(dataUrl.length * 3 / 4);
+                        if (bytes <= maxBytes) break;
+                        quality -= 0.15;
+                        if (quality < 0.35) {
+                            scale *= 0.8;
+                            quality = 0.8;
+                        }
+                        if (scale < 0.1) break;
+                    }
+                    return { dataUrl: dataUrl, bytes: bytes, resized: true };
+                } finally {
+                    URL.revokeObjectURL(objectUrl);
+                }
+            },
+
+            blobToDataUrl(blob) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = () => reject(new Error('画像の読み込みに失敗しました。'));
+                    reader.readAsDataURL(blob);
+                });
             },
 
             async testConnection() {
@@ -10434,7 +10659,81 @@ appendMessage(role, content, index, isStreamingPlaceholder = false, cascadeInfo 
                 if (isStreamingPlaceholder) {
                     messageDiv.id = `streaming-message-${index}`;
                 }
+                if (role === 'model') {
+                    this.appendIllustrationBlock(messageDiv, index);
+                }
                 elements.messageContainer.appendChild(messageDiv);
+            },
+            // 挿絵はメッセージ本体の直下に置く。失敗しても本編テキストはそのまま残す。
+            appendIllustrationBlock(messageDiv, index) {
+                const illustration = state.currentMessages[index] && state.currentMessages[index].illustration;
+                if (!illustration) return;
+
+                const block = document.createElement('div');
+                block.classList.add('message-illustration');
+                block.dataset.index = index;
+
+                const header = document.createElement('div');
+                header.classList.add('message-illustration-header');
+
+                const regenerateButton = document.createElement('button');
+                regenerateButton.textContent = '挿絵を再生成';
+                regenerateButton.title = 'この応答から挿絵を再生成する';
+                regenerateButton.classList.add('js-illustration-regenerate-btn');
+                regenerateButton.dataset.index = index;
+                header.appendChild(regenerateButton);
+
+                if (illustration.status === 'done' && illustration.seed !== undefined) {
+                    const seedSpan = document.createElement('span');
+                    seedSpan.classList.add('message-illustration-meta');
+                    seedSpan.textContent = `seed ${illustration.seed}${illustration.resized ? ' (縮小)' : ''}`;
+                    header.appendChild(seedSpan);
+                }
+                block.appendChild(header);
+
+                if (illustration.status === 'generating') {
+                    const status = document.createElement('div');
+                    status.classList.add('message-illustration-status');
+                    status.textContent = illustration.stage === 'comfy'
+                        ? 'ComfyUI で生成中…'
+                        : '画像プロンプトを生成中…';
+                    block.appendChild(status);
+                } else if (illustration.status === 'error') {
+                    const errorBox = document.createElement('div');
+                    errorBox.classList.add('message-illustration-error');
+                    errorBox.textContent = `挿絵の生成に失敗: ${illustration.error}`;
+                    block.appendChild(errorBox);
+                } else if (illustration.status === 'done' && illustration.imageDataUrl) {
+                    const img = document.createElement('img');
+                    img.classList.add('message-illustration-image');
+                    img.src = illustration.imageDataUrl;
+                    img.alt = '挿絵';
+                    img.loading = 'lazy';
+                    block.appendChild(img);
+
+                    const details = document.createElement('details');
+                    details.classList.add('message-illustration-details');
+                    const summary = document.createElement('summary');
+                    summary.textContent = '画像プロンプト';
+                    details.appendChild(summary);
+                    const pre = document.createElement('pre');
+                    pre.textContent = illustration.prompt || '';
+                    details.appendChild(pre);
+                    block.appendChild(details);
+                }
+
+                messageDiv.appendChild(block);
+            },
+            // メッセージ全体を再描画せず、挿絵ブロックだけ差し替える
+            rerenderIllustration(index) {
+                const messageElement = elements.messageContainer.querySelector(`.message[data-index="${index}"]`);
+                if (!messageElement) {
+                    uiUtils.renderChatMessages(true);
+                    return;
+                }
+                const existing = messageElement.querySelector('.message-illustration');
+                if (existing) existing.remove();
+                this.appendIllustrationBlock(messageElement, index);
             },
             updateMemoStackHeightSettingsVisibility() {
                 const showMemoBtn = elements.showMemoButtonToggle.checked;
@@ -14403,6 +14702,10 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                             if (userIndexForRetry !== -1) appLogic.retryFromMessage(userIndexForRetry);
                             return;
                         }
+                        if (button.classList.contains('js-illustration-regenerate-btn')) {
+                            appLogic.generateIllustration(index);
+                            return;
+                        }
                     }
 
                     if (target.closest('.interactive-title-content, .code-copy-button, a[href="#"], .thought-summary-details summary, .attachment-actions button, .add-more-attachments-btn')) {
@@ -15843,17 +16146,89 @@ helpIcons.forEach(icon => {
                 }
                 state.illustrationJob = { startedAt: Date.now(), controller: new AbortController() };
                 uiUtils.updateIllustrationFooterButtons();
+
+                let targetIndex;
                 try {
-                    const built = await this.buildIllustrationPrompt(messageIndex);
-                    // 段階3: ここで ComfyUI へワークフローを送る
-                    await uiUtils.showCustomAlert(`画像プロンプト:\n${built.finalPrompt}`);
+                    targetIndex = this.getIllustrationTargetIndex(messageIndex);
+                    this.setIllustrationOnMessage(targetIndex, { status: 'generating', startedAt: Date.now() });
                 } catch (error) {
-                    // 挿絵の失敗は本編テキストと分離して扱う
+                    state.illustrationJob = null;
+                    uiUtils.updateIllustrationFooterButtons();
                     await uiUtils.showCustomAlert(`挿絵の生成に失敗しました: ${error.message}`);
+                    return;
+                }
+
+                try {
+                    const built = await this.buildIllustrationPrompt(targetIndex);
+
+                    const base = illustrationUtils.normalizeBaseUrl(state.settings.comfyBaseUrl);
+                    if (!base) throw new Error('ComfyUI base URL が設定されていません。');
+                    const parsed = illustrationUtils.parseWorkflow(state.settings.comfyWorkflow);
+                    if (!parsed.ok) throw new Error(parsed.error);
+
+                    const rawWorkflow = state.settings.comfyWorkflow.trim();
+                    const placeholders = illustrationUtils.buildPlaceholderValues(rawWorkflow);
+                    const values = Object.assign({}, placeholders.values, {
+                        prompt: built.finalPrompt,
+                        negative_prompt: built.negativePrompt,
+                    });
+                    const workflowText = illustrationUtils.substitutePlaceholders(rawWorkflow, values);
+
+                    this.setIllustrationOnMessage(targetIndex, {
+                        status: 'generating',
+                        stage: 'comfy',
+                        prompt: built.finalPrompt,
+                        keywords: built.keywords,
+                        negativePrompt: built.negativePrompt,
+                        seed: placeholders.seed,
+                        startedAt: Date.now(),
+                    });
+
+                    const promptId = await this.submitWithClient(base, workflowText, state.illustrationJob.controller.signal);
+                    const historyEntry = await illustrationUtils.waitForHistory(
+                        base, promptId,
+                        state.settings.comfyTimeoutMs, state.settings.comfyPollIntervalMs,
+                        state.illustrationJob.controller.signal);
+                    const image = await illustrationUtils.fetchOutputImage(base, historyEntry, state.illustrationJob.controller.signal);
+                    const shrunk = await illustrationUtils.shrinkImageBlob(
+                        image.blob, state.settings.comfyMaxImageEdge, state.settings.comfyMaxImageBytes);
+
+                    this.setIllustrationOnMessage(targetIndex, {
+                        status: 'done',
+                        prompt: built.finalPrompt,
+                        keywords: built.keywords,
+                        negativePrompt: built.negativePrompt,
+                        seed: placeholders.seed,
+                        imageDataUrl: shrunk.dataUrl,
+                        sourceFilename: image.filename,
+                        bytes: shrunk.bytes,
+                        resized: shrunk.resized,
+                        finishedAt: Date.now(),
+                    });
+                    await dbUtils.saveChat();
+                } catch (error) {
+                    // 挿絵の失敗は本編テキストと分離して、そのメッセージ直下にだけ表示する
+                    this.setIllustrationOnMessage(targetIndex, {
+                        status: 'error',
+                        error: error.message || String(error),
+                        failedAt: Date.now(),
+                    });
+                    await dbUtils.saveChat();
                 } finally {
                     state.illustrationJob = null;
                     uiUtils.updateIllustrationFooterButtons();
                 }
+            },
+            async submitWithClient(base, workflowText, signal) {
+                return illustrationUtils.submitWorkflow(base, workflowText, illustrationUtils.newClientId(), signal);
+            },
+            // 挿絵の状態をメッセージへ書き換え、そのメッセージ直下だけを描画し直す
+            setIllustrationOnMessage(messageIndex, illustration) {
+                const message = state.currentMessages[messageIndex];
+                if (!message) return;
+                const previous = message.illustration || {};
+                message.illustration = Object.assign({}, previous, illustration);
+                uiUtils.rerenderIllustration(messageIndex);
             },
             async handleSend(isRetry = false, retryUserMessageIndex = -1, sourceSessionContext = null, isTopLevelCall = true, retryCount = 0) {
                 if (!sourceSessionContext && isTopLevelCall) {
