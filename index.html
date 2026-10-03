@@ -17432,6 +17432,16 @@ uiUtils.renderChatMessages(shouldMaintainScroll);
                         if (state.settings.showTwinEngineSettings && state.settings.twinEngineEnableFullAuto && currentUserTurnCountAfterSend > currentSummarizeAfterTurns) {
                             setTimeout(() => this.triggerTwinEngineSummaryInBackground(), 0);
                         }
+
+                        // 挿絵の自動生成は、本編の応答が正常完了した場合だけ起動する。
+                        // 生成中・中断・エラー完了では起動しない。本編の送信はブロックしない。
+                        const finishReasonForIllustration = modelResponseMetadata.finishReason;
+                        const abortedForIllustration = finishReasonForIllustration === 'ABORTED' || !!state.abortController?.signal.aborted;
+                        const unsuccessfulForIllustration = ['ERROR', 'SAFETY', 'RECITATION', 'PROHIBITED_CONTENT', 'OTHER'].includes(finishReasonForIllustration);
+                        if (state.settings.illustrationEnabled && state.settings.illustrationMode === 'auto'
+                            && !abortedForIllustration && !unsuccessfulForIllustration && !state.illustrationJob) {
+                            setTimeout(() => this.generateIllustration(), 0);
+                        }
                     }
                 }
 
