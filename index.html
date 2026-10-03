@@ -5003,6 +5003,8 @@ font-size: 1.142em !important;
                     class="footer-action-button hidden">🛞</button>
                 <button id="footer-resummarize-btn" title="現在のチャット履歴を要約" class="footer-action-button hidden">♻️</button>
                 <button id="paste-to-input-btn" title="入力欄に貼り付け" class="footer-action-button">貼</button>
+                <button id="illustration-mode-toggle-btn" title="挿絵生成: 自動 / 手動 の切替" class="footer-action-button hidden">挿</button>
+                <button id="illustration-generate-last-btn" title="直前の応答から挿絵を生成" class="footer-action-button hidden">画</button>
                 <textarea id="user-input" placeholder="メッセージを入力..." rows="1" aria-label="メッセージ入力"></textarea>
                 <button id="attach-file-btn" title="ファイルを添付" class="footer-action-button">+<span
                         class="attachment-badge"></span></button>
@@ -7589,6 +7591,140 @@ font-size: 1.142em !important;
                         </p>
                     </div>
                 </details>
+                <details class="settings-group" id="settings-group-illustration">
+                    <summary
+                        style="font-size: 16px; color: var(--text-link); border-bottom: 1px solid var(--border-tertiary); padding-bottom: 5px; margin-bottom: 15px; display: list-item; list-style: revert; cursor:pointer; font-weight: bold;">
+                        挿絵生成（ComfyUI）</summary>
+                    <div style="margin-top:10px;">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="illustration-enabled-toggle">
+                            挿絵生成を有効にする
+                        </label>
+                        <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 15px;">
+                            ※ クラウドLLMの応答受信が完了した直後に、直近のシーンに合う挿絵を ComfyUI で生成します。<br>
+                            ※ ComfyUI はブラウザから直接叩くため、<code>--enable-cors-header</code> を付けて起動する必要があります。<br>
+                            ※ ローカル起動（<code>__winlocal.bat</code>）での動作確認を推奨します。GitHub Pages 上の公開オリジンからは、利用者自身のローカルや Tailscale の ComfyUI に届かない場合があります。
+                        </p>
+                        <label for="illustration-mode-select">生成タイミング:</label>
+                        <select id="illustration-mode-select" aria-label="挿絵の生成タイミング">
+                            <option value="auto">自動（応答完了の直後に生成）</option>
+                            <option value="manual">手動（ボタンで生成）</option>
+                        </select>
+                        <label for="comfy-base-url" style="margin-top: 15px;">ComfyUI base URL:</label>
+                        <input type="text" id="comfy-base-url" placeholder="例: http://127.0.0.1:8188"
+                            aria-label="ComfyUI base URL">
+                        <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
+                            ※ 末尾スラッシュは自動的に除去します。Tailscale 経由の URL（例: <code>http://100.x.x.x:8188</code>）も同じ欄で使えます。
+                        </p>
+                        <button id="comfy-connection-test-btn" class="settings-action-button" style="font-size: 12px;">接続確認</button>
+                        <span id="comfy-connection-status" style="font-size: 12px; margin-left: 8px; color: var(--text-secondary);"></span>
+
+                        <label for="comfy-workflow-textarea" style="margin-top: 15px;">API形式ワークフロー JSON:</label>
+                        <textarea id="comfy-workflow-textarea" rows="8"
+                            placeholder='ComfyUI の「Save (API Format)」で書き出した JSON を貼り付けます。例: {"3": {"class_type": "CLIPTextEncode", "inputs": {"text": "%prompt%"}}}'
+                            aria-label="API形式ワークフロー JSON"></textarea>
+                        <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
+                            ※ UI形式（<code>nodes</code> / <code>links</code> を持つ形式）は受け付けません。API形式で保存してください。<br>
+                            ※ 差し込み先は文字列値として <code>"%prompt%"</code> のように書いた箇所だけです（ワークフローを壊さないため、JSON文字列リテラル全体が一致した場合のみ置換します）。<br>
+                            ※ 使用可能なトークン: <code>%prompt%</code> <code>%negative_prompt%</code> <code>%seed%</code> <code>%width%</code> <code>%height%</code> <code>%steps%</code> <code>%cfg%</code>（<code>%scale%</code> にも同じ値を入れます）。ワークフローに存在するものだけ置換されます。
+                        </p>
+                        <button id="comfy-workflow-validate-btn" class="settings-action-button" style="font-size: 12px;">ワークフロー検証</button>
+                        <span id="comfy-workflow-status" style="font-size: 12px; margin-left: 8px; color: var(--text-secondary);"></span>
+
+                        <details style="margin-top: 15px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
+                            <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
+                                プロンプト合成
+                            </summary>
+                            <div style="padding: 10px; padding-top: 5px;">
+                                <label for="comfy-prompt-prefix">共通プロンプトプレフィックス:</label>
+                                <textarea id="comfy-prompt-prefix" rows="2" placeholder="例: best quality, absurdres, aesthetic"></textarea>
+                                <label for="comfy-character-prefix">キャラ外見プレフィックス:</label>
+                                <textarea id="comfy-character-prefix" rows="2" placeholder="例: 1girl, long silver hair"></textarea>
+                                <label for="comfy-negative-prompt">ネガティブプロンプト:</label>
+                                <textarea id="comfy-negative-prompt" rows="2" placeholder="例: lowres, bad anatomy, bad hands"></textarea>
+                                <p style="font-size: 11px; color: var(--text-secondary); margin-top: 0; margin-bottom: 0;">
+                                    ※ 共通 → キャラの順でカンマ区切り連結し、LLMが生成したキーワードを末尾に添えます。
+                                </p>
+                            </div>
+                        </details>
+
+                        <details style="margin-top: 10px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
+                            <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
+                                Last message 用 quiet 指示テンプレート
+                            </summary>
+                            <div style="padding: 10px; padding-top: 5px;">
+                                <textarea id="comfy-image-prompt-template" rows="12" aria-label="quiet 指示テンプレート"></textarea>
+                                <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px;">
+                                    ※ 本編のチャット履歴を文脈にしたうえで、この指示文だけを quiet に送信します。返ってきた本文はチャット履歴に残しません。<br>
+                                    ※ <code>{{char}}</code> / <code>{{user}}</code> は表示名（未設定なら assistant / user）で置換します。
+                                </p>
+                                <button id="comfy-template-reset-btn" class="settings-action-button" style="font-size: 12px;">既定に戻す</button>
+                            </div>
+                        </details>
+
+                        <details style="margin-top: 10px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
+                            <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
+                                生成パラメータ
+                            </summary>
+                            <div style="padding: 10px; padding-top: 5px;">
+                                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                    <div style="flex: 1 1 120px;">
+                                        <label for="comfy-width">幅:</label>
+                                        <input type="number" id="comfy-width" min="64" max="4096" step="8">
+                                    </div>
+                                    <div style="flex: 1 1 120px;">
+                                        <label for="comfy-height">高さ:</label>
+                                        <input type="number" id="comfy-height" min="64" max="4096" step="8">
+                                    </div>
+                                    <div style="flex: 1 1 120px;">
+                                        <label for="comfy-steps">steps:</label>
+                                        <input type="number" id="comfy-steps" min="1" max="200" step="1">
+                                    </div>
+                                    <div style="flex: 1 1 120px;">
+                                        <label for="comfy-cfg">cfg:</label>
+                                        <input type="number" id="comfy-cfg" min="0" max="30" step="0.5">
+                                    </div>
+                                </div>
+                                <label for="comfy-seed" style="margin-top: 10px;">seed (-1 で毎回ランダム):</label>
+                                <input type="number" id="comfy-seed" min="-1" step="1">
+                                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
+                                    <div style="flex: 1 1 140px;">
+                                        <label for="comfy-timeout-ms">タイムアウト (ms):</label>
+                                        <input type="number" id="comfy-timeout-ms" min="5000" max="1800000" step="1000">
+                                    </div>
+                                    <div style="flex: 1 1 140px;">
+                                        <label for="comfy-poll-interval-ms">ポーリング間隔 (ms):</label>
+                                        <input type="number" id="comfy-poll-interval-ms" min="200" max="30000" step="100">
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
+                                    <div style="flex: 1 1 140px;">
+                                        <label for="comfy-max-image-edge">保存画像の最大辺 (px):</label>
+                                        <input type="number" id="comfy-max-image-edge" min="256" max="4096" step="64">
+                                    </div>
+                                    <div style="flex: 1 1 140px;">
+                                        <label for="comfy-max-image-bytes">保存画像の最大バイト:</label>
+                                        <input type="number" id="comfy-max-image-bytes" min="32768" max="8388608" step="16384">
+                                    </div>
+                                </div>
+                            </div>
+                        </details>
+
+                        <details style="margin-top: 10px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
+                            <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
+                                デバッグ（quiet プロンプト）
+                            </summary>
+                            <div style="padding: 10px; padding-top: 5px;">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="comfy-show-debug-toggle">
+                                    生成に使った quiet プロンプトと返文をこの折りたたみ内に表示する
+                                </label>
+                                <pre id="comfy-debug-output"
+                                    style="white-space: pre-wrap; word-break: break-word; font-size: 11px; background-color: var(--bg-secondary); padding: 8px; border-radius: 4px; max-height: 300px; overflow-y: auto;">（まだ生成していません）</pre>
+                            </div>
+                        </details>
+                    </div>
+                </details>
                 <details class="settings-group" id="settings-group-session-linking">
                     <summary
                         style="font-size: 16px; color: var(--text-link); border-bottom: 1px solid var(--border-tertiary); padding-bottom: 5px; margin-bottom: 15px; display: list-item; list-style: revert; cursor:pointer; font-weight: bold;">
@@ -7805,6 +7941,40 @@ const DEFAULT_DEEPSEEK_MODEL = 'deepseek-v4-flash';
         const DEFAULT_MESSAGE_ICON_OFFSET_Y = -10;
         const DEFAULT_USER_NAME = "あなた";
         const DEFAULT_AI_NAME = "AI";
+
+        // ▼ 挿絵生成（ComfyUI / SillyTavern "Last message" 模倣）▼
+        // 既定の quiet 指示テンプレート。SillyTavern の generationMode.NOW の文面を基にする。
+        // {{char}} / {{user}} は実行時にセッションの表示名（未設定なら assistant / user）で置換する。
+        const DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE = `Ignore previous instructions. Your next response must be formatted as a single comma-delimited list of concise keywords. The list will describe the visual details included in the last chat message.
+
+Only mention characters by using pronouns ('he','his','she','her','it','its') or neutral nouns ('male', 'the man', 'female', 'the woman').
+
+Ignore non-visible things such as feelings, personality traits, thoughts, and spoken dialog.
+
+Add keywords in this precise order:
+a keyword to describe the location of the scene,
+a keyword to mention how many characters of each gender or type are present in the scene (minimum of two characters: {{user}} and {{char}}, example: '2 men ' or '1 man 1 woman ', '1 man 3 robots'),
+keywords to describe the relative physical positioning of the characters to each other (if a commonly known term for the positioning is known use it instead of describing the positioning in detail) + 'POV',
+a single keyword or phrase to describe the primary act taking place in the last chat message,
+keywords to describe {{char}}'s physical appearance and facial expression,
+keywords to describe {{char}}'s actions,
+keywords to describe {{user}}'s physical appearance and actions.
+
+If character actions involve direct physical interaction with another character, mention specifically which body parts interacting and how.
+
+A correctly formatted example response would be:
+'(location),(character list by gender),(primary action), (relative character position) POV, (character 1's description and actions), (character 2's description and actions)'`;
+        const DEFAULT_COMFY_BASE_URL = 'http://127.0.0.1:8188';
+        const DEFAULT_COMFY_WIDTH = 512;
+        const DEFAULT_COMFY_HEIGHT = 512;
+        const DEFAULT_COMFY_STEPS = 20;
+        const DEFAULT_COMFY_CFG = 7;
+        const DEFAULT_COMFY_TIMEOUT_MS = 180000;
+        const DEFAULT_COMFY_POLL_INTERVAL_MS = 1500;
+        // 履歴に data URL で保存するため、縮小と上限で容量を抑える
+        const DEFAULT_COMFY_MAX_IMAGE_EDGE = 1024;
+        const DEFAULT_COMFY_MAX_IMAGE_BYTES = 400 * 1024;
+        // ▲ ここまで ▲
         const DEFAULT_ICON_NAME_FONT_SIZE = 10;
         const DEFAULT_ICON_NAME_OFFSET_Y = -10;
         const DEFAULT_USER_NAME_BUBBLE_COLOR = '#FFFFFF';
@@ -8203,6 +8373,34 @@ elevationHoverOption: document.getElementById('elevation-hover-option'),
             attachFileBtn: document.getElementById('attach-file-btn'),
             aiToAiChatBtn: document.getElementById('ai-to-ai-chat-btn'),
             pasteToInputBtn: document.getElementById('paste-to-input-btn'),
+            // ▼ 挿絵生成 ▼
+            illustrationModeToggleBtn: document.getElementById('illustration-mode-toggle-btn'),
+            illustrationGenerateLastBtn: document.getElementById('illustration-generate-last-btn'),
+            illustrationEnabledToggle: document.getElementById('illustration-enabled-toggle'),
+            illustrationModeSelect: document.getElementById('illustration-mode-select'),
+            comfyBaseUrlInput: document.getElementById('comfy-base-url'),
+            comfyConnectionTestBtn: document.getElementById('comfy-connection-test-btn'),
+            comfyConnectionStatus: document.getElementById('comfy-connection-status'),
+            comfyWorkflowTextarea: document.getElementById('comfy-workflow-textarea'),
+            comfyWorkflowValidateBtn: document.getElementById('comfy-workflow-validate-btn'),
+            comfyWorkflowStatus: document.getElementById('comfy-workflow-status'),
+            comfyPromptPrefixTextarea: document.getElementById('comfy-prompt-prefix'),
+            comfyCharacterPrefixTextarea: document.getElementById('comfy-character-prefix'),
+            comfyNegativePromptTextarea: document.getElementById('comfy-negative-prompt'),
+            comfyImagePromptTemplateTextarea: document.getElementById('comfy-image-prompt-template'),
+            comfyTemplateResetBtn: document.getElementById('comfy-template-reset-btn'),
+            comfyWidthInput: document.getElementById('comfy-width'),
+            comfyHeightInput: document.getElementById('comfy-height'),
+            comfyStepsInput: document.getElementById('comfy-steps'),
+            comfyCfgInput: document.getElementById('comfy-cfg'),
+            comfySeedInput: document.getElementById('comfy-seed'),
+            comfyTimeoutMsInput: document.getElementById('comfy-timeout-ms'),
+            comfyPollIntervalMsInput: document.getElementById('comfy-poll-interval-ms'),
+            comfyMaxImageEdgeInput: document.getElementById('comfy-max-image-edge'),
+            comfyMaxImageBytesInput: document.getElementById('comfy-max-image-bytes'),
+            comfyShowDebugToggle: document.getElementById('comfy-show-debug-toggle'),
+            comfyDebugOutput: document.getElementById('comfy-debug-output'),
+            // ▲ ここまで ▲
             fileUploadDialog: document.getElementById('fileUploadDialog'),
             fileInput: document.getElementById('file-input'),
             selectFilesBtn: document.getElementById('select-files-btn'),
@@ -8392,6 +8590,7 @@ elevationHoverOption: document.getElementById('elevation-hover-option'),
 
         const state = {
             db: null,
+            illustrationJob: null, // 同時実行は1件に制限する
             currentChatId: null,
             currentChatBaseUrl: null, // チャット固有のベースURLを保持
             currentMessages: [],
@@ -8432,6 +8631,26 @@ geminiIncludeThoughts: false,
                 fuzzySearchThreshold: 1,              // デフォルト閾値は1
                 characterNamesList: 'まゆみ,れな,みのり,葛城,日影,モガドール,メイ,アン,グレア,アストルフォ,ノーデ,レグナ,エルナ,ミネット,アキラ,グートルーネ,ハヅキ,イスタロト,フィー,ダルク,ヤン,ロイス,グライアス,ズィーグス,サンドラ,ジェシカ,アンナ,フェイ,ロディ,ジェイ,エマ,クリス,体操服,スクール水着,水着,初期衣装,マイクロビキニ,制服,全裸,私服,ビキニ,下着,部屋着,ドヤ顔,怪訝,大泣き,恐怖する,驚き,苦痛に耐える,泣く,嫌悪,困る,照れ笑い,にしし,真顔,退屈,挑発する,通常,怒る,発情,微笑,ウィンク,とろ顔,恍惚,快感,睡眠,キス顔,拗ねる,きょとん,悲しみ,眠い,恥じらう,はにかむ,涙ぐむ,嬉し泣き,笑う,てへぺろ,はわわ,悔しい,怯える,上目遣い,満面の笑み,考える,混乱,疲れてる,表情通常,表情微笑,表情哀,表情笑顔,表情怒,表情発情,表情軽い絶頂,表情深い絶頂,表情恐怖,表情驚き,表情照れ,ダンジョンを探索,攻撃,山を探索,宿に宿泊,森を探索,昼の町,町で食事,町で買い物,洞窟を探索,夜の町,昼野営,夜野営,冒険者ギルド,野外で食事,仕事中,水浴び,うろたえる,ニヤリ,むっとする,怪訝な顔,驚く,嫌悪する,号泣する,最高の笑顔,深い絶頂,真剣,赤面して耐える,赤面快感,赤面恐怖,赤面絶望,赤面涙目,赤面蠱惑的な笑み,絶頂する,絶望する,退屈する,恥ずかしがる,通常時,悲しむ,目を閉じる,落ち込む,ゲルヒルデ,リコリス,マルレーネ',                 // ▲ここまで追加▲
                 enableRomajiToKatakanaConversion: true,
+                // ▼ 挿絵生成（ComfyUI）▼ 個人URL・実ワークフローは既定にしない
+                illustrationEnabled: false,
+                illustrationMode: 'auto', // 'auto' = 応答完了直後 / 'manual' = 手動のみ
+                comfyBaseUrl: DEFAULT_COMFY_BASE_URL,
+                comfyWorkflow: '',
+                comfyPromptPrefix: '',
+                comfyCharacterPrefix: '',
+                comfyNegativePrompt: '',
+                comfyImagePromptTemplate: DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE,
+                comfyWidth: DEFAULT_COMFY_WIDTH,
+                comfyHeight: DEFAULT_COMFY_HEIGHT,
+                comfySteps: DEFAULT_COMFY_STEPS,
+                comfyCfg: DEFAULT_COMFY_CFG,
+                comfySeed: -1, // -1 で毎回ランダム
+                comfyTimeoutMs: DEFAULT_COMFY_TIMEOUT_MS,
+                comfyPollIntervalMs: DEFAULT_COMFY_POLL_INTERVAL_MS,
+                comfyMaxImageEdge: DEFAULT_COMFY_MAX_IMAGE_EDGE,
+                comfyMaxImageBytes: DEFAULT_COMFY_MAX_IMAGE_BYTES,
+                comfyShowDebug: false,
+                // ▲ ここまで ▲
 deepSeekApiKey: '',
 deepSeekApiEndpoint: '',
 deepSeekModelName: DEFAULT_DEEPSEEK_MODEL,
@@ -9264,6 +9483,145 @@ const dbUtils = {
                 });
             }
         };
+        // ═══════════════════════════════════════════════════════════
+        // 挿絵生成（SillyTavern の "Last message" 模倣）
+        // 本編の応答完了後、quiet に LLM へ画像プロンプト化を依頼し、
+        // API形式ワークフローへ差し込んで ComfyUI へ送る。サーバーは使わない。
+        // ═══════════════════════════════════════════════════════════
+        const illustrationUtils = {
+            lastDebug: null,
+
+            normalizeBaseUrl(rawUrl) {
+                let url = (rawUrl || '').trim();
+                // 末尾スラッシュ（複数含む）を正規化する
+                url = url.replace(/\/+$/, '');
+                return url;
+            },
+
+            // ワークフロー文字列を検証し、API形式ならオブジェクトを返す。
+            parseWorkflow(rawText) {
+                const text = (rawText || '').trim();
+                if (!text) {
+                    return { ok: false, error: 'ワークフローが空です。ComfyUI の「Save (API Format)」で書き出した JSON を貼り付けてください。' };
+                }
+                let parsed;
+                try {
+                    parsed = JSON.parse(text);
+                } catch (e) {
+                    return { ok: false, error: `JSON として読み取れません: ${e.message}` };
+                }
+                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                    return { ok: false, error: 'ワークフローはノードIDをキーにしたオブジェクトでなければなりません。' };
+                }
+                if (Array.isArray(parsed.nodes) && Array.isArray(parsed.links)) {
+                    return { ok: false, error: 'UI形式のワークフローです（nodes / links を持っています）。ComfyUI 側で「Save (API Format)」として保存した JSON を貼り付けてください。' };
+                }
+                const nodeEntries = Object.entries(parsed).filter(([, v]) => v && typeof v === 'object' && typeof v.class_type === 'string');
+                if (nodeEntries.length === 0) {
+                    return { ok: false, error: 'API形式のノード（class_type を持つもの）が見つかりません。' };
+                }
+                if (!nodeEntries.some(([, v]) => /SaveImage|PreviewImage/.test(v.class_type))) {
+                    return { ok: false, error: '出力ノード（SaveImage など）が見つかりません。画像が取得できません。' };
+                }
+                return { ok: true, object: parsed, nodeCount: nodeEntries.length };
+            },
+
+            // ワークフロー内に実際に存在する %トークン% を列挙する
+            findPlaceholders(workflowText) {
+                const found = new Set();
+                const re =/"%([a-zA-Z_][a-zA-Z0-9_]*)%"/g;
+                let match;
+                while ((match = re.exec(workflowText || '')) !== null) {
+                    found.add(match[1]);
+                }
+                return Array.from(found);
+            },
+
+            // SillyTavern と同じ差し込み方。
+            // 検索語に常に surrounding quotes を含めることで、本文の部分一致で JSON を壊さない。
+            // 置換値は JSON.stringify するので文字列はエスケープされ、数値は quotes なしで入る。
+            substitutePlaceholders(workflowText, values) {
+                let workflow = workflowText;
+                for (const [token, value] of Object.entries(values)) {
+                    if (value === undefined || value === null) continue;
+                    workflow = workflow.replaceAll(`"%${token}%"`, JSON.stringify(value));
+                }
+                return workflow;
+            },
+
+            // 設定の値 → ワークフローへ差し込むトークン値。ワークフローに存在するものだけ返す。
+            buildPlaceholderValues(workflowText) {
+                const present = new Set(this.findPlaceholders(workflowText));
+                const seed = (typeof state.settings.comfySeed === 'number' && state.settings.comfySeed >= 0)
+                    ? state.settings.comfySeed
+                    : Math.round(Math.random() * Number.MAX_SAFE_INTEGER);
+                const candidates = {
+                    prompt: null, // 生成後に埋める
+                    negative_prompt: state.settings.comfyNegativePrompt || '',
+                    seed: seed,
+                    width: state.settings.comfyWidth,
+                    height: state.settings.comfyHeight,
+                    steps: state.settings.comfySteps,
+                    cfg: state.settings.comfyCfg,
+                };
+                const values = {};
+                for (const [token, value] of Object.entries(candidates)) {
+                    if (present.has(token)) values[token] = value;
+                }
+                // SillyTavern の実ワークフローとの互換: CFG は %scale% という名前だった
+                if (present.has('scale')) values.scale = state.settings.comfyCfg;
+                return { values, seed, present };
+            },
+
+            // 共通 → キャラの順でカンマ区切り連結する（SillyTavern の combinePrefixes 相当）
+            combinePrefixes(str1, str2) {
+                const process = (s) => (s || '').trim().replace(/^,|,$/g, '').trim();
+                if (!str2) return process(str1);
+                const a = process(str1);
+                const b = process(str2);
+                if (!a) return b;
+                return process(`${a}, ${b},`);
+            },
+
+            // LLM の返文をキーワード列として整形する（SillyTavern の processReply 相当）
+            processReply(str) {
+                if (!str) return '';
+                let out = String(str);
+                out = out.replace(/^[\s\S]*?<\/think>/gi, ''); // reasoning を落とす
+                out = out.replaceAll('"', '').replaceAll('“', '');
+                out = out.replaceAll('\n', ', ');
+                out = out.normalize('NFD');
+                out = out.replace(/[^a-zA-Z0-9.,:_(){}<>[\]/\-'|#]+/g, ' ');
+                out = out.replace(/\s+/g, ' ').trim();
+                out = out.split(',').map(x => x.trim()).filter(x => x).join(', ');
+                return out;
+            },
+
+            // {{char}} / {{user}} をセッションの表示名へ置換する
+            substituteSessionNames(template) {
+                const charName = (state.settings.aiName || 'assistant');
+                const userName = (state.settings.userName || 'user');
+                return String(template || '')
+                    .replace(/\{\{char\}\}/gi, charName)
+                    .replace(/\{\{user\}\}/gi, userName);
+            },
+
+            async testConnection() {
+                const base = this.normalizeBaseUrl(elements.comfyBaseUrlInput.value);
+                if (!base) throw new Error('ComfyUI base URL が空です。');
+                let response;
+                try {
+                    response = await fetch(`${base}/system_stats`, { method: 'GET' });
+                } catch (e) {
+                    throw new Error(`接続できません (${e.message})。ComfyUI を --enable-cors-header 付きで起動しているか、URL と Tailscale の疎通を確認してください。`);
+                }
+                if (!response.ok) throw new Error(`ComfyUI が ${response.status} を返しました。`);
+                const data = await response.json().catch(() => null);
+                const version = data && data.system && data.system.comfy_version ? ` (comfyui ${data.system.comfy_version})` : '';
+                return `接続OK${version}`;
+            },
+        };
+
         function katakanaToHiragana(str) {
             if (typeof str !== 'string') return '';
             return str.replace(/[\u30a1-\u30f6]/g, function (match) {
@@ -11564,6 +11922,52 @@ elements.footerTapScrollToBottomToggle.checked = state.settings.footerTapScrollT
                 removeDuplicateCheckboxes.forEach(checkbox => {
                     checkbox.checked = state.settings.removeDuplicateApiKeys;
                 });
+
+                this.applyIllustrationSettingsToUI();
+            },
+            applyIllustrationSettingsToUI() {
+                if (!elements.illustrationEnabledToggle) return;
+
+                elements.illustrationEnabledToggle.checked = !!state.settings.illustrationEnabled;
+                elements.illustrationModeSelect.value = state.settings.illustrationMode === 'manual' ? 'manual' : 'auto';
+                elements.comfyBaseUrlInput.value = state.settings.comfyBaseUrl || '';
+                elements.comfyWorkflowTextarea.value = state.settings.comfyWorkflow || '';
+                elements.comfyPromptPrefixTextarea.value = state.settings.comfyPromptPrefix || '';
+                elements.comfyCharacterPrefixTextarea.value = state.settings.comfyCharacterPrefix || '';
+                elements.comfyNegativePromptTextarea.value = state.settings.comfyNegativePrompt || '';
+                elements.comfyImagePromptTemplateTextarea.value = state.settings.comfyImagePromptTemplate || DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE;
+                elements.comfyWidthInput.value = state.settings.comfyWidth ?? DEFAULT_COMFY_WIDTH;
+                elements.comfyHeightInput.value = state.settings.comfyHeight ?? DEFAULT_COMFY_HEIGHT;
+                elements.comfyStepsInput.value = state.settings.comfySteps ?? DEFAULT_COMFY_STEPS;
+                elements.comfyCfgInput.value = state.settings.comfyCfg ?? DEFAULT_COMFY_CFG;
+                elements.comfySeedInput.value = state.settings.comfySeed ?? -1;
+                elements.comfyTimeoutMsInput.value = state.settings.comfyTimeoutMs ?? DEFAULT_COMFY_TIMEOUT_MS;
+                elements.comfyPollIntervalMsInput.value = state.settings.comfyPollIntervalMs ?? DEFAULT_COMFY_POLL_INTERVAL_MS;
+                elements.comfyMaxImageEdgeInput.value = state.settings.comfyMaxImageEdge ?? DEFAULT_COMFY_MAX_IMAGE_EDGE;
+                elements.comfyMaxImageBytesInput.value = state.settings.comfyMaxImageBytes ?? DEFAULT_COMFY_MAX_IMAGE_BYTES;
+                elements.comfyShowDebugToggle.checked = !!state.settings.comfyShowDebug;
+                this.updateComfyDebugOutput();
+                this.updateIllustrationFooterButtons();
+            },
+            updateComfyDebugOutput() {
+                if (!elements.comfyDebugOutput) return;
+                const debug = illustrationUtils.lastDebug;
+                if (!state.settings.comfyShowDebug || !debug) {
+                    elements.comfyDebugOutput.textContent = '（まだ生成していません）';
+                    return;
+                }
+                elements.comfyDebugOutput.textContent =
+                    `--- 指示テンプレート（{{char}}/{{user}} 置換後）---\n${debug.template}\n\n--- LLM の返文（整形前）---\n${debug.rawReply}\n\n--- 整形後キーワード ---\n${debug.processedPrompt}\n\n--- ComfyUI に送った prompt ---\n${debug.finalPrompt || '（画像送信していません）'}`;
+            },
+            updateIllustrationFooterButtons() {
+                if (!elements.illustrationModeToggleBtn) return;
+                const enabled = !!state.settings.illustrationEnabled;
+                elements.illustrationModeToggleBtn.classList.toggle('hidden', !enabled);
+                elements.illustrationGenerateLastBtn.classList.toggle('hidden', !enabled);
+                const isAuto = state.settings.illustrationMode !== 'manual';
+                elements.illustrationModeToggleBtn.textContent = isAuto ? '挿:自動' : '挿:手動';
+                elements.illustrationModeToggleBtn.title = `挿絵生成: ${isAuto ? '自動' : '手動'}（クリックで切替）`;
+                elements.illustrationGenerateLastBtn.disabled = !!state.illustrationJob;
             },
             applyMinimizeUI() {
                 elements.appContainer.classList.toggle('minimized-ui', state.settings.minimizeHeaderFooter);
@@ -13193,6 +13597,52 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                 elements.aiToAiChatBtn.addEventListener('click', () => this.initiateAiToAiStep());
                 elements.pasteToInputBtn.addEventListener('click', () => this.pasteToUserInput());
                 elements.rollDiceBtn.addEventListener('click', () => this.rollDiceAndInput());
+
+                // ▼ 挿絵生成 ▼
+                if (elements.illustrationModeToggleBtn) {
+                    elements.illustrationModeToggleBtn.addEventListener('click', () => this.toggleIllustrationMode());
+                }
+                if (elements.comfyConnectionTestBtn) {
+                    elements.comfyConnectionTestBtn.addEventListener('click', async () => {
+                        elements.comfyConnectionStatus.textContent = '確認中…';
+                        elements.comfyConnectionStatus.style.color = 'var(--text-secondary)';
+                        try {
+                            const message = await illustrationUtils.testConnection();
+                            elements.comfyConnectionStatus.textContent = message;
+                            elements.comfyConnectionStatus.style.color = 'var(--text-success, var(--text-link))';
+                        } catch (error) {
+                            elements.comfyConnectionStatus.textContent = error.message;
+                            elements.comfyConnectionStatus.style.color = 'var(--text-error, var(--text-link))';
+                        }
+                    });
+                }
+                if (elements.comfyWorkflowValidateBtn) {
+                    elements.comfyWorkflowValidateBtn.addEventListener('click', () => {
+                        const result = illustrationUtils.parseWorkflow(elements.comfyWorkflowTextarea.value);
+                        if (!result.ok) {
+                            elements.comfyWorkflowStatus.textContent = result.error;
+                            elements.comfyWorkflowStatus.style.color = 'var(--text-error, var(--text-link))';
+                            return;
+                        }
+                        const tokens = illustrationUtils.findPlaceholders(elements.comfyWorkflowTextarea.value);
+                        const unsupported = tokens.filter(t => !['prompt', 'negative_prompt', 'seed', 'width', 'height', 'steps', 'cfg', 'scale'].includes(t));
+                        const unsupportedNote = unsupported.length ? `（未対応のためそのまま: ${unsupported.join(', ')}）` : '';
+                        elements.comfyWorkflowStatus.textContent = `API形式として読み取れました（ノード ${result.nodeCount} 件）。検出したトークン: ${tokens.join(', ') || 'なし'}${unsupportedNote}`;
+                        elements.comfyWorkflowStatus.style.color = 'var(--text-success, var(--text-link))';
+                    });
+                }
+                if (elements.comfyTemplateResetBtn) {
+                    elements.comfyTemplateResetBtn.addEventListener('click', () => {
+                        elements.comfyImagePromptTemplateTextarea.value = DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE;
+                    });
+                }
+                if (elements.comfyShowDebugToggle) {
+                    elements.comfyShowDebugToggle.addEventListener('change', () => {
+                        state.settings.comfyShowDebug = elements.comfyShowDebugToggle.checked;
+                        uiUtils.updateComfyDebugOutput();
+                    });
+                }
+                // ▲ ここまで ▲
 
                 elements.newChatBtn.addEventListener('click', () => {
                     uiUtils.showCustomConfirm("現在のチャットを保存して新規チャットを開始しますか？").then(confirmed => {
@@ -15246,6 +15696,15 @@ helpIcons.forEach(icon => {
                     console.error("校正処理中にエラーが発生:", error);
                     throw error;
                 }
+            },
+            // ▼ 挿絵生成 ▼
+            async toggleIllustrationMode() {
+                const next = state.settings.illustrationMode === 'manual' ? 'auto' : 'manual';
+                state.settings.illustrationMode = next;
+                await dbUtils.saveSetting('illustrationMode', next);
+                uiUtils.updateIllustrationFooterButtons();
+                if (elements.illustrationModeSelect) elements.illustrationModeSelect.value = next;
+                uiUtils.showCustomAlert(`挿絵の生成タイミングを「${next === 'auto' ? '自動' : '手動'}」に切り替えました。`);
             },
             async handleSend(isRetry = false, retryUserMessageIndex = -1, sourceSessionContext = null, isTopLevelCall = true, retryCount = 0) {
                 if (!sourceSessionContext && isTopLevelCall) {
@@ -17363,9 +17822,38 @@ newSettings.footerTapScrollToBottom = elements.footerTapScrollToBottomToggle.che
                     return webhook;
                 });
 
+                // ▼ 挿絵生成（ComfyUI）▼
+                const getComfyNumber = (input, fallback, min, max) => {
+                    const raw = input.value.trim();
+                    if (raw === '') return fallback;
+                    const num = parseFloat(raw);
+                    if (isNaN(num)) return fallback;
+                    return Math.min(max, Math.max(min, num));
+                };
+                newSettings.illustrationEnabled = elements.illustrationEnabledToggle.checked;
+                newSettings.illustrationMode = elements.illustrationModeSelect.value === 'manual' ? 'manual' : 'auto';
+                // 末尾スラッシュは正規化する
+                newSettings.comfyBaseUrl = illustrationUtils.normalizeBaseUrl(elements.comfyBaseUrlInput.value);
+                newSettings.comfyWorkflow = elements.comfyWorkflowTextarea.value.trim();
+                newSettings.comfyPromptPrefix = elements.comfyPromptPrefixTextarea.value.trim();
+                newSettings.comfyCharacterPrefix = elements.comfyCharacterPrefixTextarea.value.trim();
+                newSettings.comfyNegativePrompt = elements.comfyNegativePromptTextarea.value.trim();
+                newSettings.comfyImagePromptTemplate = elements.comfyImagePromptTemplateTextarea.value;
+                newSettings.comfyWidth = Math.round(getComfyNumber(elements.comfyWidthInput, DEFAULT_COMFY_WIDTH, 64, 4096));
+                newSettings.comfyHeight = Math.round(getComfyNumber(elements.comfyHeightInput, DEFAULT_COMFY_HEIGHT, 64, 4096));
+                newSettings.comfySteps = Math.round(getComfyNumber(elements.comfyStepsInput, DEFAULT_COMFY_STEPS, 1, 200));
+                newSettings.comfyCfg = getComfyNumber(elements.comfyCfgInput, DEFAULT_COMFY_CFG, 0, 30);
+                newSettings.comfySeed = Math.round(getComfyNumber(elements.comfySeedInput, -1, -1, Number.MAX_SAFE_INTEGER));
+                newSettings.comfyTimeoutMs = Math.round(getComfyNumber(elements.comfyTimeoutMsInput, DEFAULT_COMFY_TIMEOUT_MS, 5000, 1800000));
+                newSettings.comfyPollIntervalMs = Math.round(getComfyNumber(elements.comfyPollIntervalMsInput, DEFAULT_COMFY_POLL_INTERVAL_MS, 200, 30000));
+                newSettings.comfyMaxImageEdge = Math.round(getComfyNumber(elements.comfyMaxImageEdgeInput, DEFAULT_COMFY_MAX_IMAGE_EDGE, 256, 4096));
+                newSettings.comfyMaxImageBytes = Math.round(getComfyNumber(elements.comfyMaxImageBytesInput, DEFAULT_COMFY_MAX_IMAGE_BYTES, 32768, 8388608));
+                newSettings.comfyShowDebug = elements.comfyShowDebugToggle.checked;
+                // ▲ ここまで ▲
+
                 try {
                     const oldSortOrder = state.settings.historySortOrder;
-                    
+
                     const { backgroundImageBlob, historyBackgroundImageBlob, settingsBackgroundImageBlob, userIconBlob, aiIconBlob, ...settingsToSave } = newSettings;
                     
                     const promises = Object.entries(settingsToSave).map(([key, value]) =>
