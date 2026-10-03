@@ -1,6 +1,6 @@
 // sw.js
 
-const CACHE_NAME = 'gemini-pwa-cache-v2'; // キャッシュ名を変更すると強制的に更新がかかる場合がある
+const CACHE_NAME = 'gemini-pwa-cache-v3'; // キャッシュ名を変更すると強制的に更新がかかる場合がある
 const urlsToCache = [
   './', // ルートパス (index.html を指すことが多い)
   './index.html',
@@ -29,6 +29,13 @@ self.addEventListener('install', (event) => {
   );
 });
 
+// ループバック・プライベート・Tailscale (100.64.0.0/10) のホスト名か
+function isPrivateHost(hostname) {
+  if (!hostname) return false;
+  if (hostname === 'localhost' || hostname.endsWith('.local')) return true;
+  return /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.)/.test(hostname);
+}
+
 // フェッチイベントの処理
 self.addEventListener('fetch', (event) => {
   const requestUrl = new URL(event.request.url);
@@ -37,6 +44,14 @@ self.addEventListener('fetch', (event) => {
   if (requestUrl.hostname === 'generativelanguage.googleapis.com' && event.request.method === 'POST') {
     event.respondWith(fetch(event.request));
     return; // このリクエストに対するService Workerの処理はここで終了
+  }
+
+  // ローカル・LAN・Tailscale の ComfyUI などプライベートアドレスへの要求も常にネットワークへ。
+  // キャッシュ優先の処理に通すと接続失敗がここで合成される 503 に化け、
+  // 「ComfyUI に届かない」原因（--enable-cors-header 未設定など）を判別できなくなる。
+  if (isPrivateHost(requestUrl.hostname)) {
+    event.respondWith(fetch(event.request));
+    return;
   }
 
   // それ以外のリクエスト (主にGET) はキャッシュ優先戦略 (Cache falling back to network)

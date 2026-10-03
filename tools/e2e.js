@@ -25,6 +25,7 @@ const PNG_1PX = Buffer.from(
 
 let lastPromptBody = null;
 let historyPolls = 0;
+let promptPosts = 0;
 
 function createServer() {
     return http.createServer((req, res) => {
@@ -38,6 +39,7 @@ function createServer() {
                 return;
             }
             if (endpoint === 'prompt' && req.method === 'POST') {
+                promptPosts++;
                 let body = '';
                 req.on('data', chunk => { body += chunk; });
                 req.on('end', () => {
@@ -202,6 +204,90 @@ const scenarioScript = (mode) => `(async () => {
     };
 })()`;
 
+// 失敗系: ComfyUI が落ちていても本編は使える / 不正ワークフロー / 連打 / Service Worker
+const FAILURE_SCRIPT = `(async () => {
+    const unreachableBase = 'http://127.0.0.1:1';
+    const validWorkflow = state.settings.comfyWorkflow;
+
+    // 1) ComfyUI に届かない: 本編は残り、挿絵だけ失敗する
+    state.settings.illustrationMode = 'auto';
+    state.settings.comfyBaseUrl = unreachableBase;
+    state.currentMessages = [];
+    state.currentChatId = null;
+    state.illustrationJob = null;
+    uiUtils.renderChatMessages();
+    const originalCallGeminiApi = apiUtils.callGeminiApi;
+    apiUtils.callGeminiApi = async () => ({ json: async () => ({ candidates: [{ content: { parts: [{ text: '本編は使える' }] }, finishReason: 'STOP' }] }) });
+    elements.userInput.value = '続けて';
+    await appLogic.handleSend();
+    for (let i = 0; i < 80 && !state.illustrationJob; i++) await new Promise(r => setTimeout(r, 25));
+    for (let i = 0; i < 200 && state.illustrationJob; i++) await new Promise(r => setTimeout(r, 25));
+    apiUtils.callGeminiApi = originalCallGeminiApi;
+
+    const modelMessage = state.currentMessages.find(m => m.role === 'model');
+    const unreachableResult = {
+        mainText: modelMessage ? modelMessage.content : null,
+        status: modelMessage && modelMessage.illustration ? modelMessage.illustration.status : null,
+        mentionsCors: !!(modelMessage && modelMessage.illustration && /--enable-cors-header/.test(modelMessage.illustration.error || '')),
+        error: modelMessage && modelMessage.illustration ? modelMessage.illustration.error : null,
+        shownInDom: !!(document.querySelector('.message-illustration-error') && /--enable-cors-header/.test(document.querySelector('.message-illustration-error').textContent)),
+    };
+
+    // 2) UI形式のワークフローは、LLMを呼ぶ前に理由付きで拒否される
+    const originalHandleSendForWorkflow = appLogic.handleSend.bind(appLogic);
+    let workflowCaseLlmCalls = 0;
+    appLogic.handleSend = async () => { workflowCaseLlmCalls++; return { content: 'a bench, 1 man 1 woman' }; };
+    state.settings.comfyWorkflow = JSON.stringify({ nodes: [{ id: 1 }], links: [] });
+    state.currentMessages = [
+        { role: 'user', content: 'x', timestamp: Date.now() },
+        { role: 'model', content: 'y', timestamp: Date.now() },
+    ];
+    uiUtils.renderChatMessages();
+    await appLogic.generateIllustration();
+    const badWorkflowResult = {
+        status: state.currentMessages[1].illustration ? state.currentMessages[1].illustration.status : null,
+        mentionsUiFormat: /UI形式/.test(state.currentMessages[1].illustration.error || ''),
+        error: state.currentMessages[1].illustration.error,
+        spentLlmCall: workflowCaseLlmCalls > 0,
+    };
+    appLogic.handleSend = originalHandleSendForWorkflow;
+    state.settings.comfyWorkflow = validWorkflow;
+
+    // 3) 連打: 実行中の再要求は断られ、ComfyUI への投入は1件のまま
+    state.settings.comfyBaseUrl = location.origin + '/mock-comfy';
+    state.currentMessages = [
+        { role: 'user', content: 'x', timestamp: Date.now() },
+        { role: 'model', content: 'z', timestamp: Date.now() },
+    ];
+    uiUtils.renderChatMessages();
+    const originalHandleSend = appLogic.handleSend.bind(appLogic);
+    appLogic.handleSend = async () => ({ content: 'a bench, 1 man 1 woman' });
+    const first = appLogic.generateIllustration();
+    const second = appLogic.generateIllustration();
+    await Promise.all([first, second]);
+    appLogic.handleSend = originalHandleSend;
+    const rapidTapResult = {
+        status: state.currentMessages[1].illustration ? state.currentMessages[1].illustration.status : null,
+        jobReleased: state.illustrationJob === null,
+    };
+
+    // 4) Service Worker: 登録され、キャッシュ名が上がっている
+    let swVersion = null;
+    let swRegistered = false;
+    try {
+        const registration = await navigator.serviceWorker.ready;
+        swRegistered = !!registration;
+        const text = await (await fetch('./sw.js')).text();
+        const match = text.match(/CACHE_NAME = '([^']+)'/);
+        swVersion = match ? match[1] : null;
+    } catch (e) { /* SW 不可の環境 */ }
+
+    return {
+        unreachableResult, badWorkflowResult, rapidTapResult,
+        swRegistered, swVersion,
+    };
+})()`;
+
 async function waitForDebuggerReady() {
     for (let i = 0; i < 60; i++) {
         try {
@@ -294,6 +380,11 @@ async function main() {
         historyPolls = 0;
         const manualResult = await evaluate(scenarioScript('manual'));
         const comfyPollsForManual = historyPolls;
+
+        lastPromptBody = null;
+        historyPolls = 0;
+        promptPosts = 0;
+        const failureResult = await evaluate(FAILURE_SCRIPT);
         console.log('── ページ内の結果 ──');
         console.log(JSON.stringify(pageResult, null, 2));
 
@@ -309,6 +400,10 @@ async function main() {
             steps: sent && sent.prompt ? sent.prompt['5'].inputs.steps : null,
             cfg: sent && sent.prompt ? sent.prompt['5'].inputs.cfg : null,
         }, null, 2));
+
+        console.log('\n── 失敗系の結果 ──');
+        console.log(JSON.stringify(failureResult, null, 2));
+        console.log('promptPosts =', promptPosts);
 
         const checks = [
             ['ページエラーが無い', pageResult.pageErrors.length === 0],
@@ -332,6 +427,16 @@ async function main() {
             ['自動: 本編テキストはそのまま', autoResult.mainText === '本編の応答です。'],
             ['自動: ComfyUI へ届いている', !!sentForAuto && /a park at dusk/.test(JSON.parse(sentForAuto).prompt['3'].inputs.text)],
             ['手動: 応答完了後も勝手に走らない', manualResult.apiCallCount === 1 && manualResult.illustrationStatus === null && comfyPollsForManual === 0],
+
+            ['ComfyUI 落ちても本編テキストは残る', failureResult.unreachableResult.mainText === '本編は使える'],
+            ['ComfyUI 到達不可は挿絵だけ失敗し、CORS の対処を出す', failureResult.unreachableResult.status === 'error' && failureResult.unreachableResult.mentionsCors],
+            ['失敗はメッセージ直下に表示される', failureResult.unreachableResult.shownInDom],
+            ['UI形式ワークフローは理由付きで拒否', failureResult.badWorkflowResult.status === 'error' && failureResult.badWorkflowResult.mentionsUiFormat],
+            ['連打でも ComfyUI への投入は1件', promptPosts === 1],
+            ['連打後もジョブは解除される', failureResult.rapidTapResult.jobReleased && failureResult.rapidTapResult.status === 'done'],
+            ['Service Worker が登録される', failureResult.swRegistered],
+            ['Service Worker のキャッシュ版が上がっている', failureResult.swVersion === 'gemini-pwa-cache-v3'],
+            ['不正ワークフローでは LLM を消費しない', failureResult.badWorkflowResult.spentLlmCall === false],
         ];
         console.log('\n── 確認 ──');
         let failed = 0;

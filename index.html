@@ -9713,6 +9713,11 @@ const dbUtils = {
                     + ' GitHub Pages 上の公開オリジンからは、利用者自身のローカルや Tailscale の ComfyUI へは届かない場合があります。';
             },
 
+            // Service Worker が接続失敗の代わりに合成する 503 / 503 JSON を見分ける
+            isServiceWorkerNetworkError(bodyText) {
+                return /Network error occurred\.|Offline or network error/.test(bodyText || '');
+            },
+
             newClientId() {
                 if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
                 return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -9740,7 +9745,12 @@ const dbUtils = {
                 } catch (e) {
                     throw new Error(this.corsErrorMessage(e));
                 }
-                const data = await response.json().catch(() => null);
+                const rawBody = await response.text().catch(() => '');
+                if (!response.ok && this.isServiceWorkerNetworkError(rawBody)) {
+                    throw new Error(this.corsErrorMessage(new Error('Service Worker 経由でも届きませんでした')));
+                }
+                let data = null;
+                try { data = JSON.parse(rawBody); } catch (e) { data = null; }
                 if (!response.ok) {
                     const parts = [];
                     if (data && data.error) {
@@ -9771,7 +9781,13 @@ const dbUtils = {
                     } catch (e) {
                         throw new Error(this.corsErrorMessage(e));
                     }
-                    if (!response.ok) throw new Error(`ComfyUI の history 取得に失敗しました (HTTP ${response.status})。`);
+                    if (!response.ok) {
+                        const bodyText = await response.text().catch(() => '');
+                        if (this.isServiceWorkerNetworkError(bodyText)) {
+                            throw new Error(this.corsErrorMessage(new Error('Service Worker 経由でも届きませんでした')));
+                        }
+                        throw new Error(`ComfyUI の history 取得に失敗しました (HTTP ${response.status})。`);
+                    }
                     const history = await response.json().catch(() => null);
                     const entry = history ? history[promptId] : null;
                     if (entry) {
@@ -16159,12 +16175,13 @@ helpIcons.forEach(icon => {
                 }
 
                 try {
-                    const built = await this.buildIllustrationPrompt(targetIndex);
-
+                    // LLM を呼ぶ前に設定側で弾けるものを弾く（トークンを無駄にしないため）
                     const base = illustrationUtils.normalizeBaseUrl(state.settings.comfyBaseUrl);
                     if (!base) throw new Error('ComfyUI base URL が設定されていません。');
                     const parsed = illustrationUtils.parseWorkflow(state.settings.comfyWorkflow);
                     if (!parsed.ok) throw new Error(parsed.error);
+
+                    const built = await this.buildIllustrationPrompt(targetIndex);
 
                     const rawWorkflow = state.settings.comfyWorkflow.trim();
                     const placeholders = illustrationUtils.buildPlaceholderValues(rawWorkflow);

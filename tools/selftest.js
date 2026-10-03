@@ -162,6 +162,7 @@ function stubFetch(handler) {
 const jsonResponse = (body, status) => ({
     ok: status >= 200 && status < 300, status: status,
     json: () => Promise.resolve(body),
+    text: () => Promise.resolve(typeof body === 'string' ? body : JSON.stringify(body)),
 });
 
 (async () => {
