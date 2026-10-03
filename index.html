@@ -4911,12 +4911,17 @@ font-size: 1.142em !important;
             const RECOVERY_ATTEMPT_KEY = 'GeminiPWA_RecoveryAttempt';
             let recoveryAttempt = parseInt(sessionStorage.getItem(RECOVERY_ATTEMPT_KEY) || '0', 10);
 
-            const watchdogTimer = setTimeout(() => {
+            // file:// で開かれた場合、marked.js などが読めず初期化は必ず失敗する。
+            // 3段階のキャッシュ復旧も空振りしてリロードループになるため、ウォッチドッグ自体を止め、
+            // 後続の localLaunchDialog で起動の仕方を案内する。
+            const isLocalFileLaunch = location.protocol === 'file:';
+
+            const watchdogTimer = isLocalFileLaunch ? null : setTimeout(() => {
                 handleInitializationFailure();
             }, TIMEOUT);
 
             window.initializationSuccess = function () {
-                clearTimeout(watchdogTimer);
+                if (watchdogTimer) clearTimeout(watchdogTimer);
                 sessionStorage.removeItem(RECOVERY_ATTEMPT_KEY);
             };
 
@@ -7979,6 +7984,30 @@ font-size: 1.142em !important;
             <button id="initFailureOkBtn" value="ok" class="dialog-ok-btn">OK</button>
         </div>
     </dialog>
+
+    <dialog id="localLaunchDialog" class="custom-dialog">
+        <p class="dialog-message">
+            <strong>index.html を直接開いても動作しません</strong><br>
+            <br>
+            このアプリはローカルサーバーが必要なため、<code>__winlocal.bat</code> をダブルクリックして起動してください。<br>
+            ブラウザが自動的にローカルアドレスで開きます。<br>
+            <br>
+            このウィンドウは閉じて構いません。
+        </p>
+        <div class="dialog-actions">
+            <button id="localLaunchOkBtn" value="ok" class="dialog-ok-btn">OK</button>
+        </div>
+    </dialog>
+    <script>
+        // 上の案内はアプリ本体より前に出す。本体の初期化は file:// では成功しないため、
+        // 起動ウォッチドッグ（head 直後のスクリプト）は停止済みの状態でここに来る。
+        if (location.protocol === 'file:') {
+            const localLaunchDialog = document.getElementById('localLaunchDialog');
+            const localLaunchOkBtn = document.getElementById('localLaunchOkBtn');
+            localLaunchOkBtn.addEventListener('click', () => localLaunchDialog.close('ok'));
+            localLaunchDialog.showModal();
+        }
+    </script>
 
     <script>
         const DB_NAME = 'GeminiPWA_DB';

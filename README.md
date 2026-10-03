@@ -69,8 +69,9 @@ SillyTavern の Image Generation 拡張における「The Last Message」だけ�
 開発向けの検証スクリプト（アプリ本体は読み込みません）:
 
 ```
-node tools/selftest.js   # コアロジック（ワークフロー検証・差し込み・整形）
-node tools/e2e.js        # モック ComfyUI に対して headless Chrome で実際に走らせる
+node tools/selftest.js         # コアロジック（ワークフロー検証・差し込み・整形）
+node tools/e2e.js              # モック ComfyUI に対して headless Chrome で実際に走らせる
+node tools/local-launch.js     # 同上。file:// で開いたときの案内と、http:// では出ないことを確認する
 ```
 
 ### 校正機能
@@ -477,6 +478,11 @@ Webサイト上のは信用ならんからローカルで使いたい！とい�
 （サイト上部の緑の「Code」から「Download ZIP」）
 2. __winlocal.batを起動
 3. batのプロンプトが開いている間はローカルhttpサーバーからindex.htmlへアクセス可能
+
+⚠️ ローカルで使用する場合は、`index.html` を直接ダブルクリックして開かないでください。  
+ブラウザは `file://` で開いたページから `marked.js` などを読み込めないため、アプリは起動しません。  
+ローカルで使う場合は、必ず `__winlocal.bat` をダブルクリックして起動してください。  
+（ポート番号を変えたい場合は `__winlocal.bat` 内の `http://localhost:8072/` を編集します）
 
 ## ブラウザからPWAをアプリとしてインストール(任意)
 PWAアプリとしてインストールするとアプリアイコンを作成できます。  
