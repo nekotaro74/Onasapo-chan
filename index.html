@@ -2181,6 +2181,42 @@ body.turf-mode {
             color: #424242;
         }
 
+        /* 自動 / 手動 のトグル。40px 固定幅だと文字がはみ出すため、文字数に応じて広げる */
+        .footer-action-button.mode-toggle-button {
+            width: auto;
+            min-width: 40px;
+            max-width: 96px;
+            padding: 0 8px;
+            font-size: 13px;
+            line-height: 1;
+            white-space: nowrap;
+            letter-spacing: 0;
+        }
+
+        .footer-action-button.mode-auto {
+            background-color: #c62828;
+            color: #ffffff;
+        }
+
+        .footer-action-button.mode-auto:hover:not(:disabled) {
+            background-color: #a51d1d;
+        }
+
+        .footer-action-button.mode-manual {
+            background-color: #757575;
+            color: #ffffff;
+        }
+
+        .footer-action-button.mode-manual:hover:not(:disabled) {
+            background-color: #5f5f5f;
+        }
+
+        .footer-action-button .tts-megaphone-icon {
+            width: 20px;
+            height: 20px;
+            display: block;
+        }
+
         .chat-input-area button#attach-file-btn {
             position: relative;
         }
@@ -2848,13 +2884,34 @@ body.turf-mode {
             word-break: break-word;
         }
 
+        .message-illustration-nav {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+
+        .message-illustration-nav button {
+            font-size: 12px;
+            padding: 3px 10px;
+        }
+
+        .message-illustration-counter {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
         .message-illustration-image {
             display: block;
+            /* 表示幅はこの LLM 応答フィールドの横幅に合わせる */
+            width: 100%;
             max-width: 100%;
-            max-height: 512px;
             height: auto;
             border-radius: 6px;
             border: 1px solid var(--border-tertiary);
+            cursor: zoom-in;
+            /* 縦スクロールはページに渡すので、横方向だけ拾う */
+            touch-action: pan-y;
         }
 
         .message-illustration-details {
@@ -2867,6 +2924,31 @@ body.turf-mode {
             cursor: pointer;
         }
 
+        .message-illustration-prompt-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 4px;
+        }
+
+        .message-illustration-prompt-actions button {
+            font-size: 11px;
+            padding: 3px 8px;
+        }
+
+        .message-illustration-prompt-input {
+            width: 100%;
+            box-sizing: border-box;
+            font-size: 11px;
+            font-family: inherit;
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-tertiary);
+            border-radius: 4px;
+            padding: 6px;
+            margin-top: 4px;
+            resize: vertical;
+        }
+
         .message-illustration-details pre {
             font-size: 11px;
             white-space: pre-wrap;
@@ -2875,6 +2957,62 @@ body.turf-mode {
             border-radius: 4px;
             padding: 6px;
             margin-top: 4px;
+        }
+
+        /* 挿絵の全画面表示。閉じるはボタンか画像外のタップだけ */
+        .illustration-lightbox {
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: rgba(0, 0, 0, 0.86);
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        .illustration-lightbox img {
+            max-width: 100%;
+            max-height: 100%;
+            will-change: transform;
+            cursor: grab;
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
+        .illustration-lightbox.zoomed img {
+            cursor: grab;
+        }
+
+        .illustration-lightbox-close {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 40px;
+            height: 40px;
+            font-size: 20px;
+            line-height: 1;
+            color: #ffffff;
+            background-color: rgba(255, 255, 255, 0.16);
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .illustration-lightbox-close:hover {
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .illustration-lightbox-hint {
+            position: absolute;
+            bottom: 12px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.7);
+            pointer-events: none;
+            white-space: nowrap;
         }
 
         .message-content {
@@ -5077,8 +5215,16 @@ font-size: 1.142em !important;
                     class="footer-action-button hidden">🛞</button>
                 <button id="footer-resummarize-btn" title="現在のチャット履歴を要約" class="footer-action-button hidden">♻️</button>
                 <button id="paste-to-input-btn" title="入力欄に貼り付け" class="footer-action-button">貼</button>
-                <button id="illustration-mode-toggle-btn" title="挿絵生成: 自動 / 手動 の切替" class="footer-action-button hidden">挿</button>
+                <button id="illustration-mode-toggle-btn" title="挿絵生成: 自動 / 手動 の切替"
+                    class="footer-action-button mode-toggle-button hidden">挿:自動</button>
                 <button id="illustration-generate-last-btn" title="直前の応答から挿絵を生成" class="footer-action-button hidden">画</button>
+                <button id="tts-mode-toggle-btn" title="読み上げ: 自動 / 手動 の切替"
+                    class="footer-action-button mode-toggle-button hidden" aria-label="読み上げ: 自動 / 手動 の切替">
+                    <svg class="tts-megaphone-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path fill="currentColor" d="M3 10.5v3a1.5 1.5 0 0 0 1.5 1.5H8l5.2 3.9c.9.7 2.3.1 2.3-1V6.1c0-1.1-1.4-1.7-2.3-1L8 9H4.5A1.5 1.5 0 0 0 3 10.5z" />
+                        <path fill="currentColor" d="M18.4 9.4a3.6 3.6 0 0 1 0 5.2v1.1a4.7 4.7 0 0 0 0-7.4z" />
+                    </svg>
+                </button>
                 <textarea id="user-input" placeholder="メッセージを入力..." rows="1" aria-label="メッセージ入力"></textarea>
                 <button id="attach-file-btn" title="ファイルを添付" class="footer-action-button">+<span
                         class="attachment-badge"></span></button>
@@ -7770,6 +7916,14 @@ font-size: 1.142em !important;
                                 <button id="comfy-template-reset-btn" class="settings-action-button" style="font-size: 12px;">既定に戻す</button>
                                 <hr style="margin: 12px 0; border-top: 1px dashed var(--border-secondary);">
                                 <label class="checkbox-label">
+                                    <input type="checkbox" id="comfy-edit-prompt-toggle">
+                                    画像プロンプトを送信前に編集する
+                                </label>
+                                <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 8px;">
+                                    ※ オンにしたときだけ、初回の quiet 生成後に ComfyUI へ送る前へ文章を編集できます。キャンセルした場合は送しません。<br>
+                                    ※ 再生成は保存済みの文章をそのまま使うため、この編集は走りません（再生成時の文章は画像下の「▶画像プロンプト」で直せます）。
+                                </p>
+                                <label class="checkbox-label">
                                     <input type="checkbox" id="comfy-minimal-processing-toggle">
                                     返文の整形を最小限にする（日本語のまま ComfyUI へ渡す）
                                 </label>
@@ -7819,6 +7973,25 @@ font-size: 1.142em !important;
 
                         <details style="margin-top: 10px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
                             <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
+                                LoRA（最大4個）
+                            </summary>
+                            <div style="padding: 10px; padding-top: 5px;">
+                                <button type="button" id="comfy-lora-refresh-btn" class="settings-action-button" style="font-size: 12px;">LoRA一覧取得</button>
+                                <span id="comfy-lora-status" style="font-size: 12px; margin-left: 8px; color: var(--text-secondary);"></span>
+                                <div id="comfy-lora-rows" style="margin-top: 10px;"></div>
+                                <p style="font-size: 11px; color: var(--text-secondary); margin-top: 10px; margin-bottom: 0;">
+                                    ※ 一覧は <code>GET {base}/models/loras</code> から取得します。既定はすべて「使わない」です。<br>
+                                    ※ <b>同梱の規定ワークフローには LoRA ノードを入れていません</b>。loras フォルダが空でも従来どおり生成できます。<br>
+                                    ※ <code>%lora1%</code>〜<code>%lora4%</code> と <code>%lora_str1%</code>〜<code>%lora_str4%</code> は、ワークフローに書かれている場合だけ使います。<code>%lora_strN%</code> は <code>strength_model</code> と <code>strength_clip</code> の両方に同じ値を入れます。<br>
+                                    ※ <b>使うスロット</b>は、選んだファイル名と入力した強度をそのまま入れます。フォルダが空のときは送らず「LoRAを使うには ComfyUI の loras フォルダにファイルが必要です」と表示します。<br>
+                                    ※ <b>使わないスロット</b>で一覧にファイルがあるときは、ノードの形は変えず、一覧の先頭の実在ファイル名と強度 0 を入れます。標準 LoraLoader は両方の強度が 0 ならファイルを読まず素通しし、LoraLoaderModelOnly は <code>strength_model</code> が 0 なら同じです。<br>
+                                    ※ <b>使わないスロット</b>で loras フォルダが空のときは空文字を送りません。その LoraLoader ノードだけを外して <code>model</code> と <code>clip</code>を受け先へ直結し、ワークフロー全体は書き換えません。
+                                </p>
+                            </div>
+                        </details>
+
+                        <details style="margin-top: 10px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
+                            <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
                                 生成パラメータ
                             </summary>
                             <div style="padding: 10px; padding-top: 5px;">
@@ -7857,7 +8030,7 @@ font-size: 1.142em !important;
                                 <label for="comfy-seed" style="margin-top: 10px;">seed (-1 で毎回ランダム):</label>
                                 <input type="number" id="comfy-seed" min="-1" step="1">
                                 <p style="font-size: 11px; color: var(--text-secondary); margin-top: 5px; margin-bottom: 0;">
-                                    ※ 幅・高さ・steps・CFG scale・Denoise・CLIP Skip・seed は、ワークフロー内の <code>%width%</code> <code>%height%</code> <code>%steps%</code> <code>%cfg%</code>（<code>%scale%</code> にも同じ値）<code>%denoise%</code> <code>%clip_skip%</code> <code>%seed%</code> に差し込まれます。CLIP Skip は ComfyUI 側では負の値として渡されます。<br>
+                                    ※ 幅・高さ・steps・CFG scale・Denoise・CLIP Skip・seed は、ワークフロー内の <code>%width%</code> <code>%height%</code> <code>%steps%</code> <code>%scale%</code>（CFG scale のこと）<code>%denoise%</code> <code>%clip_skip%</code> <code>%seed%</code> に差し込まれます。CLIP Skip は ComfyUI 側では負の値として渡されます。<code>%cfg%</code> は使いません。<br>
                                     ※ 幅・高さの直接入力は「カスタム」のときだけ使われます。
                                 </p>
                                 <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
@@ -8041,6 +8214,16 @@ font-size: 1.142em !important;
         </div>
     </dialog>
 
+    <dialog id="illustrationPromptEditDialog" class="custom-dialog">
+        <p class="dialog-message"></p>
+        <textarea id="illustrationPromptEditInput" class="dialog-input" rows="8"
+            aria-label="送信する画像プロンプト"></textarea>
+        <div class="dialog-actions">
+            <button value="cancel" class="dialog-cancel-btn">キャンセル（送らない）</button>
+            <button value="ok" class="dialog-ok-btn">この文章で送信</button>
+        </div>
+    </dialog>
+
     <dialog id="fileUploadDialog" class="custom-dialog">
         <div class="dialog-content">
             <div class="file-upload-area">
@@ -8179,11 +8362,77 @@ A correctly formatted example response would be:
             { value: '1024x1024', label: '1024 x 1024 (SDXL)' },
             { value: '1024x1536', label: '1024 x 1536 (SDXL 縦)' },
             { value: '1536x1024', label: '1536 x 1024 (SDXL 横)' },
-            { value: 'custom', label: 'カスタム（下の幅・高さを使う）' },
+            { value: 'custom', label: 'カスタム（上の幅・高さを使う）' },
         ];
         // 履歴に data URL で保存するため、縮小と上限で容量を抑える
         const DEFAULT_COMFY_MAX_IMAGE_EDGE = 1024;
         const DEFAULT_COMFY_MAX_IMAGE_BYTES = 400 * 1024;
+        const DEFAULT_COMFY_SAMPLER = 'euler_a';
+        const DEFAULT_COMFY_SCHEDULER = 'normal';
+        // 同梱する規定ワークフロー。SillyTavern 既定ではなく、本アプリが用意した初期値です。
+        // LoRA ノードを含まないので、ComfyUI の loras フォルダが空でも従来どおり生成できます。
+        // VAE と CLIP は CheckpointLoaderSimple の出力を使い、VAELoader / TextEncoderLoader は使いません。
+        const DEFAULT_COMFY_WORKFLOW_ID = 'wf-default';
+        const DEFAULT_COMFY_WORKFLOW_NAME = '同梱ワークフロー（基本）';
+        const DEFAULT_COMFY_WORKFLOW_OBJECT = {
+            "1": {
+                class_type: "CheckpointLoaderSimple",
+                inputs: { ckpt_name: "%model%" },
+                _meta: { title: "モデル読み込み" }
+            },
+            "2": {
+                class_type: "CLIPSetLastLayer",
+                inputs: { clip: ["1", 1], clip_skip: "%clip_skip%" },
+                _meta: { title: "CLIP Skip" }
+            },
+            "3": {
+                class_type: "CLIPTextEncode",
+                inputs: { clip: ["2", 0], text: "%prompt%" },
+                _meta: { title: "画像プロンプト" }
+            },
+            "4": {
+                class_type: "CLIPTextEncode",
+                inputs: { clip: ["2", 0], text: "%negative_prompt%" },
+                _meta: { title: "ネガティブプロンプト" }
+            },
+            "5": {
+                class_type: "EmptyLatentImage",
+                inputs: { width: "%width%", height: "%height%", batch_size: 1 },
+                _meta: { title: "空の Latent" }
+            },
+            "6": {
+                class_type: "KSampler",
+                inputs: {
+                    model: ["1", 0],
+                    positive: ["3", 0],
+                    negative: ["4", 0],
+                    latent_image: ["5", 0],
+                    seed: "%seed%",
+                    steps: "%steps%",
+                    cfg: "%scale%",
+                    sampler_name: "%sampler%",
+                    scheduler: "%scheduler%",
+                    denoise: "%denoise%"
+                },
+                _meta: { title: "サンプル" }
+            },
+            "7": {
+                class_type: "VAEDecode",
+                inputs: { samples: ["6", 0], vae: ["1", 2] },
+                _meta: { title: "VAE デコード" }
+            },
+            "8": {
+                class_type: "SaveImage",
+                inputs: { images: ["7", 0], filename_prefix: "onasapo_" },
+                _meta: { title: "保存" }
+            }
+        };
+        const DEFAULT_COMFY_LORA_SLOTS = 4;
+        const buildDefaultComfyLoraSlots = () => {
+            const slots = [];
+            for (let i = 0; i < DEFAULT_COMFY_LORA_SLOTS; i++) slots.push({ name: '', strength: 1 });
+            return slots;
+        };
         // ▲ ここまで ▲
         const DEFAULT_ICON_NAME_FONT_SIZE = 10;
         const DEFAULT_ICON_NAME_OFFSET_Y = -10;
@@ -8575,6 +8824,11 @@ elevationHoverOption: document.getElementById('elevation-hover-option'),
             promptInput: document.getElementById('promptDialog').querySelector('.dialog-input'),
             promptOkBtn: document.getElementById('promptDialog').querySelector('.dialog-ok-btn'),
             promptCancelBtn: document.getElementById('promptDialog').querySelector('.dialog-cancel-btn'),
+            illustrationPromptEditDialog: document.getElementById('illustrationPromptEditDialog'),
+            illustrationPromptEditMessage: document.getElementById('illustrationPromptEditDialog').querySelector('.dialog-message'),
+            illustrationPromptEditInput: document.getElementById('illustrationPromptEditInput'),
+            illustrationPromptEditOkBtn: document.getElementById('illustrationPromptEditDialog').querySelector('.dialog-ok-btn'),
+            illustrationPromptEditCancelBtn: document.getElementById('illustrationPromptEditDialog').querySelector('.dialog-cancel-btn'),
             enableProofreadingCheckbox: document.getElementById('enable-proofreading'),
             proofreadingOptionsDiv: document.getElementById('proofreading-options'),
             proofreadingApiConfigsList: document.getElementById('proofreading-api-configs-list'),
@@ -8629,6 +8883,10 @@ elevationHoverOption: document.getElementById('elevation-hover-option'),
             comfyMaxImageBytesInput: document.getElementById('comfy-max-image-bytes'),
             comfyShowDebugToggle: document.getElementById('comfy-show-debug-toggle'),
             comfyMinimalProcessingToggle: document.getElementById('comfy-minimal-processing-toggle'),
+            comfyEditPromptToggle: document.getElementById('comfy-edit-prompt-toggle'),
+            comfyLoraRefreshBtn: document.getElementById('comfy-lora-refresh-btn'),
+            comfyLoraStatus: document.getElementById('comfy-lora-status'),
+            comfyLoraRows: document.getElementById('comfy-lora-rows'),
             comfyDebugOutput: document.getElementById('comfy-debug-output'),
             // ▲ ここまで ▲
             fileUploadDialog: document.getElementById('fileUploadDialog'),
@@ -8866,8 +9124,13 @@ geminiIncludeThoughts: false,
                 illustrationMode: 'auto', // 'auto' = 応答完了直後 / 'manual' = 手動のみ
                 comfyBaseUrl: DEFAULT_COMFY_BASE_URL,
                 // 複数ワークフロー管理（旧 comfyWorkflow 単一文字列からは loadSettings で移行する）
-                comfyWorkflows: [],
-                comfyActiveWorkflowId: '', // null にしない（loadSettings の数値変換で壊れる）
+                // 初期値は同梱ワークフロー 1 件。自分で登録すれば上書きできる
+                comfyWorkflows: [{
+                    id: DEFAULT_COMFY_WORKFLOW_ID,
+                    name: DEFAULT_COMFY_WORKFLOW_NAME,
+                    json: JSON.stringify(DEFAULT_COMFY_WORKFLOW_OBJECT, null, 2),
+                }],
+                comfyActiveWorkflowId: DEFAULT_COMFY_WORKFLOW_ID, // null にしない（loadSettings の数値変換で壊れる）
                 comfyCustomPlaceholders: [], // [{ find, replace }]
                 comfyPromptPrefix: '',
                 comfyCharacterPrefix: '',
@@ -8878,8 +9141,8 @@ geminiIncludeThoughts: false,
                 comfyModel: '',
                 comfyVae: '',
                 comfyTextEncoder: '',
-                comfySampler: '',
-                comfyScheduler: '',
+                comfySampler: DEFAULT_COMFY_SAMPLER,
+                comfyScheduler: DEFAULT_COMFY_SCHEDULER,
                 comfyResolutionPreset: 'custom',
                 comfyWidth: DEFAULT_COMFY_WIDTH,
                 comfyHeight: DEFAULT_COMFY_HEIGHT,
@@ -8894,6 +9157,10 @@ geminiIncludeThoughts: false,
                 comfyMaxImageBytes: DEFAULT_COMFY_MAX_IMAGE_BYTES,
                 comfyShowDebug: false,
                 comfyMinimalPromptProcessing: false,
+                // 初回の quiet 生成後、ComfyUI へ送る前に文章を編集できるようにする
+                comfyEditPromptBeforeSend: false,
+                // LoRA は最大4個。name が空のスロットは「使わない」
+                comfyLoras: buildDefaultComfyLoraSlots(),
                 // ▲ ここまで ▲
 deepSeekApiKey: '',
 deepSeekApiEndpoint: '',
@@ -9526,9 +9793,28 @@ const dbUtils = {
                                 state.settings.comfyWorkflows = [{ id: migratedId, name: '移行されたワークフロー', json: legacyWorkflow }];
                                 state.settings.comfyActiveWorkflowId = migratedId;
                             }
+                            // 1 件も無い場合は同梱の規定ワークフローを置く（消した人にも再生成できる状態を返す）
+                            if (state.settings.comfyWorkflows.length === 0) {
+                                state.settings.comfyWorkflows = [{
+                                    id: DEFAULT_COMFY_WORKFLOW_ID,
+                                    name: DEFAULT_COMFY_WORKFLOW_NAME,
+                                    json: JSON.stringify(DEFAULT_COMFY_WORKFLOW_OBJECT, null, 2),
+                                }];
+                                state.settings.comfyActiveWorkflowId = DEFAULT_COMFY_WORKFLOW_ID;
+                            }
                             if (!Array.isArray(state.settings.comfyCustomPlaceholders)) {
                                 state.settings.comfyCustomPlaceholders = [];
                             }
+                            // LoRA スロットは常に 4 個そろえる
+                            const loraSlots = Array.isArray(state.settings.comfyLoras) ? state.settings.comfyLoras : [];
+                            state.settings.comfyLoras = buildDefaultComfyLoraSlots().map((slot, index) => {
+                                const saved = loraSlots[index];
+                                if (!saved || typeof saved !== 'object') return slot;
+                                return {
+                                    name: typeof saved.name === 'string' ? saved.name : '',
+                                    strength: Number.isFinite(Number(saved.strength)) ? Number(saved.strength) : 1,
+                                };
+                            });
 
                             resolve(state.settings);
                         };
@@ -9753,6 +10039,62 @@ const dbUtils = {
         const illustrationUtils = {
             lastDebug: null,
 
+            // 1応答につき複数枚持てる。古いものは消えず、viewIndex が表示中。
+            // 旧形式（imageDataUrl を直に持っていた頃）は images へ寄り込み直す。
+            normalizeIllustration(illustration) {
+                if (!illustration || typeof illustration !== 'object') return null;
+                if (!Array.isArray(illustration.images)) {
+                    illustration.images = [];
+                    if (typeof illustration.imageDataUrl === 'string' && illustration.imageDataUrl) {
+                        illustration.images.push({
+                            dataUrl: illustration.imageDataUrl,
+                            filename: illustration.sourceFilename || '',
+                            bytes: illustration.bytes || 0,
+                            resized: !!illustration.resized,
+                            seed: illustration.seed,
+                            prompt: illustration.prompt || '',
+                            createdAt: illustration.finishedAt || illustration.startedAt || Date.now(),
+                        });
+                    }
+                    delete illustration.imageDataUrl;
+                    delete illustration.sourceFilename;
+                    delete illustration.bytes;
+                    delete illustration.resized;
+                }
+                const count = illustration.images.length;
+                if (!Number.isInteger(illustration.viewIndex) || illustration.viewIndex < 0 || illustration.viewIndex >= count) {
+                    illustration.viewIndex = count > 0 ? count - 1 : 0;
+                }
+                return illustration;
+            },
+
+            hasImages(illustration) {
+                return !!(illustration && Array.isArray(illustration.images) && illustration.images.length > 0);
+            },
+
+            currentImage(illustration) {
+                if (!this.hasImages(illustration)) return null;
+                this.normalizeIllustration(illustration);
+                return illustration.images[illustration.viewIndex] || illustration.images[illustration.images.length - 1] || null;
+            },
+
+            // 新しい1枚を末尾へ足し、そこを表示する（古い画像は残す）
+            pushImage(illustration, image) {
+                this.normalizeIllustration(illustration);
+                illustration.images.push(image);
+                illustration.viewIndex = illustration.images.length - 1;
+                return illustration;
+            },
+
+            // 表示中の1枚だけ消す。無くなったら null を返す（挿絵ブロックごと消す）
+            removeCurrentImage(illustration) {
+                this.normalizeIllustration(illustration);
+                illustration.images.splice(illustration.viewIndex, 1);
+                if (illustration.images.length === 0) return null;
+                illustration.viewIndex = Math.min(illustration.viewIndex, illustration.images.length - 1);
+                return illustration;
+            },
+
             normalizeBaseUrl(rawUrl) {
                 let url = (rawUrl || '').trim();
                 // 末尾スラッシュ（複数含む）を正規化する
@@ -9844,8 +10186,10 @@ const dbUtils = {
             builtinTokens() {
                 return [
                     'prompt', 'negative_prompt', 'model', 'vae', 'text_encoder', 'sampler', 'scheduler',
-                    'steps', 'cfg', 'scale', 'denoise', 'clip_skip', 'width', 'height', 'seed',
+                    'steps', 'scale', 'denoise', 'clip_skip', 'width', 'height', 'seed',
                     'user_avatar', 'char_avatar',
+                    'lora1', 'lora2', 'lora3', 'lora4',
+                    'lora_str1', 'lora_str2', 'lora_str3', 'lora_str4',
                 ];
             },
 
@@ -9877,8 +10221,7 @@ const dbUtils = {
                     width: s.comfyWidth,
                     height: s.comfyHeight,
                     steps: s.comfySteps,
-                    cfg: s.comfyCfg,
-                    // SillyTavern の実ワークフローとの互換: CFG は %scale% という名前だった
+                    // CFG は %scale% のみ。%cfg% は検出も置換もしない（SillyTavern 系ワークフローの表記に合わせる）
                     scale: s.comfyCfg,
                     denoise: denoise,
                     clip_skip: clipSkip,
@@ -9892,6 +10235,13 @@ const dbUtils = {
                 // 空の negative_prompt は正当な設定なので、この規則の対象にしない。
                 for (const key of ['model', 'vae', 'sampler', 'scheduler', 'text_encoder']) {
                     if (values[key] === '' || values[key] === undefined || values[key] === null) delete values[key];
+                }
+                // LoRA トークンはワークフローに含まれている場合だけ効く（含まなければ使われない）。
+                // 実際のノードへの差し込みは applyLoraNodes が行う。
+                for (let slotIndex = 0; slotIndex < this.LORA_SLOT_COUNT; slotIndex++) {
+                    const slot = this.loraSlotConfig(slotIndex);
+                    values['lora' + (slotIndex + 1)] = slot.name;
+                    values['lora_str' + (slotIndex + 1)] = slot.name ? slot.strength : 0;
                 }
                 // カスタム プレースホルダ（SillyTavern の comfy_placeholders 相当）。値はマクロ展開して使う
                 const rows = Array.isArray(s.comfyCustomPlaceholders) ? s.comfyCustomPlaceholders : [];
@@ -10054,6 +10404,136 @@ const dbUtils = {
             // Service Worker が接続失敗の代わりに合成する 503 / 503 JSON を見分ける
             isServiceWorkerNetworkError(bodyText) {
                 return /Network error occurred\.|Offline or network error/.test(bodyText || '');
+            },
+
+            // ── LoRA（最大4個）──────────────────────────────────
+            // 標準 LoraLoader は strength_model / strength_clip が両方 0 ならファイルを読まず素通しする。
+            // LoraLoaderModelOnly は strength_model が 0 なら同じ。
+            // 一覧が空のときは空文字を送らず、その LoraLoader ノードだけを外して直結する。
+            LORA_SLOT_COUNT: 4,
+
+            isLoraLoaderClass(classType) {
+                return /^(LoraLoader|LoraLoaderModelOnly)$/.test(classType || '');
+            },
+
+            hasLoraNodes(nodeObject) {
+                return Object.keys(nodeObject || {}).some(id =>
+                    nodeObject[id] && this.isLoraLoaderClass(nodeObject[id].class_type));
+            },
+
+            loraSlotConfig(index) {
+                const list = Array.isArray(state.settings.comfyLoras) ? state.settings.comfyLoras : [];
+                const slot = list[index] || {};
+                const name = typeof slot.name === 'string' ? slot.name.trim() : '';
+                const strength = Number.isFinite(Number(slot.strength)) ? Number(slot.strength) : 1;
+                return { name: name, strength: strength };
+            },
+
+            // LoraLoader ノードだけを外し、model / clip を受け先へ直結する
+            bypassLoraNode(nodeObject, nodeId) {
+                const node = nodeObject[nodeId];
+                if (!node || !node.inputs || !Array.isArray(node.inputs.model)) return false;
+                const modelSource = node.inputs.model;
+                const clipSource = Array.isArray(node.inputs.clip) ? node.inputs.clip : null;
+                Object.keys(nodeObject).forEach((otherId) => {
+                    if (String(otherId) === String(nodeId)) return;
+                    const other = nodeObject[otherId];
+                    if (!other || !other.inputs || typeof other.inputs !== 'object') return;
+                    Object.keys(other.inputs).forEach((key) => {
+                        const value = other.inputs[key];
+                        if (!Array.isArray(value) || String(value[0]) !== String(nodeId)) return;
+                        // LoraLoader の出力は 0 = MODEL, 1 = CLIP
+                        other.inputs[key] = (Number(value[1]) === 1 && clipSource) ? clipSource : modelSource;
+                    });
+                });
+                delete nodeObject[nodeId];
+                return true;
+            },
+
+            // ワークフロー内の LoraLoader ノードを、スロット順（ノードIDの小さい順）で決める。
+            // loraFiles は GET /models/loras の結果。取得できなかったときは null（ノードの値をそのまま送る）。
+            applyLoraNodes(nodeObject, loraFiles) {
+                const nodeIds = Object.keys(nodeObject)
+                    .filter(id => nodeObject[id] && this.isLoraLoaderClass(nodeObject[id].class_type))
+                    .sort((a, b) => (Number(a) - Number(b)));
+                if (nodeIds.length === 0) return { ok: true, object: nodeObject, notes: [] };
+                const notes = [];
+                for (let i = 0; i < nodeIds.length; i++) {
+                    const nodeId = nodeIds[i];
+                    const node = nodeObject[nodeId];
+                    if (i >= this.LORA_SLOT_COUNT) {
+                        notes.push(`LoRA${i + 1}: スロットが4個までのため、このノードの値のまま送ります`);
+                        continue;
+                    }
+                    const slot = this.loraSlotConfig(i);
+                    const modelOnly = node.class_type === 'LoraLoaderModelOnly';
+                    const knownEmpty = Array.isArray(loraFiles) && loraFiles.length === 0;
+                    if (slot.name) {
+                        if (knownEmpty) {
+                            return {
+                                ok: false,
+                                error: 'LoRAを使うには ComfyUI の loras フォルダにファイルが必要です',
+                            };
+                        }
+                        node.inputs.lora_name = slot.name;
+                        node.inputs.strength_model = slot.strength;
+                        if (!modelOnly) node.inputs.strength_clip = slot.strength;
+                        notes.push(`LoRA${i + 1}: ${slot.name}（強度 ${slot.strength}）`);
+                    } else if (Array.isArray(loraFiles) && loraFiles.length > 0) {
+                        node.inputs.lora_name = loraFiles[0];
+                        node.inputs.strength_model = 0;
+                        if (!modelOnly) node.inputs.strength_clip = 0;
+                        notes.push(`LoRA${i + 1}: 不使用（${loraFiles[0]} / 強度 0）`);
+                    } else if (knownEmpty) {
+                        if (!this.bypassLoraNode(nodeObject, nodeId)) {
+                            return {
+                                ok: false,
+                                error: `LoRA ノード ${nodeId} を外せませんでした（model 入力が未接続です）。`
+                                    + ' loras フォルダにファイルを入れるか、ワークフローから LoRA ノードを削除してください。',
+                            };
+                        }
+                        notes.push(`LoRA${i + 1}: loras フォルダが空のため、そのノードだけ外して直結`);
+                    } else {
+                        notes.push(`LoRA${i + 1}: 一覧を取得できなかったため、ノードに書かれた値のまま送ります`);
+                    }
+                }
+                return { ok: true, object: nodeObject, notes: notes };
+            },
+
+            extractLoraNames(data) {
+                const list = Array.isArray(data) ? data
+                    : (data && Array.isArray(data.loras) ? data.loras : null);
+                if (!list) return [];
+                const names = [];
+                list.forEach(item => {
+                    const name = typeof item === 'string' ? item : (item && (item.name || item.filename));
+                    if (name && !names.includes(name)) names.push(name);
+                });
+                return names;
+            },
+
+            // GET {base}/models/loras（古い ComfyUI では /loras）。失敗時は null を返す
+            loraCache: null,
+            async fetchLoraNames(base, signal) {
+                const cache = this.loraCache;
+                if (cache && cache.base === base && Date.now() - cache.fetchedAt < 300000) return cache.names;
+                for (const path of ['/models/loras', '/loras']) {
+                    let response;
+                    try {
+                        response = await fetch(`${base}${path}`, { method: 'GET', signal: signal });
+                    } catch (error) {
+                        if (error && error.name === 'AbortError') throw error;
+                        continue;
+                    }
+                    if (!response.ok) continue;
+                    const bodyText = await response.text().catch(() => '');
+                    let data = null;
+                    try { data = JSON.parse(bodyText); } catch (error) { continue; }
+                    const names = this.extractLoraNames(data);
+                    this.loraCache = { base: base, fetchedAt: Date.now(), names: names };
+                    return names;
+                }
+                return null;
             },
 
             newClientId() {
@@ -10309,7 +10789,7 @@ const dbUtils = {
                 const workflow = {
                     id: this.newWorkflowId(),
                     name: this.uniqueName(name),
-                    json: String(jsonText || '').trim(),
+                    json: this.prettyJson(jsonText),
                 };
                 if (!Array.isArray(state.settings.comfyWorkflows)) state.settings.comfyWorkflows = [];
                 state.settings.comfyWorkflows.push(workflow);
@@ -10366,6 +10846,40 @@ const dbUtils = {
             },
 
             // ── JSON の書き出し・読み込み ───────────────────────
+            // ファイル名に使う日時（ローカル時刻）。同じ日の複数書き出しでも上書きされない
+            fileTimestamp() {
+                const pad = (num) => String(num).padStart(2, '0');
+                const now = new Date();
+                return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
+                    + `-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+            },
+
+            // ワークフロー名そのままはファイル名に使えないので、禁止文字だけ置き換える
+            safeFileName(name) {
+                const cleaned = String(name || '').trim()
+                    .replace(/[\\/:*?"<>|]+/g, '_')
+                    .replace(/\s+/g, ' ');
+                return cleaned || 'workflow';
+            },
+
+            // 整形して保存する（編集欄でも改行付きで読める）。パースできなければ原文のまま
+            prettyJson(text) {
+                try {
+                    return JSON.stringify(JSON.parse(text), null, 2);
+                } catch (error) {
+                    return String(text || '');
+                }
+            },
+
+            // 書き出し用。パースできるならオブジェクトのまま入れて、全体を整形させる
+            parseOrRaw(text) {
+                try {
+                    return JSON.parse(text);
+                } catch (error) {
+                    return String(text || '');
+                }
+            },
+
             exportWorkflows(ids) {
                 const list = this.getList();
                 const targets = ids && ids.length ? list.filter(workflow => ids.includes(workflow.id)) : list;
@@ -10373,13 +10887,21 @@ const dbUtils = {
                     uiUtils.showCustomAlert('書き出すワークフローがありません。');
                     return;
                 }
-                const payload = targets.map(workflow => ({ name: workflow.name, json: workflow.json }));
+                const timestamp = this.fileTimestamp();
+                let payload, fileName;
+                if (targets.length === 1) {
+                    // 1件は ComfyUI へそのまま放り込める API 形式そのものとして出す
+                    payload = this.parseOrRaw(targets[0].json);
+                    fileName = `${this.safeFileName(targets[0].name)}-${timestamp}.json`;
+                } else {
+                    payload = targets.map(workflow => ({ name: workflow.name, json: this.parseOrRaw(workflow.json) }));
+                    fileName = `comfyui_workflows-${timestamp}.json`;
+                }
                 const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
                 a.href = url;
-                a.download = `comfyui_workflows_${timestamp}.json`;
+                a.download = fileName;
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
@@ -10408,15 +10930,20 @@ const dbUtils = {
                 }
 
                 const candidates = [];
-                const baseName = (file.name || 'imported').replace(/\.json$/i, '');
+                // 書き出し名 myflow-20261004-143012.json を元のワークフロー名に戻す
+                const baseName = (file.name || 'imported')
+                    .replace(/\.json$/i, '')
+                    .replace(/-\d{8}-\d{6}$/, '');
+                const asText = (value) => (typeof value === 'string' ? value : JSON.stringify(value));
                 if (Array.isArray(parsed)) {
                     parsed.forEach(item => {
-                        if (item && typeof item === 'object' && typeof item.json === 'string') {
-                            candidates.push({ name: item.name, json: item.json });
-                        }
+                        if (!item || typeof item !== 'object') return;
+                        const raw = item.json !== undefined ? item.json : item.workflow;
+                        if (raw && typeof raw === 'object') candidates.push({ name: item.name, json: asText(raw) });
+                        else if (typeof raw === 'string') candidates.push({ name: item.name, json: raw });
                     });
                 } else if (parsed && typeof parsed === 'object') {
-                    candidates.push({ name: baseName, json: JSON.stringify(parsed) });
+                    candidates.push({ name: baseName, json: asText(parsed) });
                 }
 
                 if (candidates.length === 0) {
@@ -10549,18 +11076,131 @@ const dbUtils = {
                 if (select.value !== (currentValue || '')) select.value = '';
             },
 
-            toOptions(values) {
-                return values.map(value => ({ value: value, label: this.displayLabel(value) }));
+            // raw = true のときはファイル名をそのまま出す。
+            // モデル / VAE / テキストエンコーダは実在ファイル名を目視で確認したいので省略しない。
+            toOptions(values, raw) {
+                return values.map(value => ({ value: value, label: raw ? String(value) : this.displayLabel(value) }));
             },
 
             renderTokenDropdowns() {
                 const choices = this.choices;
                 if (!choices) return;
-                this.fillSelect(elements.comfyModelSelect, this.toOptions(choices.models), state.settings.comfyModel, '（未選択）');
-                this.fillSelect(elements.comfyVaeSelect, this.toOptions(choices.vaes), state.settings.comfyVae, '自動（指定しない）');
-                this.fillSelect(elements.comfyTextEncoderSelect, this.toOptions(choices.textEncoders), state.settings.comfyTextEncoder, '（未選択）');
+                this.fillSelect(elements.comfyModelSelect, this.toOptions(choices.models, true), state.settings.comfyModel, '（未選択）');
+                this.fillSelect(elements.comfyVaeSelect, this.toOptions(choices.vaes, true), state.settings.comfyVae, '自動（指定しない）');
+                this.fillSelect(elements.comfyTextEncoderSelect, this.toOptions(choices.textEncoders, true), state.settings.comfyTextEncoder, '（未選択）');
                 this.fillSelect(elements.comfySamplerSelect, this.toOptions(choices.samplers), state.settings.comfySampler, '（未選択）');
                 this.fillSelect(elements.comfySchedulerSelect, this.toOptions(choices.schedulers), state.settings.comfyScheduler, '（未選択）');
+            },
+
+            // ── LoRA 一覧（最大4個）─────────────────────────────
+            loraChoices: null,
+
+            async refreshLoras(statusElement) {
+                if (statusElement) {
+                    statusElement.textContent = 'LoRA 一覧取得中…';
+                    statusElement.style.color = 'var(--text-secondary)';
+                }
+                try {
+                    const base = illustrationUtils.normalizeBaseUrl(state.settings.comfyBaseUrl);
+                    if (!base) throw new Error('ComfyUI base URL が設定されていません。');
+                    illustrationUtils.loraCache = null;
+                    const names = await illustrationUtils.fetchLoraNames(base, null);
+                    if (names === null) throw new Error('LoRA 一覧を取得できませんでした（/models/loras）。');
+                    this.loraChoices = names;
+                    this.renderLoraRows();
+                    if (statusElement) {
+                        statusElement.textContent = names.length
+                            ? `取得OK（${names.length} 件）`
+                            : '取得OK（loras フォルダは空です）';
+                        statusElement.style.color = 'var(--text-success, var(--text-link))';
+                    }
+                    return { ok: true, names: names };
+                } catch (error) {
+                    if (statusElement) {
+                        statusElement.textContent = error.message;
+                        statusElement.style.color = 'var(--text-error, var(--text-link))';
+                    }
+                    return { ok: false, error: error.message };
+                }
+            },
+
+            renderLoraRows() {
+                const container = elements.comfyLoraRows;
+                if (!container) return;
+                if (!Array.isArray(state.settings.comfyLoras)) {
+                    state.settings.comfyLoras = buildDefaultComfyLoraSlots();
+                }
+                const names = this.loraChoices || [];
+                container.innerHTML = '';
+                for (let slotIndex = 0; slotIndex < illustrationUtils.LORA_SLOT_COUNT; slotIndex++) {
+                    const slot = illustrationUtils.loraSlotConfig(slotIndex);
+                    const row = document.createElement('div');
+                    row.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:6px;';
+
+                    const label = document.createElement('span');
+                    label.textContent = `LoRA ${slotIndex + 1}:`;
+                    label.style.cssText = 'font-size:12px; min-width:56px;';
+                    row.appendChild(label);
+
+                    const select = document.createElement('select');
+                    select.setAttribute('aria-label', `LoRA ${slotIndex + 1}`);
+                    select.style.cssText = 'flex:1 1 220px; margin-bottom:0;';
+                    const noneOption = document.createElement('option');
+                    noneOption.value = '';
+                    noneOption.textContent = '使わない';
+                    select.appendChild(noneOption);
+                    names.forEach(name => {
+                        const option = document.createElement('option');
+                        option.value = name;
+                        option.textContent = name;
+                        select.appendChild(option);
+                    });
+                    if (slot.name && !names.includes(slot.name)) {
+                        const option = document.createElement('option');
+                        option.value = slot.name;
+                        option.textContent = `（このサーバーに無い: ${slot.name}）`;
+                        select.appendChild(option);
+                    }
+                    select.value = slot.name || '';
+                    select.addEventListener('change', () => this.setLoraSlot(slotIndex, { name: select.value }));
+                    row.appendChild(select);
+
+                    const strengthLabel = document.createElement('span');
+                    strengthLabel.textContent = '強度:';
+                    strengthLabel.style.fontSize = '12px';
+                    row.appendChild(strengthLabel);
+
+                    const strength = document.createElement('input');
+                    strength.type = 'number';
+                    strength.min = '-2';
+                    strength.max = '4';
+                    strength.step = '0.05';
+                    strength.value = slot.strength;
+                    strength.style.cssText = 'width:70px; margin-bottom:0;';
+                    strength.setAttribute('aria-label', `LoRA ${slotIndex + 1} 強度`);
+                    strength.addEventListener('change', () => {
+                        const value = Number(strength.value);
+                        this.setLoraSlot(slotIndex, { strength: Number.isFinite(value) ? value : 1 });
+                    });
+                    row.appendChild(strength);
+
+                    container.appendChild(row);
+                }
+                if (names.length === 0) {
+                    const note = document.createElement('p');
+                    note.style.cssText = 'font-size:11px; color: var(--text-secondary); margin: 4px 0 0 0;';
+                    note.textContent = '（一覧未取得。使うスロットが無ければ、未取得のままでも生成できます）';
+                    container.appendChild(note);
+                }
+            },
+
+            async setLoraSlot(index, patch) {
+                if (!Array.isArray(state.settings.comfyLoras)) {
+                    state.settings.comfyLoras = buildDefaultComfyLoraSlots();
+                }
+                const slot = state.settings.comfyLoras[index] || { name: '', strength: 1 };
+                state.settings.comfyLoras[index] = Object.assign({}, slot, patch);
+                await dbUtils.saveSetting('comfyLoras', state.settings.comfyLoras);
             },
 
             async refreshChoices(statusElement, force) {
@@ -11595,8 +12235,11 @@ appendMessage(role, content, index, isStreamingPlaceholder = false, cascadeInfo 
             },
             // 挿絵はメッセージ本体の直下に置く。失敗しても本編テキストはそのまま残す。
             appendIllustrationBlock(messageDiv, index) {
-                const illustration = state.currentMessages[index] && state.currentMessages[index].illustration;
+                const message = state.currentMessages[index];
+                if (!message) return;
+                const illustration = illustrationUtils.normalizeIllustration(message.illustration);
                 if (!illustration) return;
+                const imageCount = illustration.images.length;
 
                 const block = document.createElement('div');
                 block.classList.add('message-illustration');
@@ -11607,22 +12250,32 @@ appendMessage(role, content, index, isStreamingPlaceholder = false, cascadeInfo 
 
                 const regenerateButton = document.createElement('button');
                 regenerateButton.textContent = '挿絵を再生成';
-                regenerateButton.title = 'この応答から挿絵を再生成する';
+                regenerateButton.title = 'この応答から挿絵を再生成する（保存済みプロンプトを使い、1枚として足す）';
                 regenerateButton.classList.add('js-illustration-regenerate-btn');
                 regenerateButton.dataset.index = index;
                 header.appendChild(regenerateButton);
 
-                const deleteButton = document.createElement('button');
-                deleteButton.textContent = '削除';
-                deleteButton.title = 'この挿絵を削除する';
-                deleteButton.classList.add('js-illustration-delete-btn');
-                deleteButton.dataset.index = index;
-                header.appendChild(deleteButton);
+                if (imageCount > 0) {
+                    const deleteOneButton = document.createElement('button');
+                    deleteOneButton.textContent = 'この画像を削除';
+                    deleteOneButton.title = '表示中の1枚だけを削除する';
+                    deleteOneButton.classList.add('js-illustration-delete-one-btn');
+                    deleteOneButton.dataset.index = index;
+                    header.appendChild(deleteOneButton);
 
-                if (illustration.status === 'done' && illustration.seed !== undefined) {
+                    const deleteAllButton = document.createElement('button');
+                    deleteAllButton.textContent = 'この応答の画像をすべて削除';
+                    deleteAllButton.title = 'この応答に生成された画像をすべて削除する';
+                    deleteAllButton.classList.add('js-illustration-delete-all-btn');
+                    deleteAllButton.dataset.index = index;
+                    header.appendChild(deleteAllButton);
+                }
+
+                const current = illustrationUtils.currentImage(illustration);
+                if (current && current.seed !== undefined) {
                     const seedSpan = document.createElement('span');
                     seedSpan.classList.add('message-illustration-meta');
-                    seedSpan.textContent = `seed ${illustration.seed}${illustration.resized ? ' (縮小)' : ''}`;
+                    seedSpan.textContent = `seed ${current.seed}${current.resized ? ' (縮小)' : ''}`;
                     header.appendChild(seedSpan);
                 }
                 block.appendChild(header);
@@ -11639,26 +12292,189 @@ appendMessage(role, content, index, isStreamingPlaceholder = false, cascadeInfo 
                     errorBox.classList.add('message-illustration-error');
                     errorBox.textContent = `挿絵の生成に失敗: ${illustration.error}`;
                     block.appendChild(errorBox);
-                } else if (illustration.status === 'done' && illustration.imageDataUrl) {
+                }
+
+                // 画像は再生成中も前のものを残して出す
+                if (imageCount > 0) {
+                    const gallery = document.createElement('div');
+                    gallery.classList.add('message-illustration-gallery');
+                    gallery.dataset.index = index;
+
+                    if (imageCount > 1) {
+                        const nav = document.createElement('div');
+                        nav.classList.add('message-illustration-nav');
+
+                        const prevButton = document.createElement('button');
+                        prevButton.textContent = '◀';
+                        prevButton.title = '古い画像へ';
+                        prevButton.classList.add('js-illustration-prev-btn');
+                        prevButton.dataset.index = index;
+                        nav.appendChild(prevButton);
+
+                        const counter = document.createElement('span');
+                        counter.classList.add('message-illustration-counter');
+                        counter.textContent = `${illustration.viewIndex + 1} / ${imageCount}`;
+                        nav.appendChild(counter);
+
+                        const nextButton = document.createElement('button');
+                        nextButton.textContent = '▶';
+                        nextButton.title = '新しい画像へ';
+                        nextButton.classList.add('js-illustration-next-btn');
+                        nextButton.dataset.index = index;
+                        nav.appendChild(nextButton);
+
+                        gallery.appendChild(nav);
+                    }
+
                     const img = document.createElement('img');
                     img.classList.add('message-illustration-image');
-                    img.src = illustration.imageDataUrl;
+                    img.src = current.dataUrl;
                     img.alt = '挿絵';
                     img.loading = 'lazy';
-                    block.appendChild(img);
+                    img.dataset.index = index;
+                    img.title = 'クリック（タップ）で全画面。左右スワイプで切替';
+                    gallery.appendChild(img);
+                    block.appendChild(gallery);
+                }
 
+                if (illustration.prompt) {
                     const details = document.createElement('details');
                     details.classList.add('message-illustration-details');
                     const summary = document.createElement('summary');
-                    summary.textContent = '画像プロンプト';
+                    summary.textContent = '▶画像プロンプト';
                     details.appendChild(summary);
-                    const pre = document.createElement('pre');
-                    pre.textContent = illustration.prompt || '';
-                    details.appendChild(pre);
+
+                    const actions = document.createElement('div');
+                    actions.classList.add('message-illustration-prompt-actions');
+                    const copyButton = document.createElement('button');
+                    copyButton.textContent = 'コピー';
+                    copyButton.title = '画像プロンプトをコピーする';
+                    copyButton.classList.add('js-illustration-prompt-copy-btn');
+                    copyButton.dataset.index = index;
+                    actions.appendChild(copyButton);
+                    const saveButton = document.createElement('button');
+                    saveButton.textContent = 'この文章で再生成';
+                    saveButton.title = '編集した文章を保存して再生成する';
+                    saveButton.classList.add('js-illustration-prompt-regenerate-btn');
+                    saveButton.dataset.index = index;
+                    actions.appendChild(saveButton);
+                    details.appendChild(actions);
+
+                    const textarea = document.createElement('textarea');
+                    textarea.classList.add('message-illustration-prompt-input');
+                    textarea.rows = 3;
+                    textarea.value = illustration.prompt;
+                    textarea.dataset.index = index;
+                    textarea.addEventListener('change', () => {
+                        appLogic.saveIllustrationPrompt(index, textarea.value);
+                    });
+                    details.appendChild(textarea);
+
+                    if (illustration.negativePrompt) {
+                        const negativeLabel = document.createElement('div');
+                        negativeLabel.classList.add('message-illustration-meta');
+                        negativeLabel.textContent = 'ネガティブプロンプト';
+                        details.appendChild(negativeLabel);
+                        const negativePre = document.createElement('pre');
+                        negativePre.textContent = illustration.negativePrompt;
+                        details.appendChild(negativePre);
+                    }
                     block.appendChild(details);
                 }
 
                 messageDiv.appendChild(block);
+            },
+            // 挿絵を全画面で見る。閉じるは ✕ ボタンか画像外のタップだけ。
+            // ホイールとピンチで拡縮し、画像上のタップでは閉じない。
+            openIllustrationLightbox(index) {
+                const message = state.currentMessages[index];
+                if (!message) return;
+                const source = illustrationUtils.currentImage(message.illustration);
+                if (!source) return;
+                if (state.illustrationLightbox) return;
+
+                const overlay = document.createElement('div');
+                overlay.classList.add('illustration-lightbox');
+                const img = document.createElement('img');
+                img.src = source.dataUrl;
+                img.alt = '挿絵（全画面）';
+                const closeBtn = document.createElement('button');
+                closeBtn.classList.add('illustration-lightbox-close');
+                closeBtn.textContent = '✕';
+                closeBtn.title = '閉じる';
+                const hint = document.createElement('div');
+                hint.classList.add('illustration-lightbox-hint');
+                hint.textContent = 'ホイール / ピンチで拡縮　画像外をタップで閉じる';
+                overlay.appendChild(img);
+                overlay.appendChild(closeBtn);
+                overlay.appendChild(hint);
+                document.body.appendChild(overlay);
+                state.illustrationLightbox = overlay;
+
+                let scale = 1, offsetX = 0, offsetY = 0;
+                const apply = () => {
+                    img.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+                    overlay.classList.toggle('zoomed', scale > 1);
+                };
+                const setScale = (next) => {
+                    scale = Math.min(8, Math.max(1, next));
+                    if (scale === 1) { offsetX = 0; offsetY = 0; }
+                    apply();
+                };
+                const close = () => {
+                    if (!state.illustrationLightbox) return;
+                    state.illustrationLightbox = null;
+                    overlay.remove();
+                    document.removeEventListener('keydown', onKey);
+                };
+                const onKey = (event) => { if (event.key === 'Escape') close(); };
+                document.addEventListener('keydown', onKey);
+
+                closeBtn.addEventListener('click', (event) => { event.stopPropagation(); close(); });
+                // 画像そのもののタップは閉じる理由にしない（拡縮・パンの操作と区別できないため）
+                img.addEventListener('click', (event) => { event.stopPropagation(); });
+                overlay.addEventListener('pointerdown', (event) => {
+                    if (event.target === overlay) close();
+                });
+
+                overlay.addEventListener('wheel', (event) => {
+                    event.preventDefault();
+                    setScale(scale * (event.deltaY < 0 ? 1.15 : 1 / 1.15));
+                }, { passive: false });
+
+                const pointers = new Map();
+                let pinchDistance = 0, pinchScale = 1;
+                img.addEventListener('pointerdown', (event) => {
+                    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+                    if (pointers.size === 2) {
+                        const points = Array.from(pointers.values());
+                        pinchDistance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+                        pinchScale = scale;
+                    }
+                });
+                img.addEventListener('pointermove', (event) => {
+                    if (!pointers.has(event.pointerId)) return;
+                    const previous = pointers.get(event.pointerId);
+                    if (pointers.size === 1 && scale > 1) {
+                        offsetX += event.clientX - previous.x;
+                        offsetY += event.clientY - previous.y;
+                        apply();
+                    }
+                    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+                    if (pointers.size === 2 && pinchDistance > 0) {
+                        const points = Array.from(pointers.values());
+                        const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+                        setScale(pinchScale * (distance / pinchDistance));
+                    }
+                });
+                const releasePointer = (event) => {
+                    pointers.delete(event.pointerId);
+                    pinchDistance = 0;
+                    pinchScale = scale;
+                };
+                img.addEventListener('pointerup', releasePointer);
+                img.addEventListener('pointercancel', releasePointer);
+                apply();
             },
             // メッセージ全体を再描画せず、挿絵ブロックだけ差し替える
             rerenderIllustration(index) {
@@ -13213,6 +14029,8 @@ elements.footerTapScrollToBottomToggle.checked = state.settings.footerTapScrollT
                 elements.comfyMaxImageBytesInput.value = state.settings.comfyMaxImageBytes ?? DEFAULT_COMFY_MAX_IMAGE_BYTES;
                 elements.comfyShowDebugToggle.checked = !!state.settings.comfyShowDebug;
                 elements.comfyMinimalProcessingToggle.checked = !!state.settings.comfyMinimalPromptProcessing;
+                elements.comfyEditPromptToggle.checked = !!state.settings.comfyEditPromptBeforeSend;
+                comfyWorkflowUtils.renderLoraRows();
                 comfyWorkflowUtils.renderList();
                 comfyWorkflowUtils.renderEditor();
                 comfyWorkflowUtils.renderCustomPlaceholders();
@@ -13258,7 +14076,22 @@ elements.footerTapScrollToBottomToggle.checked = state.settings.footerTapScrollT
                 const isAuto = state.settings.illustrationMode !== 'manual';
                 elements.illustrationModeToggleBtn.textContent = isAuto ? '挿:自動' : '挿:手動';
                 elements.illustrationModeToggleBtn.title = `挿絵生成: ${isAuto ? '自動' : '手動'}（クリックで切替）`;
+                elements.illustrationModeToggleBtn.classList.toggle('mode-auto', isAuto);
+                elements.illustrationModeToggleBtn.classList.toggle('mode-manual', !isAuto);
                 elements.illustrationGenerateLastBtn.disabled = !!state.illustrationJob;
+                const hasImageOnLast = (() => {
+                    for (let i = state.currentMessages.length - 1; i >= 0; i--) {
+                        const msg = state.currentMessages[i];
+                        if (msg.role === 'model' && msg.content && !msg.error) {
+                            return illustrationUtils.hasImages(msg.illustration);
+                        }
+                    }
+                    return false;
+                })();
+                // 画像済みの応答に対する「画」は再生成、画像の無い応答に対する「画」は初回生成
+                elements.illustrationGenerateLastBtn.title = hasImageOnLast
+                    ? '直前の応答から挿絵を再生成する（画像プロンプトは使い回す）'
+                    : '直前の応答から挿絵を生成する';
             },
             applyMinimizeUI() {
                 elements.appContainer.classList.toggle('minimized-ui', state.settings.minimizeHeaderFooter);
@@ -15005,6 +15838,11 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                         uiUtils.updateComfyDebugOutput();
                     });
                 }
+                if (elements.comfyLoraRefreshBtn) {
+                    elements.comfyLoraRefreshBtn.addEventListener('click', () => {
+                        comfyWorkflowUtils.refreshLoras(elements.comfyLoraStatus);
+                    });
+                }
                 // ▲ ここまで ▲
 
                 elements.newChatBtn.addEventListener('click', () => {
@@ -15738,11 +16576,40 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                             appLogic.generateIllustration(index);
                             return;
                         }
-                        if (button.classList.contains('js-illustration-delete-btn')) {
-                            appLogic.deleteIllustration(index);
+                        if (button.classList.contains('js-illustration-delete-one-btn')) {
+                            appLogic.deleteOneIllustration(index);
+                            return;
+                        }
+                        if (button.classList.contains('js-illustration-delete-all-btn')) {
+                            appLogic.deleteAllIllustrations(index);
+                            return;
+                        }
+                        if (button.classList.contains('js-illustration-prev-btn')) {
+                            appLogic.cycleIllustrationView(index, -1);
+                            return;
+                        }
+                        if (button.classList.contains('js-illustration-next-btn')) {
+                            appLogic.cycleIllustrationView(index, 1);
+                            return;
+                        }
+                        if (button.classList.contains('js-illustration-prompt-copy-btn')) {
+                            appLogic.copyIllustrationPrompt(index, button);
+                            return;
+                        }
+                        if (button.classList.contains('js-illustration-prompt-regenerate-btn')) {
+                            appLogic.regenerateIllustrationWithPrompt(index);
                             return;
                         }
                     }
+
+                    // 挿絵そのもののタップはメッセージのアクション表示ではなく全画面表示として扱う
+                    const illustrationImage = target.closest && target.closest('.message-illustration-image');
+                    if (illustrationImage) {
+                        if (appLogic.consumeIllustrationSwipe()) return;
+                        uiUtils.openIllustrationLightbox(parseInt(illustrationImage.dataset.index, 10));
+                        return;
+                    }
+                    if (target.closest('.message-illustration-details, .message-illustration-prompt-input')) return;
 
                     if (target.closest('.interactive-title-content, .code-copy-button, a[href="#"], .thought-summary-details summary, .attachment-actions button, .add-more-attachments-btn')) {
                         return;
@@ -15873,6 +16740,34 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                         this.cancelAttachment();
                     }
                 });
+
+                // 挿絵の左右スワイプで画像を切り替える。縦方向はページに渡すので奪わない
+                let illustrationSwipeStart = null;
+                elements.messageContainer.addEventListener('pointerdown', (event) => {
+                    const image = event.target.closest && event.target.closest('.message-illustration-image');
+                    if (!image) return;
+                    illustrationSwipeStart = {
+                        x: event.clientX,
+                        y: event.clientY,
+                        index: parseInt(image.dataset.index, 10),
+                    };
+                });
+                elements.messageContainer.addEventListener('pointerup', (event) => {
+                    if (!illustrationSwipeStart) return;
+                    const start = illustrationSwipeStart;
+                    illustrationSwipeStart = null;
+                    const dx = event.clientX - start.x;
+                    const dy = event.clientY - start.y;
+                    // 横移動が明確なときだけ拾う（縦スクロールの途中では発動しない）
+                    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+                        state.pendingIllustrationSwipe = true;
+                        appLogic.cycleIllustrationView(start.index, dx < 0 ? 1 : -1);
+                    }
+                });
+                elements.messageContainer.addEventListener('pointercancel', () => {
+                    illustrationSwipeStart = null;
+                });
+
                 elements.messageContainer.addEventListener('click', (event) => {
                     const targetButton = event.target.closest('.message-toggle-button');
                     if (targetButton && targetButton.dataset.action === 'toggle-collapse') {
@@ -16037,6 +16932,13 @@ helpIcons.forEach(icon => {
                     return;
                 }
                 if (event.target.tagName === 'TEXTAREA' || event.target.tagName === 'INPUT') return;
+                // 挿絵の上の横スワイプは画像の切り替えに使うので、応答切替には使わない
+                if (event.target.closest && event.target.closest('.message-illustration-image')) {
+                    state.touchStartX = 0;
+                    state.touchStartY = 0;
+                    state.isSwiping = false;
+                    return;
+                }
                 if (event.touches.length > 1 || state.isZoomed) {
                     state.touchStartX = 0;
                     state.touchStartY = 0;
@@ -17175,13 +18077,20 @@ helpIcons.forEach(icon => {
                 };
             },
             // 挿絵生成の入口。同時実行は1件に制限し、実行中の再要求は断る。
-            async generateIllustration(messageIndex) {
+            // 保存済みプロンプトがある場合は LLM を呼ばず、そのまま ComfyUI へ送る。
+            async generateIllustration(messageIndex, options) {
                 if (!state.settings.illustrationEnabled) return;
                 if (state.illustrationJob) {
                     await uiUtils.showCustomAlert('挿絵の生成中です。完了してから再度実行してください。');
                     return;
                 }
-                state.illustrationJob = { startedAt: Date.now(), controller: new AbortController() };
+                const opts = options || {};
+                const clickedAt = Date.now();
+                const stamp = (label) => {
+                    console.log(`[挿絵] ${label} ${new Date(Date.now()).toISOString()} (+${Date.now() - clickedAt}ms)`);
+                };
+                stamp('起動（クリック／自動）');
+                state.illustrationJob = { startedAt: clickedAt, controller: new AbortController() };
                 uiUtils.updateIllustrationFooterButtons();
 
                 let targetIndex;
@@ -17194,6 +18103,8 @@ helpIcons.forEach(icon => {
                     await uiUtils.showCustomAlert(`挿絵の生成に失敗しました: ${error.message}`);
                     return;
                 }
+                // 生成前の状態（画像は残したまま再生成する）
+                const hadImages = illustrationUtils.hasImages(state.currentMessages[targetIndex].illustration);
 
                 try {
                     // LLM を呼ぶ前に設定側で弾けるものを弾く（トークンを無駄にしないため）
@@ -17207,7 +18118,45 @@ helpIcons.forEach(icon => {
                     const prepared = illustrationUtils.prepareWorkflow(parsed.object);
                     if (!prepared.ok) throw new Error(prepared.error);
 
-                    const built = await this.buildIllustrationPrompt(targetIndex);
+                    // LoRA はノード単位で差し替え／素通し／除去を決める（トークン有無に関わらず）。
+                    // LoRA ノードの無いワークフローでは、送信前の余分な往復を省くため一覧を取らない。
+                    let loraFiles = null;
+                    if (illustrationUtils.hasLoraNodes(prepared.object)) {
+                        loraFiles = await illustrationUtils.fetchLoraNames(base, state.illustrationJob.controller.signal);
+                    }
+                    const loraApplied = illustrationUtils.applyLoraNodes(prepared.object, loraFiles);
+                    if (!loraApplied.ok) throw new Error(loraApplied.error);
+
+                    const existing = state.currentMessages[targetIndex].illustration || {};
+                    const storedPrompt = typeof existing.prompt === 'string' ? existing.prompt.trim() : '';
+                    let built;
+                    if (storedPrompt && !opts.forceNewPrompt) {
+                        // 再生成: quiet プロンプトを作り直さない。本家 SillyTavern より遅くなる主因だった
+                        console.log('[挿絵] 保存済みの画像プロンプトをそのまま使用（クラウドLLMは呼びません）');
+                        built = {
+                            targetIndex: targetIndex,
+                            keywords: existing.keywords || '',
+                            finalPrompt: storedPrompt,
+                            negativePrompt: typeof existing.negativePrompt === 'string' ? existing.negativePrompt : '',
+                        };
+                    } else {
+                        built = await this.buildIllustrationPrompt(targetIndex);
+                        // 初回生成だけ、送信前に文章を編集できる（キャンセルなら送らない）
+                        if (state.settings.comfyEditPromptBeforeSend) {
+                            const edited = await this.editIllustrationPromptBeforeSend(built.finalPrompt);
+                            if (edited === null) {
+                                console.log('[挿絵] プロンプト編集でキャンセルしたため、ComfyUI へ送りませんでした。');
+                                if (hadImages) {
+                                    this.setIllustrationOnMessage(targetIndex, { status: 'done' });
+                                } else {
+                                    this.clearIllustrationOnMessage(targetIndex);
+                                }
+                                return;
+                            }
+                            built.finalPrompt = edited;
+                        }
+                    }
+                    stamp('画像プロンプト確定');
 
                     const promptValues = Object.assign(
                         { prompt: built.finalPrompt, negative_prompt: built.negativePrompt },
@@ -17236,27 +18185,37 @@ helpIcons.forEach(icon => {
                         startedAt: Date.now(),
                     });
 
+                    stamp('POST /prompt 送信直前');
                     const promptId = await this.submitWithClient(base, finalWorkflow, state.illustrationJob.controller.signal);
+                    stamp(`POST /prompt 完了（prompt_id=${promptId}）`);
                     const historyEntry = await illustrationUtils.waitForHistory(
                         base, promptId,
                         state.settings.comfyTimeoutMs, state.settings.comfyPollIntervalMs,
                         state.illustrationJob.controller.signal);
+                    stamp('ComfyUI の history 完了（got prompt 以降の実生成込み）');
                     const image = await illustrationUtils.fetchOutputImage(base, historyEntry, state.illustrationJob.controller.signal);
                     const shrunk = await illustrationUtils.shrinkImageBlob(
                         image.blob, state.settings.comfyMaxImageEdge, state.settings.comfyMaxImageBytes);
 
+                    // 古い画像は残し、この1枚を末尾へ足して表示する
+                    illustrationUtils.pushImage(state.currentMessages[targetIndex].illustration, {
+                        dataUrl: shrunk.dataUrl,
+                        filename: image.filename,
+                        bytes: shrunk.bytes,
+                        resized: shrunk.resized,
+                        seed: prepared.seed,
+                        prompt: built.finalPrompt,
+                        createdAt: Date.now(),
+                    });
                     this.setIllustrationOnMessage(targetIndex, {
                         status: 'done',
                         prompt: built.finalPrompt,
                         keywords: built.keywords,
                         negativePrompt: built.negativePrompt,
                         seed: prepared.seed,
-                        imageDataUrl: shrunk.dataUrl,
-                        sourceFilename: image.filename,
-                        bytes: shrunk.bytes,
-                        resized: shrunk.resized,
                         finishedAt: Date.now(),
                     });
+                    stamp('画像を履歴へ保存');
                     await dbUtils.saveChat();
                 } catch (error) {
                     // 挿絵の失敗は本編テキストと分離して、そのメッセージ直下にだけ表示する
@@ -17274,15 +18233,108 @@ helpIcons.forEach(icon => {
             async submitWithClient(base, workflowText, signal) {
                 return illustrationUtils.submitWorkflow(base, workflowText, illustrationUtils.newClientId(), signal);
             },
-            // 生成済み（または失敗表示の）挿絵をメッセージから取り除く
-            async deleteIllustration(messageIndex) {
+            // 表示中の1枚だけを削除する
+            async deleteOneIllustration(messageIndex) {
                 const message = state.currentMessages[messageIndex];
-                if (!message || !message.illustration) return;
-                const ok = await uiUtils.showCustomConfirm('この挿絵を削除しますか。');
+                if (!message || !illustrationUtils.hasImages(message.illustration)) return;
+                const ok = await uiUtils.showCustomConfirm('この画像を本当に削除しますか？');
+                if (!ok) return;
+                message.illustration = illustrationUtils.removeCurrentImage(message.illustration);
+                if (!message.illustration) this.clearIllustrationOnMessage(messageIndex);
+                else uiUtils.rerenderIllustration(messageIndex);
+                await dbUtils.saveChat();
+            },
+            // この応答に生成された画像をすべて削除する
+            async deleteAllIllustrations(messageIndex) {
+                const message = state.currentMessages[messageIndex];
+                if (!message || !illustrationUtils.hasImages(message.illustration)) return;
+                const ok = await uiUtils.showCustomConfirm('この応答に対して生成された画像を全て削除しますか？');
                 if (!ok) return;
                 message.illustration = null;
-                uiUtils.rerenderIllustration(messageIndex);
+                this.clearIllustrationOnMessage(messageIndex);
                 await dbUtils.saveChat();
+            },
+            // 挿絵ブロックそのものを消す
+            clearIllustrationOnMessage(messageIndex) {
+                const message = state.currentMessages[messageIndex];
+                if (message) message.illustration = null;
+                uiUtils.rerenderIllustration(messageIndex);
+                uiUtils.updateIllustrationFooterButtons();
+            },
+            // スワイプ直後に続く click で全画面が開かないようにする
+            consumeIllustrationSwipe() {
+                if (state.pendingIllustrationSwipe) {
+                    state.pendingIllustrationSwipe = false;
+                    return true;
+                }
+                return false;
+            },
+            // 表示中の画像を ◀▶ で切り替える（delta = -1 で古い方、+1 で新しい方）
+            cycleIllustrationView(messageIndex, delta) {
+                const message = state.currentMessages[messageIndex];
+                if (!message || !illustrationUtils.hasImages(message.illustration)) return;
+                const illustration = illustrationUtils.normalizeIllustration(message.illustration);
+                const count = illustration.images.length;
+                illustration.viewIndex = (illustration.viewIndex + delta + count) % count;
+                uiUtils.rerenderIllustration(messageIndex);
+            },
+            // 展開した欄で編集した文章を保存する（再生成はこの文字列を使う）
+            async saveIllustrationPrompt(messageIndex, text) {
+                const message = state.currentMessages[messageIndex];
+                if (!message || !message.illustration) return;
+                const prompt = String(text || '');
+                message.illustration.prompt = prompt;
+                const current = illustrationUtils.currentImage(message.illustration);
+                if (current) current.prompt = prompt;
+                await dbUtils.saveChat();
+            },
+            // 保存済み（または編集済み）の文章でそのまま再生成する
+            async regenerateIllustrationWithPrompt(messageIndex) {
+                const message = state.currentMessages[messageIndex];
+                if (!message || !message.illustration) return;
+                const textarea = elements.messageContainer.querySelector(
+                    `textarea.message-illustration-prompt-input[data-index="${messageIndex}"]`);
+                if (textarea) await this.saveIllustrationPrompt(messageIndex, textarea.value);
+                this.generateIllustration(messageIndex);
+            },
+            async copyIllustrationPrompt(messageIndex, button) {
+                const message = state.currentMessages[messageIndex];
+                if (!message || !message.illustration) return;
+                const textarea = elements.messageContainer.querySelector(
+                    `textarea.message-illustration-prompt-input[data-index="${messageIndex}"]`);
+                const text = textarea ? textarea.value : (message.illustration.prompt || '');
+                const flash = (label, delay) => {
+                    if (!button) return;
+                    const original = button.textContent;
+                    button.textContent = label;
+                    button.disabled = true;
+                    setTimeout(() => { button.textContent = original; button.disabled = false; }, delay);
+                };
+                try {
+                    await navigator.clipboard.writeText(text);
+                    flash('コピー完了!', 1500);
+                } catch (error) {
+                    flash('失敗', 2000);
+                }
+            },
+            // 送信前の編集。キャンセルなら null を返す（送らない）
+            async editIllustrationPromptBeforeSend(prompt) {
+                const dialog = elements.illustrationPromptEditDialog;
+                if (!dialog) return prompt;
+                elements.illustrationPromptEditMessage.textContent =
+                    'ComfyUI へ送る画像プロンプトです。直してから送信するか、キャンセルして送らないでください。';
+                elements.illustrationPromptEditInput.value = prompt || '';
+                const okBtn = elements.illustrationPromptEditOkBtn.cloneNode(true);
+                elements.illustrationPromptEditOkBtn.parentNode.replaceChild(okBtn, elements.illustrationPromptEditOkBtn);
+                elements.illustrationPromptEditOkBtn = okBtn;
+                const cancelBtn = elements.illustrationPromptEditCancelBtn.cloneNode(true);
+                elements.illustrationPromptEditCancelBtn.parentNode.replaceChild(cancelBtn, elements.illustrationPromptEditCancelBtn);
+                elements.illustrationPromptEditCancelBtn = cancelBtn;
+                elements.illustrationPromptEditOkBtn.onclick = () => dialog.close('ok');
+                elements.illustrationPromptEditCancelBtn.onclick = () => dialog.close('cancel');
+                const result = await uiUtils.showCustomDialog(dialog, elements.illustrationPromptEditInput);
+                if (result !== 'ok') return null;
+                return elements.illustrationPromptEditInput.value;
             },
             // 挿絵の状態をメッセージへ書き換え、そのメッセージ直下だけを描画し直す
             setIllustrationOnMessage(messageIndex, illustration) {
@@ -19461,6 +20513,9 @@ newSettings.footerTapScrollToBottom = elements.footerTapScrollToBottomToggle.che
                 newSettings.comfyMaxImageBytes = Math.round(getComfyNumber(elements.comfyMaxImageBytesInput, DEFAULT_COMFY_MAX_IMAGE_BYTES, 32768, 8388608));
                 newSettings.comfyShowDebug = elements.comfyShowDebugToggle.checked;
                 newSettings.comfyMinimalPromptProcessing = elements.comfyMinimalProcessingToggle.checked;
+                newSettings.comfyEditPromptBeforeSend = elements.comfyEditPromptToggle.checked;
+                newSettings.comfyLoras = Array.isArray(state.settings.comfyLoras)
+                    ? state.settings.comfyLoras : buildDefaultComfyLoraSlots();
                 // ▲ ここまで ▲
 
                 try {

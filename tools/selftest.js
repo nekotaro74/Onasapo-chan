@@ -58,7 +58,7 @@ check('空', illustrationUtils.normalizeBaseUrl(''), '');
 const apiWorkflow = JSON.stringify({
     '3': { class_type: 'CLIPTextEncode', inputs: { text: '%prompt%' }, _meta: {} },
     '4': { class_type: 'CLIPTextEncode', inputs: { text: '%negative_prompt%' }, _meta: {} },
-    '5': { class_type: 'KSampler', inputs: { seed: '%seed%', width: '%width%', height: '%height%', steps: '%steps%', cfg: '%cfg%' }, _meta: {} },
+    '5': { class_type: 'KSampler', inputs: { seed: '%seed%', width: '%width%', height: '%height%', steps: '%steps%', cfg: '%scale%' }, _meta: {} },
     '9': { class_type: 'SaveImage', inputs: { images: null }, _meta: {} },
 });
 const uiWorkflow = JSON.stringify({ nodes: [{ id: 1 }], links: [], groups: [] });
@@ -73,7 +73,7 @@ checkTrue('SaveImage無しは拒否', !illustrationUtils.parseWorkflow(JSON.stri
 
 // ── トークン検出 ─────────────────────────────────────────────
 check('トークン検出', illustrationUtils.findPlaceholders(apiWorkflow).sort(),
-    ['cfg', 'height', 'negative_prompt', 'prompt', 'seed', 'steps', 'width']);
+    ['height', 'negative_prompt', 'prompt', 'scale', 'seed', 'steps', 'width']);
 check('文中へ埋め込まれたトークンも検出',
     illustrationUtils.findPlaceholders(JSON.stringify({ a: { inputs: { text: 'x %prompt% y %foo%' } } })).sort(),
     ['foo', 'prompt']);
@@ -86,7 +86,10 @@ state.settings = {
     comfySampler: 'euler_a', comfyScheduler: 'karras', comfyTextEncoder: 'clip.safetensors',
 };
 const built = illustrationUtils.buildTokenValues();
-check('寸法・steps・cfg が渡る', [built.values.width, built.values.height, built.values.steps, built.values.cfg], [512, 768, 20, 7]);
+check('寸法・steps・scale が渡る', [built.values.width, built.values.height, built.values.steps, built.values.scale], [512, 768, 20, 7]);
+check('%cfg% は差し込まない', Object.prototype.hasOwnProperty.call(built.values, 'cfg'), false);
+checkTrue('%cfg% は未対応トークンとして止まる', /%cfg%/.test((illustrationUtils.prepareWorkflow({ '1': { class_type: 'X', inputs: { c: '%cfg%' } } }) || {}).error || ''));
+checkTrue('%cfg% は組み込みトークン一覧に無い', !illustrationUtils.builtinTokens().includes('cfg'));
 check('seed 固定', built.values.seed, 42);
 check('CLIP Skip は負の値で差し込む', built.values.clip_skip, -2);
 check('Denoise が渡る', built.values.denoise, 0.85);
@@ -216,6 +219,94 @@ state.settings.userName = '';
 const fallbackNames = illustrationUtils.substituteSessionNames(DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE);
 checkTrue('未設定なら assistant / user', /assistant/.test(fallbackNames) && /\buser\b/.test(fallbackNames));
 
+// ── LoRA（最大4個）─────────────────────────────────────────
+const loraWorkflow = () => ({
+    '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'm.safetensors' } },
+    '2': { class_type: 'LoraLoader', inputs: { model: ['1', 0], clip: ['1', 1], lora_name: '%lora1%', strength_model: '%lora_str1%', strength_clip: '%lora_str1%' } },
+    '3': { class_type: 'CLIPTextEncode', inputs: { clip: ['2', 1], text: 'x' } },
+    '4': { class_type: 'KSampler', inputs: { model: ['2', 0], clip: ['3', 0] } },
+    '9': { class_type: 'SaveImage', inputs: { images: null } },
+});
+const emptySlots = () => [{ name: '', strength: 1 }, { name: '', strength: 1 }, { name: '', strength: 1 }, { name: '', strength: 1 }];
+state.settings.comfyLoras = emptySlots();
+
+// 使わないスロット + ファイルあり: ノードの形は変えず、先頭の実在ファイルと強度0
+const loraUnused = illustrationUtils.applyLoraNodes(loraWorkflow(), ['a.safetensors', 'b.safetensors']);
+checkTrue('LoRA 不使用でもノードは残す', loraUnused.ok && !!loraUnused.object['2']);
+check('LoRA 不使用は先頭ファイルと強度0',
+    [loraUnused.object['2'].inputs.lora_name, loraUnused.object['2'].inputs.strength_model, loraUnused.object['2'].inputs.strength_clip],
+    ['a.safetensors', 0, 0]);
+check('LoRA 不使用でも接続はそのまま', [loraUnused.object['3'].inputs.clip, loraUnused.object['4'].inputs.model], [['2', 1], ['2', 0]]);
+
+// 使うスロット: 選んだファイル名と入力強度
+state.settings.comfyLoras[0] = { name: 'c.safetensors', strength: 0.6 };
+const loraUsed = illustrationUtils.applyLoraNodes(loraWorkflow(), ['a.safetensors']);
+check('LoRA を使う場合は選んだ値を入れる',
+    [loraUsed.object['2'].inputs.lora_name, loraUsed.object['2'].inputs.strength_model, loraUsed.object['2'].inputs.strength_clip],
+    ['c.safetensors', 0.6, 0.6]);
+
+// 使うスロットでフォルダが空: 送らずに理由を出す
+const loraEmptyFolder = illustrationUtils.applyLoraNodes(loraWorkflow(), []);
+checkTrue('LoRA使用でフォルダ空は生成を止める', !loraEmptyFolder.ok, JSON.stringify(loraEmptyFolder));
+checkTrue('その理由に loras フォルダを書く', /loras フォルダ/.test(loraEmptyFolder.error || ''), loraEmptyFolder.error);
+state.settings.comfyLoras = emptySlots();
+
+// 使わないスロット + フォルダ空: そのノードだけ外して直結（ワークフロー全体は書き換えない）
+const loraBypass = illustrationUtils.applyLoraNodes(loraWorkflow(), []);
+checkTrue('フォルダ空はその LoraLoader だけ外す', loraBypass.ok && !loraBypass.object['2'], JSON.stringify(Object.keys(loraBypass.object)));
+check('model を直結する', loraBypass.object['4'].inputs.model, ['1', 0]);
+check('clip を直結する', loraBypass.object['3'].inputs.clip, ['1', 1]);
+check('他のノードはそのまま', Object.keys(loraBypass.object).sort(), ['1', '3', '4', '9']);
+
+// LoraLoaderModelOnly も同じ扱い
+const modelOnlyWf = () => ({
+    '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'm.safetensors' } },
+    '2': { class_type: 'LoraLoaderModelOnly', inputs: { model: ['1', 0], lora_name: 'x.safetensors', strength_model: 1 } },
+    '4': { class_type: 'KSampler', inputs: { model: ['2', 0] } },
+    '9': { class_type: 'SaveImage', inputs: { images: null } },
+});
+const modelOnlyUnused = illustrationUtils.applyLoraNodes(modelOnlyWf(), ['z.safetensors']);
+check('LoraLoaderModelOnly は strength_model だけ 0',
+    [modelOnlyUnused.object['2'].inputs.lora_name, modelOnlyUnused.object['2'].inputs.strength_model], ['z.safetensors', 0]);
+checkTrue('LoraLoaderModelOnly に strength_clip は入れない',
+    modelOnlyUnused.object['2'].inputs.strength_clip === undefined);
+const modelOnlyBypass = illustrationUtils.applyLoraNodes(modelOnlyWf(), []);
+checkTrue('ModelOnly もフォルダ空なら外して直結',
+    modelOnlyBypass.ok && !modelOnlyBypass.object['2'] && modelOnlyBypass.object['4'].inputs.model[0] === '1',
+    JSON.stringify(modelOnlyBypass.object['4'].inputs));
+
+// LoRA ノードの無い同梱規定ワークフローは、一覧が空でもそのまま通る
+const noLoraWf = {
+    '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: '%model%' } },
+    '6': { class_type: 'KSampler', inputs: { model: ['1', 0] } },
+    '8': { class_type: 'SaveImage', inputs: { images: ['6', 0] } },
+};
+const noLora = illustrationUtils.applyLoraNodes(noLoraWf, []);
+checkTrue('LoRA ノード無しは空フォルダでも無傷', noLora.ok && Object.keys(noLora.object).length === 3, JSON.stringify(noLora));
+
+// %lora1% / %lora_str1% はワークフローに含まれるときだけ効く
+const loraTokens = illustrationUtils.buildTokenValues().values;
+checkTrue('lora トークンも差し込み値として揃う',
+    ['lora1', 'lora2', 'lora3', 'lora4', 'lora_str1', 'lora_str4'].every(t => Object.prototype.hasOwnProperty.call(loraTokens, t)));
+checkTrue('lora トークンは組み込み一覧に入っている', illustrationUtils.builtinTokens().includes('lora1'));
+state.settings.comfyLoras[1] = { name: 'two.safetensors', strength: 0.3 };
+check('2個目のスロットが効く', illustrationUtils.buildTokenValues().values.lora_str2, 0.3);
+state.settings.comfyLoras = emptySlots();
+
+// 旧形式の挿絵（imageDataUrl 直）は images へ寄り込む
+const legacyIll = { status: 'done', imageDataUrl: 'data:image/png;base64,AAA', seed: 7, sourceFilename: 'a.png' };
+const migrated = illustrationUtils.normalizeIllustration(legacyIll);
+check('旧形式を images へ移す', migrated.images.length, 1);
+check('旧形式の seed とファイル名を移す', [migrated.images[0].seed, migrated.images[0].filename], [7, 'a.png']);
+checkTrue('直の imageDataUrl は消える', migrated.imageDataUrl === undefined);
+check('表示は最後の1枚', migrated.viewIndex, 0);
+illustrationUtils.pushImage(migrated, { dataUrl: 'data:image/png;base64,BBB', seed: 8 });
+check('再生成は古いものを残して足す', migrated.images.length, 2);
+check('新しい方を見る', migrated.viewIndex, 1);
+check('1枚だけ消すと0番を見る', illustrationUtils.removeCurrentImage(migrated).viewIndex, 0);
+check('全部消すと null', illustrationUtils.removeCurrentImage(migrated), null);
+checkTrue('hasImages', illustrationUtils.hasImages({ images: [{}] }) && !illustrationUtils.hasImages({ images: [] }));
+
 // ── ComfyUI プロトコル（fetch をスタブに差し替えて検証）────
 async function expectThrow(name, fn, pattern) {
     try {
@@ -261,6 +352,16 @@ const jsonResponse = (body, status) => ({
         () => illustrationUtils.submitWorkflow('http://h:8188', apiWorkflow, 'cid'),
         /--enable-cors-header/);
 
+    // /models/loras から LoRA 一覧を取る（object_info ではなくこの endpoint）
+    const loraCalls = stubFetch((url) => (url.indexOf('/models/loras') !== -1
+        ? jsonResponse([{ name: 'one.safetensors' }, { name: 'two.safetensors' }], 200)
+        : jsonResponse({ error: 'no' }, 404)));
+    illustrationUtils.loraCache = null;
+    check('models/loras から一覧を取る', await illustrationUtils.fetchLoraNames('http://h:8188', null), ['one.safetensors', 'two.safetensors']);
+    checkTrue('/models/loras を叩く', loraCalls.some(c => /\/models\/loras$/.test(c.url)));
+    illustrationUtils.loraCache = null;
+    globalThis.fetch = () => Promise.reject(new TypeError('Failed to fetch'));
+    check('LoRA 一覧が取れないときは null（ノードの値をそのまま送る）', await illustrationUtils.fetchLoraNames('http://h:8188', null), null);
     // history: 最初は空、次に完了
     let historyCalls = 0;
     stubFetch(() => {

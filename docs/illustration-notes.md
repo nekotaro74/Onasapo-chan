@@ -71,7 +71,7 @@ API キー・モデル名は呼び出し側で渡す（`state.settings.apiProvid
    実際の ST が持つトークンは `prompt / negative_prompt / seed / denoise / clip_skip / model / vae /
    sampler / scheduler / steps / scale / width / height` に加えて `user_avatar / char_avatar`。
    **CFG は `%scale%` という名前**で、`%cfg%` ではない。
-   仕様側は `%cfg%` を指定しているので、`%cfg%` を正としつつ既存 ST ワークフローとの互換のため `%scale%` も同じ値で差し込む。
+   本アプリも `%scale%` だけを使い、`%cfg%` は検出も置換もしない（未対応トークンとして止める）。
    **clip_skip は ST では負値で送られる**（`-extension_settings.sd.clip_skip`、NaN なら `-1`）。
    ST にテキストエンコーダのトークンは無い（本アプリが `%text_encoder%` を追加している）。
    ST のカスタム プレースホルダは `{find, replace}` の任意文字列 `replaceAll` で、replace 値は `substituteParams` を通る。
@@ -94,8 +94,7 @@ API キー・モデル名は呼び出し側で渡す（`state.settings.apiProvid
   ページ側は `TypeError: Failed to fetch` ではなく HTTP 503 を受け、CORS の案内が出せなかった
   （実測で確認）。sw.js でプライベートアドレス（127./10./192.168./172.16-31./100./localhost/.local）
   への要求をキャッシュ戦略から外して常にネットワークへ通し、客户端でも合成応答を検知する。
-- **SillyTavern の CFG トークンは `%scale%`**。`%cfg%` は存在しない。指定通り `%cfg%` を正とし、
-  既存ワークフローとの互換で `%scale%` にも同じ値を入れる。
+- **SillyTavern の CFG トークンは `%scale%`**。`%cfg%` は存在しない。本アプリも `%scale%` のみ。
 - **`processReply` の厳格な整形は日本語を全消しにする**（許容文字が英数字と記号のみ）。
   日本語の応答では必ず空になるため、空になった場合だけ最小限の整形へフォールバックする。
   設定で明示選択もできるようにした。
@@ -133,12 +132,51 @@ API キー・モデル名は呼び出し側で渡す（`state.settings.apiProvid
 
 ## 5. 検証
 
-- `node tools/selftest.js` — 抜き出した純ロジック（64件）。
+- `node tools/selftest.js` — 抜き出した純ロジック（96件）。
   文中埋め込みの置換、`%model%` 等の解決、CLIP Skip の負値、未対応トークンの中断、
   カスタム プレースホルダ、ワークフロー一覧の自己修復まで。
-- `node tools/e2e.js` — モック ComfyUI に対して headless Chrome で実際に走らせる（53件）。
+- `node tools/e2e.js` — モック ComfyUI に対して headless Chrome で実際に走らせる（80件）。
   手動生成・自動生成・手動で勝手に走らない・履歴復元・本編保持・CORS 判別・
   不正ワークフロー・連打・SW 登録に加えて、
   **SillyTavern 系トークンが全て差し替わること**、`!/%[a-z_]+%/` で**未差し込みを送っていないこと**、
   未知トークンでは **POST も LLM も走らないこと**、`object_info` からのプルダウン反映と
-  ノード types 欠損時の劣化、ワークフロー CRUD、挿絵削除ボタンまで確認する。
+  ノード types 欠損時の劣化、ワークフロー CRUD、複数枚の ◀▶・全画面・1枚/全枚の削除・
+  送信前編集・LoRA の 3 分岐（使用 / 不使用+ファイルあり / 不使用+フォルダ空）まで確認する。
+
+## 6. 手直しラウンド（2026-10-05）
+
+### 再生成の遅さ
+実機で「再生成 → ComfyUI の `got prompt`」まで数秒空いていた。原因は
+**再生成のたびに quiet プロンプトをクラウド LLM で作り直していた**こと。
+`generateIllustration` は保存済み `illustration.prompt` があれば LLM を呼ばず、その文字列をそのまま送る。
+無ければ初回生成として LLM を呼ぶ。入力の `画` ボタンも同じ規則（画像済み応答＝再生成、画像なし応答＝初回生成）。
+切り分け用に、起動・プロンプト確定・`POST /prompt` 送信直前・POST 完了・history 完了の各時刻を
+`[挿絵]` プレフィックスでコンソールへ出す。
+
+### 複数枚
+`message.illustration` は `images: [{dataUrl, filename, bytes, resized, seed, prompt, createdAt}]` と
+`viewIndex` を持つ。旧形式（`imageDataUrl` を直で持っていた保存済み履歴）は
+`normalizeIllustration` が読み出し時に寄り込む。再生成は末尾へ足して表示だけ切り替えるので、古い画像は消えない。
+1枚削除で 0 枚になったら `illustration` 自体を null にしてブロックごと消す。
+
+### LoRA
+トークン差し込みとは別に、**ノード単位のパッセージ**（`applyLoraNodes`）で決める。
+`class_type` が `LoraLoader` / `LoraLoaderModelOnly` のノードを ID 順にスロット 1〜4 へ対応させる。
+
+| 条件 | 挙動 |
+| --- | --- |
+| 使う / ファイルあり | 選んだファイル名と強度を入れる（ModelOnly は `strength_model` のみ） |
+| 使う / フォルダ空 | 送らず `LoRAを使うには ComfyUI の loras フォルダにファイルが必要です` |
+| 使わない / ファイルあり | ノードの形は変えず、一覧先頭の実在ファイル名と強度 0 |
+| 使わない / フォルダ空 | そのノードだけ削除し、`model` / `clip` を受け先へ直結 |
+| 一覧取得失敗 | ノードに書かれた値のまま送る（生成は止めない） |
+
+`%loraN%` / `%lora_strN%` は `buildTokenValues` で常に値を用意するので未対応トークンエラーにはならず、
+LoraLoader ノードには後段の `applyLoraNodes` が実際の値を上書きする。
+一覧は生成時に `GET /models/loras`（無ければ `/loras`）を取り、5分キャッシュする。
+
+### 同梱の規定ワークフロー
+`DEFAULT_COMFY_WORKFLOW_OBJECT` を設定の初期値と README に置いた。SillyTavern 既定ではなく本アプリ制作。
+チェックポイントから MODEL / CLIP / VAE をすべて取るので VAELoader も TextEncoderLoader も不要。
+`comfySampler` / `comfyScheduler` の既定を `euler_a` / `normal` にしたため、`%sampler%` / `%scheduler%` が
+初期状態でも解決される。ワークフローが 0 件になった場合は起動時に同梱分を戻す。

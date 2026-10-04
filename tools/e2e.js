@@ -27,6 +27,7 @@ let lastPromptBody = null;
 let historyPolls = 0;
 let promptPosts = 0;
 let objectInfoRequests = 0;
+let loraFiles = [{ name: 'animeDetail.safetensors' }, { name: 'inkSketch.safetensors' }];
 
 function createServer() {
     return http.createServer((req, res) => {
@@ -66,6 +67,19 @@ function createServer() {
             if (endpoint === 'view') {
                 res.setHeader('Content-Type', 'image/png');
                 res.end(PNG_1PX);
+                return;
+            }
+            if (endpoint === 'set-loras' && req.method === 'POST') {
+                let body = '';
+                req.on('data', chunk => { body += chunk; });
+                req.on('end', () => {
+                    try { loraFiles = JSON.parse(body); } catch (e) { loraFiles = []; }
+                    res.end(JSON.stringify({ ok: true }));
+                });
+                return;
+            }
+            if (endpoint === 'models/loras') {
+                res.end(JSON.stringify(loraFiles));
                 return;
             }
             if (endpoint === 'object_info') {
@@ -134,7 +148,7 @@ const PAGE_SCRIPT = `(async () => {
             '5': {
                 class_type: 'KSampler',
                 inputs: {
-                    seed: '%seed%', width: '%width%', height: '%height%', steps: '%steps%', cfg: '%cfg%',
+                    seed: '%seed%', width: '%width%', height: '%height%', steps: '%steps%', cfg: '%scale%',
                     sampler_name: '%sampler%', scheduler: '%scheduler%', denoise: '%denoise%',
                 },
             },
@@ -197,7 +211,10 @@ const PAGE_SCRIPT = `(async () => {
     if (chatId) {
         const raw = await dbUtils.getChat(chatId);
         restored = !!(raw && raw.messages && raw.messages[1] && raw.messages[1].illustration
-            && raw.messages[1].illustration.imageDataUrl);
+            && Array.isArray(raw.messages[1].illustration.images)
+            && raw.messages[1].illustration.images.length > 0
+            && typeof raw.messages[1].illustration.images[0].dataUrl === 'string'
+            && raw.messages[1].illustration.images[0].dataUrl.startsWith('data:image/'));
     }
 
     return {
@@ -206,7 +223,10 @@ const PAGE_SCRIPT = `(async () => {
         quietRequest: quietRequest,
         illustrationStatus: target.illustration ? target.illustration.status : null,
         illustrationError: target.illustration ? (target.illustration.error || null) : null,
-        hasDataUrl: !!(target.illustration && typeof target.illustration.imageDataUrl === 'string' && target.illustration.imageDataUrl.startsWith('data:image/')),
+        hasDataUrl: !!(target.illustration && Array.isArray(target.illustration.images)
+            && target.illustration.images.length > 0
+            && typeof target.illustration.images[0].dataUrl === 'string'
+            && target.illustration.images[0].dataUrl.startsWith('data:image/')),
         seed: target.illustration ? target.illustration.seed : null,
         renderedImage: !!renderedImage,
         restoredFromDb: restored,
@@ -250,7 +270,9 @@ const scenarioScript = (mode) => `(async () => {
             && apiCalls[1].content === illustrationUtils.substituteSessionNames(state.settings.comfyImagePromptTemplate),
         mainText: modelMessage ? modelMessage.content : null,
         illustrationStatus: modelMessage && modelMessage.illustration ? modelMessage.illustration.status : null,
-        hasImage: !!(modelMessage && modelMessage.illustration && modelMessage.illustration.imageDataUrl),
+        hasImage: !!(modelMessage && modelMessage.illustration
+            && Array.isArray(modelMessage.illustration.images)
+            && modelMessage.illustration.images.length > 0),
     };
 })()`;
 
@@ -471,28 +493,355 @@ const CHOICES_SCRIPT = `(async () => {
         schedulers: optionText(elements.comfySchedulerSelect),
         ggufAbsent: !optionText(elements.comfyModelSelect).some(v => /gguf/i.test(v)),
         modelLabelReadable: labelOf(elements.comfyModelSelect),
+        vaeLabelReadable: labelOf(elements.comfyVaeSelect),
+        textEncoderLabelReadable: labelOf(elements.comfyTextEncoderSelect),
         staleValueKept: staleKept,
         crudOk: renamed && sameNameKept && duplicated && afterDelete && uiRejected,
         tokenDetected: /model/.test(tokenListText) && /clip_skip/.test(tokenListText),
     };
 })()`;
 
-const DELETE_BUTTON_SCRIPT = `(async () => {
+// 複数枚の表示・削除・全画面・プロンプト編集・書き出し名
+const GALLERY_SCRIPT = `(async () => {
+    state.settings.illustrationEnabled = true;
+    state.settings.comfyBaseUrl = location.origin + '/mock-comfy';
+    state.illustrationJob = null;
     state.currentMessages = [
         { role: 'user', content: 'x', timestamp: Date.now() },
-        { role: 'model', content: '削除確認', timestamp: Date.now() },
+        { role: 'model', content: '画像を複数枚持つ応答', timestamp: Date.now() },
     ];
-    state.currentMessages[1].illustration = { status: 'done', imageDataUrl: 'data:image/png;base64,AAA', seed: 1 };
+    state.currentMessages[1].illustration = {
+        status: 'done', prompt: '保存済みのプロンプト', negativePrompt: 'lowres', seed: 1,
+        images: [
+            { dataUrl: 'data:image/png;base64,AAAA', seed: 1, prompt: 'p1' },
+            { dataUrl: 'data:image/png;base64,BBBB', seed: 2, prompt: 'p2' },
+        ],
+        viewIndex: 1,
+    };
     uiUtils.renderChatMessages();
-    const before = !!document.querySelector('.message-illustration-image');
-    const button = document.querySelector('.js-illustration-delete-btn');
-    if (button) button.click();
-    await new Promise(r => setTimeout(r, 300));
+
+    const imageEl = () => document.querySelector('.message-illustration-image');
+    const counter = () => {
+        const el = document.querySelector('.message-illustration-counter');
+        return el ? el.textContent.trim() : null;
+    };
+
+    // ◀ で古い方、▶ で新しい方
+    const newestSrc = imageEl().src;
+    document.querySelector('.js-illustration-prev-btn').click();
+    const olderSrc = imageEl().src;
+    const counterAfterPrev = counter();
+    document.querySelector('.js-illustration-next-btn').click();
+    const backToNewestSrc = imageEl().src;
+    const counterAfterNext = counter();
+
+    // クリックで全画面。画像をタップしても閉じず、✕ ボタンと画像外のタップで閉じる
+    imageEl().click();
+    const lightboxOpened = !!document.querySelector('.illustration-lightbox');
+    let lightbox = document.querySelector('.illustration-lightbox');
+    if (lightbox) lightbox.querySelector('img').click();
+    const staysOpenOnImageTap = !!document.querySelector('.illustration-lightbox');
+    lightbox = document.querySelector('.illustration-lightbox');
+    if (lightbox) lightbox.querySelector('.illustration-lightbox-close').click();
+    const closedByCloseButton = !document.querySelector('.illustration-lightbox');
+    imageEl().click();
+    lightbox = document.querySelector('.illustration-lightbox');
+    if (lightbox) lightbox.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    const closedByOutsideTap = !document.querySelector('.illustration-lightbox');
+
+    // 画像プロンプト欄: コピーボタンがあり、展開中は編集できる（削除の前に確認する）
+    const copyButtonExists = !!document.querySelector('.js-illustration-prompt-copy-btn');
+    const promptTextarea = document.querySelector('textarea.message-illustration-prompt-input');
+    let editedSaved = false;
+    if (promptTextarea) {
+        promptTextarea.value = '編集後のプロンプト';
+        promptTextarea.dispatchEvent(new Event('change', { bubbles: true }));
+        await new Promise(r => setTimeout(r, 250));
+        editedSaved = !!(state.currentMessages[1].illustration
+            && state.currentMessages[1].illustration.prompt === '編集後のプロンプト');
+    }
+
+    // 削除はアプリ内ダイアログで確認し、1枚と全枚で文言が違う
+    const confirmTexts = [];
+    const originalConfirm = uiUtils.showCustomConfirm;
+    uiUtils.showCustomConfirm = async (message) => { confirmTexts.push(message); return true; };
+    document.querySelector('.js-illustration-delete-one-btn').click();
+    await new Promise(r => setTimeout(r, 250));
+    const imagesAfterOneDelete = state.currentMessages[1].illustration
+        ? state.currentMessages[1].illustration.images.length : 0;
+    document.querySelector('.js-illustration-delete-all-btn').click();
+    await new Promise(r => setTimeout(r, 250));
+    const illustrationAfterAllDelete = state.currentMessages[1].illustration;
+    uiUtils.showCustomConfirm = originalConfirm;
+
     return {
-        buttonExists: !!button,
-        hadImage: before,
-        imageGone: !document.querySelector('.message-illustration-image'),
-        clearedInState: state.currentMessages[1].illustration === null,
+        newestSrc: newestSrc,
+        olderSrc: olderSrc,
+        backToNewestSrc: backToNewestSrc,
+        counterAfterPrev: counterAfterPrev,
+        counterAfterNext: counterAfterNext,
+        lightboxOpened: lightboxOpened,
+        staysOpenOnImageTap: staysOpenOnImageTap,
+        closedByCloseButton: closedByCloseButton,
+        closedByOutsideTap: closedByOutsideTap,
+        confirmTexts: confirmTexts,
+        imagesAfterOneDelete: imagesAfterOneDelete,
+        illustrationAfterAllDelete: illustrationAfterAllDelete,
+        copyButtonExists: copyButtonExists,
+        editedSaved: editedSaved,
+        fileStamp: comfyWorkflowUtils.fileTimestamp(),
+        exportName: comfyWorkflowUtils.safeFileName('my flow/v1') + '-' + comfyWorkflowUtils.fileTimestamp() + '.json',
+    };
+})()`;
+
+// 挿絵の自動/手動ボタンは文字がはみ出さず、読み上げのメガホンはまだ出さない
+const FOOTER_BUTTON_SCRIPT = `(async () => {
+    state.settings.illustrationEnabled = false;
+    uiUtils.updateIllustrationFooterButtons();
+    const toggle = elements.illustrationModeToggleBtn;
+    const hiddenWhenDisabled = toggle.classList.contains('hidden');
+    state.settings.illustrationEnabled = true;
+    state.settings.illustrationMode = 'auto';
+    uiUtils.updateIllustrationFooterButtons();
+    // background-color に transition があるので、読み取る前に落ち着かせる
+    await new Promise(r => setTimeout(r, 400));
+    const autoLabel = toggle.textContent;
+    const autoClasses = toggle.classList.contains('mode-auto') && !toggle.classList.contains('mode-manual');
+    const autoStyle = getComputedStyle(toggle);
+    const noOverflow = autoStyle.whiteSpace === 'nowrap' && toggle.scrollWidth <= toggle.clientWidth + 1;
+    const rgb = (value) => value.replace(/\\s/g, '');
+    const autoColors = rgb(autoStyle.color) === 'rgb(255,255,255)'
+        && rgb(autoStyle.backgroundColor) === 'rgb(198,40,40)';
+    state.settings.illustrationMode = 'manual';
+    uiUtils.updateIllustrationFooterButtons();
+    await new Promise(r => setTimeout(r, 400));
+    const manualLabel = toggle.textContent;
+    const manualClasses = toggle.classList.contains('mode-manual') && !toggle.classList.contains('mode-auto');
+    const manualColors = rgb(getComputedStyle(toggle).backgroundColor) === 'rgb(117,117,117)';
+    state.settings.illustrationMode = 'manual';
+    uiUtils.updateIllustrationFooterButtons();
+    const megaphone = document.getElementById('tts-mode-toggle-btn');
+    return {
+        hiddenWhenDisabled: hiddenWhenDisabled,
+        autoLabel: autoLabel, manualLabel: manualLabel,
+        autoClasses: autoClasses, manualClasses: manualClasses,
+        noOverflow: noOverflow, autoColors: autoColors, manualColors: manualColors,
+        megaphoneIcon: !!megaphone.querySelector('svg'),
+        megaphoneHidden: megaphone.classList.contains('hidden'),
+    };
+})()`;
+
+// 送信前編集: オンのときだけ初回生成後に編集でき、キャンセルなら送らない
+const EDIT_PROMPT_SCRIPT = `(async () => {
+    state.settings.illustrationEnabled = true;
+    state.settings.illustrationMode = 'manual';
+    state.settings.comfyBaseUrl = location.origin + '/mock-comfy';
+    state.settings.comfyWorkflows = [{
+        id: 'wf-edit', name: '編集確認',
+        json: JSON.stringify({
+            '3': { class_type: 'CLIPTextEncode', inputs: { text: '%prompt%' } },
+            '9': { class_type: 'SaveImage', inputs: { images: null } },
+        }),
+    }];
+    state.settings.comfyActiveWorkflowId = 'wf-edit';
+
+    const runWithEdit = async (editSetting, dialogResult, editedText) => {
+        state.settings.comfyEditPromptBeforeSend = editSetting;
+        state.illustrationJob = null;
+        state.currentMessages = [
+            { role: 'user', content: 'x', timestamp: Date.now() },
+            { role: 'model', content: '編集確認の応答', timestamp: Date.now() },
+        ];
+        const originalHandleSend = appLogic.handleSend.bind(appLogic);
+        appLogic.handleSend = async () => ({ content: 'a park, 1 man 1 woman' });
+        let sent = null;
+        const originalSubmit = appLogic.submitWithClient.bind(appLogic);
+        appLogic.submitWithClient = async (b, workflow, signal) => { sent = workflow; return originalSubmit(b, workflow, signal); };
+        let dialogOpened = false;
+        const originalDialog = uiUtils.showCustomDialog;
+        uiUtils.showCustomDialog = async () => {
+            dialogOpened = true;
+            elements.illustrationPromptEditInput.value = editedText;
+            return dialogResult;
+        };
+        await appLogic.generateIllustration(1);
+        uiUtils.showCustomDialog = originalDialog;
+        appLogic.handleSend = originalHandleSend;
+        appLogic.submitWithClient = originalSubmit;
+        const illustration = state.currentMessages[1].illustration;
+        return {
+            sent: sent ? sent['3'].inputs.text : null,
+            dialogOpened: dialogOpened,
+            status: illustration ? illustration.status : null,
+        };
+    };
+    const editOff = await runWithEdit(false, 'ok', '使われない文章');
+    const editCancel = await runWithEdit(true, 'cancel', 'キャンセルする文章');
+    const editOk = await runWithEdit(true, 'ok', '編集後の送信文章');
+
+    // 再生成は編集ダイアログを通らず、保存済み（編集済み）の文章をそのまま送る
+    state.settings.comfyEditPromptBeforeSend = true;
+    state.illustrationJob = null;
+    const originalHandleSend2 = appLogic.handleSend.bind(appLogic);
+    appLogic.handleSend = async () => { throw new Error('再生成で LLM を呼んではいけない'); };
+    let sentAgain = null;
+    const originalSubmit2 = appLogic.submitWithClient.bind(appLogic);
+    appLogic.submitWithClient = async (b, workflow, signal) => { sentAgain = workflow; return originalSubmit2(b, workflow, signal); };
+    let dialogOpenedOnRegen = false;
+    const originalDialog2 = uiUtils.showCustomDialog;
+    uiUtils.showCustomDialog = async () => { dialogOpenedOnRegen = true; return 'ok'; };
+    await appLogic.generateIllustration(1);
+    uiUtils.showCustomDialog = originalDialog2;
+    appLogic.handleSend = originalHandleSend2;
+    appLogic.submitWithClient = originalSubmit2;
+
+    state.settings.comfyEditPromptBeforeSend = false;
+    return {
+        editOff: editOff, editCancel: editCancel, editOk: editOk,
+        regenDialogOpened: dialogOpenedOnRegen,
+        regenSent: sentAgain ? sentAgain['3'].inputs.text : null,
+    };
+})()`;
+
+// 再生成は quiet プロンプトを作り直さず、画像は古いものを残す
+const REGENERATE_SCRIPT = `(async () => {
+    state.settings.illustrationEnabled = true;
+    state.settings.illustrationMode = 'manual';
+    state.settings.comfyBaseUrl = location.origin + '/mock-comfy';
+    state.illustrationJob = null;
+    state.settings.comfyWorkflows = [{
+        id: 'wf-regen', name: '再生成確認',
+        json: JSON.stringify({
+            '3': { class_type: 'CLIPTextEncode', inputs: { text: 'masterpiece, %prompt%' } },
+            '9': { class_type: 'SaveImage', inputs: { images: null } },
+        }),
+    }];
+    state.settings.comfyActiveWorkflowId = 'wf-regen';
+    state.currentMessages = [
+        { role: 'user', content: 'x', timestamp: Date.now() },
+        { role: 'model', content: '再生成する応答', timestamp: Date.now() },
+    ];
+    state.currentMessages[1].illustration = {
+        status: 'done', prompt: '使い回すプロンプト', negativePrompt: 'lowres', seed: 1,
+        images: [{ dataUrl: 'data:image/png;base64,AAAA', seed: 1, prompt: '使い回すプロンプト' }],
+        viewIndex: 0,
+    };
+    uiUtils.renderChatMessages();
+
+    let quietCalls = 0;
+    const originalHandleSend = appLogic.handleSend.bind(appLogic);
+    appLogic.handleSend = async () => { quietCalls++; return { content: 'should not be used' }; };
+    let sentPrompt = null;
+    const originalSubmit = appLogic.submitWithClient.bind(appLogic);
+    appLogic.submitWithClient = async (base, workflow, signal) => {
+        sentPrompt = workflow['3'] ? workflow['3'].inputs.text : null;
+        return originalSubmit(base, workflow, signal);
+    };
+    await appLogic.generateIllustration(1);
+    appLogic.handleSend = originalHandleSend;
+    appLogic.submitWithClient = originalSubmit;
+
+    const illustration = state.currentMessages[1].illustration;
+    return {
+        quietCalls: quietCalls,
+        imageCount: illustration.images.length,
+        viewIndex: illustration.viewIndex,
+        keptOldImage: illustration.images[0].dataUrl,
+        sentPrompt: sentPrompt,
+        status: illustration.status,
+        error: illustration.error || null,
+        activeWorkflowName: illustrationUtils.activeWorkflow() ? illustrationUtils.activeWorkflow().name : null,
+    };
+})()`;
+
+// LoRA: 使う / 使わない（ファイルあり）/ 使わない（フォルダ空）/ 使うがフォルダ空 / 同梱規定
+const LORA_SCRIPT = `(async () => {
+    const base = location.origin + '/mock-comfy';
+    const setLoras = async (files) => {
+        await fetch(base + '/set-loras', { method: 'POST', body: JSON.stringify(files) });
+        illustrationUtils.loraCache = null;
+        comfyWorkflowUtils.loraChoices = null;
+    };
+    const loraWorkflow = {
+        '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: '%model%' } },
+        '2': { class_type: 'LoraLoader', inputs: { model: ['1', 0], clip: ['1', 1], lora_name: '%lora1%', strength_model: '%lora_str1%', strength_clip: '%lora_str1%' } },
+        '3': { class_type: 'CLIPTextEncode', inputs: { clip: ['2', 1], text: '%prompt%' } },
+        '4': { class_type: 'KSampler', inputs: { model: ['2', 0], positive: ['3', 0], seed: 1 } },
+        '9': { class_type: 'SaveImage', inputs: { images: ['4', 0] } },
+    };
+    const useWorkflow = (obj) => {
+        state.settings.comfyWorkflows = [{ id: 'wf-lora', name: 'LoRA 付き', json: JSON.stringify(obj) }];
+        state.settings.comfyActiveWorkflowId = 'wf-lora';
+    };
+    const runOnce = async () => {
+        state.illustrationJob = null;
+        state.currentMessages = [
+            { role: 'user', content: 'x', timestamp: Date.now() },
+            { role: 'model', content: 'LoRA 確認の応答', timestamp: Date.now() },
+        ];
+        const originalHandleSend = appLogic.handleSend.bind(appLogic);
+        appLogic.handleSend = async () => ({ content: 'a cat' });
+        let sent = null;
+        const originalSubmit = appLogic.submitWithClient.bind(appLogic);
+        appLogic.submitWithClient = async (b, workflow, signal) => {
+            sent = workflow;
+            return originalSubmit(b, workflow, signal);
+        };
+        await appLogic.generateIllustration(1);
+        appLogic.handleSend = originalHandleSend;
+        appLogic.submitWithClient = originalSubmit;
+        return sent;
+    };
+
+    // 1) 使うスロット
+    await setLoras([{ name: 'animeDetail.safetensors' }, { name: 'inkSketch.safetensors' }]);
+    state.settings.comfyLoras = [
+        { name: 'inkSketch.safetensors', strength: 0.7 },
+        { name: '', strength: 1 }, { name: '', strength: 1 }, { name: '', strength: 1 },
+    ];
+    useWorkflow(JSON.parse(JSON.stringify(loraWorkflow)));
+    const usedPrompt = await runOnce();
+    const usedNode = usedPrompt && usedPrompt['2'] ? usedPrompt['2'].inputs : null;
+
+    // 2) 使わないスロット + ファイルあり: ノードは残り、先頭ファイルと強度0
+    state.settings.comfyLoras = [{ name: '', strength: 1 }, { name: '', strength: 1 }, { name: '', strength: 1 }, { name: '', strength: 1 }];
+    useWorkflow(JSON.parse(JSON.stringify(loraWorkflow)));
+    const unusedPrompt = await runOnce();
+    const unusedNode = unusedPrompt && unusedPrompt['2'] ? unusedPrompt['2'].inputs : null;
+
+    // 3) 使わないスロット + フォルダ空: そのノードだけ外れて直結される
+    await setLoras([]);
+    useWorkflow(JSON.parse(JSON.stringify(loraWorkflow)));
+    const emptyFolderPrompt = await runOnce();
+
+    // 4) 使うスロット + フォルダ空: 送らない
+    state.settings.comfyLoras = [{ name: 'animeDetail.safetensors', strength: 1 }, { name: '', strength: 1 }, { name: '', strength: 1 }, { name: '', strength: 1 }];
+    useWorkflow(JSON.parse(JSON.stringify(loraWorkflow)));
+    const blockedPrompt = await runOnce();
+    const blockedIllustration = state.currentMessages[1].illustration;
+
+    // 5) 同梱の規定ワークフローは LoRA ノードが無いので、フォルダ空でも生成できる
+    await setLoras([]);
+    state.settings.comfyLoras = [{ name: '', strength: 1 }, { name: '', strength: 1 }, { name: '', strength: 1 }, { name: '', strength: 1 }];
+    state.settings.comfyWorkflows = [{
+        id: 'wf-default', name: '同梱', json: JSON.stringify(DEFAULT_COMFY_WORKFLOW_OBJECT),
+    }];
+    state.settings.comfyActiveWorkflowId = 'wf-default';
+    const defaultPrompt = await runOnce();
+
+    return {
+        usedNode: usedNode,
+        unusedNode: unusedNode,
+        emptyFolderHasLoraNode: !!(emptyFolderPrompt && emptyFolderPrompt['2']),
+        emptyFolderKSamplerModel: emptyFolderPrompt && emptyFolderPrompt['4'] ? emptyFolderPrompt['4'].inputs.model : null,
+        emptyFolderClip: emptyFolderPrompt && emptyFolderPrompt['3'] ? emptyFolderPrompt['3'].inputs.clip : null,
+        blockedPromptSent: blockedPrompt !== null,
+        blockedError: blockedIllustration && blockedIllustration.error ? blockedIllustration.error : null,
+        defaultWorkflowSent: defaultPrompt !== null,
+        defaultWorkflowHasLoraNode: !!(defaultPrompt && Object.keys(defaultPrompt)
+            .some(id => /^LoraLoader/.test(defaultPrompt[id].class_type || ''))),
+        defaultWorkflowSampler: defaultPrompt && defaultPrompt['6'] ? defaultPrompt['6'].inputs.sampler_name : null,
+        defaultWorkflowError: (state.currentMessages[1].illustration && state.currentMessages[1].illustration.error) || null,
     };
 })()`;
 
@@ -601,7 +950,11 @@ async function main() {
         const promptPostsAfterFailure = promptPosts;
 
         const choicesResult = await evaluate(CHOICES_SCRIPT);
-        const deleteResult = await evaluate(DELETE_BUTTON_SCRIPT);
+        const galleryResult = await evaluate(GALLERY_SCRIPT);
+        const regenerateResult = await evaluate(REGENERATE_SCRIPT);
+        const loraResult = await evaluate(LORA_SCRIPT);
+        const footerResult = await evaluate(FOOTER_BUTTON_SCRIPT);
+        const editResult = await evaluate(EDIT_PROMPT_SCRIPT);
 
         // ページを開き直して、保存済み挿絵が履歴に表示されるか
         const savedChat = await evaluate(RELOAD_SETUP);
@@ -692,17 +1045,95 @@ async function main() {
                 && choicesResult.textEncoders.includes('clip_l.safetensors')
                 && choicesResult.samplers.includes('euler_a') && choicesResult.samplers.includes('dpmpp_2m_sde')
                 && choicesResult.schedulers.includes('karras') && choicesResult.schedulers.includes('sgm_uniform')],
-            ['モデル名は読みやすく表示する', !!choicesResult.modelLabelReadable && !/\.safetensors$/.test(choicesResult.modelLabelReadable)],
+            ['モデル / VAE / エンコーダはファイル名を省略しない',
+                choicesResult.modelLabelReadable === 'illustrious_xl.safetensors'
+                && choicesResult.vaeLabelReadable === 'ae.safetensors'
+                && choicesResult.textEncoderLabelReadable === 'clip_l.safetensors'],
             ['サーバーに無い保存値は消さない', choicesResult.staleValueKept],
             ['ワークフローの追加・改名・複製・削除・UI形式拒否', choicesResult.crudOk],
             ['編集画面にプレースホルダ検出が出る', choicesResult.tokenDetected],
-            ['挿絵の削除ボタンで画像が消える', deleteResult.buttonExists && deleteResult.hadImage && deleteResult.imageGone && deleteResult.clearedInState],
+            ['挿絵の ◀▶ で古い画像 / 新しい画像へ切れる',
+                galleryResult.olderSrc !== galleryResult.newestSrc
+                && galleryResult.backToNewestSrc === galleryResult.newestSrc
+                && galleryResult.counterAfterPrev === '1 / 2' && galleryResult.counterAfterNext === '2 / 2'],
+            ['挿絵のクリックで全画面が開く', galleryResult.lightboxOpened === true],
+            ['全画面で画像をタップしても閉じない', galleryResult.staysOpenOnImageTap === true],
+            ['全画面は ✕ ボタンで閉じる', galleryResult.closedByCloseButton === true],
+            ['全画面は画像外のタップで閉じる', galleryResult.closedByOutsideTap === true],
+            ['この画像を削除は 1 枚だけ消し、専用の確認文を出す',
+                galleryResult.confirmTexts[0] === 'この画像を本当に削除しますか？' && galleryResult.imagesAfterOneDelete === 1],
+            ['すべて削除は別の確認文で全枚消す',
+                galleryResult.confirmTexts[1] === 'この応答に対して生成された画像を全て削除しますか？'
+                && galleryResult.illustrationAfterAllDelete === null],
+            ['画像プロンプトにコピーボタンがある', galleryResult.copyButtonExists === true],
+            ['画像プロンプトは展開中に編集でき、保存される', galleryResult.editedSaved === true],
+            ['書き出し名はワークフロー名 + 日付 + 時刻', /^my flow_v1-\d{8}-\d{6}\.json$/.test(galleryResult.exportName)],
+
+            ['挿絵ボタンは挿絵生成オフで隠れる', footerResult.hiddenWhenDisabled === true],
+            ['挿絵の自動/手動ボタンは文字がはみ出さない',
+                footerResult.autoLabel === '挿:自動' && footerResult.manualLabel === '挿:手動' && footerResult.noOverflow === true],
+            ['挿絵の自動は赤地に白文字', footerResult.autoClasses === true && footerResult.autoColors === true],
+            ['挿絵の手動はグレー地に白文字', footerResult.manualClasses === true && footerResult.manualColors === true],
+            ['読み上げのメガホンボタンは入力欄付近にあり、アイコンは SVG',
+                footerResult.megaphoneIcon === true && footerResult.megaphoneHidden === true],
+
+            ['送信前編集オフなら編集ダイアログを開かない',
+                editResult.editOff.dialogOpened === false && !/使われない文章/.test(editResult.editOff.sent || '')],
+            ['送信前編集でキャンセルすると ComfyUI へ送らない',
+                editResult.editCancel.dialogOpened === true && editResult.editCancel.sent === null],
+            ['送信前編集の文章を ComfyUI へ送る', /編集後の送信文章/.test(editResult.editOk.sent || '')],
+            ['再生成は編集ダイアログを通らず保存済みの文章を送る',
+                editResult.regenDialogOpened === false && /編集後の送信文章/.test(editResult.regenSent || '')],
+
+            ['再生成は quiet プロンプトを作り直さない', regenerateResult.quietCalls === 0],
+            ['再生成は古い画像を残して 1 枚足す',
+                regenerateResult.imageCount === 2 && regenerateResult.keptOldImage === 'data:image/png;base64,AAAA'
+                && regenerateResult.viewIndex === 1],
+            ['再生成は保存済みプロンプトをそのまま送る', /使い回すプロンプト/.test(regenerateResult.sentPrompt || '')],
+
+            ['LoRA を使うスロットは選んだファイルと強度で送る',
+                !!loraResult.usedNode
+                && loraResult.usedNode.lora_name === 'inkSketch.safetensors'
+                && loraResult.usedNode.strength_model === 0.7 && loraResult.usedNode.strength_clip === 0.7],
+            ['使わない LoRA は先頭の実在ファイルと強度 0 で送る',
+                !!loraResult.unusedNode
+                && loraResult.unusedNode.lora_name === 'animeDetail.safetensors'
+                && loraResult.unusedNode.strength_model === 0 && loraResult.unusedNode.strength_clip === 0],
+            ['loras フォルダが空ならその LoRA ノードだけ外れて直結する',
+                !loraResult.emptyFolderHasLoraNode
+                && JSON.stringify(loraResult.emptyFolderKSamplerModel) === JSON.stringify(['1', 0])
+                && JSON.stringify(loraResult.emptyFolderClip) === JSON.stringify(['1', 1])],
+            ['LoRA を使う設定でフォルダが空なら送らない',
+                loraResult.blockedPromptSent === false && /loras フォルダ/.test(loraResult.blockedError || '')],
+            ['同梱の規定ワークフローは LoRA ノードを持たず生成できる',
+                loraResult.defaultWorkflowSent === true && loraResult.defaultWorkflowHasLoraNode === false],
+            ['同梱の規定ワークフローはサンプラが解決している', loraResult.defaultWorkflowSampler === 'euler_a'],
 
             ['開き直後に設定が復元される', reloadResult.settingsRestored && reloadResult.templateRestored],
             ['開き直後に保存済み挿絵が履歴へ表示される',
                 savedChat.status === 'done' && reloadResult.illustrationStatus === 'done'
                 && reloadResult.imageRendered && reloadResult.imageSrcIsDataUrl],
         ];
+        console.log('\n── 複数枚・再生成・LoRA の内訳 ──');
+        console.log(JSON.stringify({
+            gallery: galleryResult, regenerate: regenerateResult, lora: {
+                usedNode: loraResult.usedNode,
+                unusedNode: loraResult.unusedNode,
+                emptyFolderHasLoraNode: loraResult.emptyFolderHasLoraNode,
+                emptyFolderKSamplerModel: loraResult.emptyFolderKSamplerModel,
+                emptyFolderClip: loraResult.emptyFolderClip,
+                blockedPromptSent: loraResult.blockedPromptSent,
+                blockedError: loraResult.blockedError,
+                defaultWorkflowSent: loraResult.defaultWorkflowSent,
+                defaultWorkflowHasLoraNode: loraResult.defaultWorkflowHasLoraNode,
+                defaultWorkflowSampler: loraResult.defaultWorkflowSampler,
+                defaultWorkflowError: loraResult.defaultWorkflowError,
+            },
+            regenerateError: regenerateResult.error,
+            regenerateWorkflow: regenerateResult.activeWorkflowName,
+            footer: footerResult,
+            edit: editResult,
+        }, null, 2));
         console.log('\n── 確認 ──');
         let failed = 0;
         for (const [name, ok] of checks) {
