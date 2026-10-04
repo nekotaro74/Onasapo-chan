@@ -2217,6 +2217,24 @@ body.turf-mode {
             display: block;
         }
 
+
+        /* 応答ごとのメガホンボタン。読み上げ済みでも押し直せる */
+        .message-actions .js-tts-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 6px;
+        }
+
+        .message-actions .js-tts-btn .tts-megaphone-icon {
+            width: 16px;
+            height: 16px;
+            display: block;
+        }
+
+        .message-actions .js-tts-btn:disabled {
+            opacity: 0.45;
+        }
         .chat-input-area button#attach-file-btn {
             position: relative;
         }
@@ -8071,6 +8089,94 @@ font-size: 1.142em !important;
                         </details>
                     </div>
                 </details>
+                <details class="settings-group" id="settings-group-tts">
+                    <summary
+                        style="font-size: 16px; color: var(--text-link); border-bottom: 1px solid var(--border-tertiary); padding-bottom: 5px; margin-bottom: 15px; display: list-item; list-style: revert; cursor:pointer; font-weight: bold;">
+                        読み上げ（TTS）</summary>
+                    <div style="margin-top:10px;">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="tts-enabled-toggle">
+                            読み上げを有効にする
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="tts-auto-speak-toggle">
+                            自動読み上げ（クラウドLLMの応答受信が完了した直後に再生する）
+                        </label>
+                        <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 15px;">
+                            ※ プロバイダは <b>OpenAI Compatible のみ</b>です。<code>POST {{endpoint}}/audio/speech</code> に <code>{ model, voice, input }</code> を送ります。<br>
+                            ※ 再生はキューで順に鳴らし、重ねません。<b>停止</b>はキューを破棄します。<br>
+                            ※ 読み上げはブラウザから直接叩くため、サーバー側で CORS が許可されている必要があります。<br>
+                            ※ APIキーはこのアプリの IndexedDB にだけ保存し、ファイル書き出しやコミットには出しません。
+                        </p>
+                        <label for="tts-endpoint" style="margin-top: 15px;">OpenAI Compatible エンドポイント:</label>
+                        <input type="text" id="tts-endpoint" placeholder="例: https://api.example.com/v1"
+                            aria-label="OpenAI Compatible エンドポイント">
+                        <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
+                            ※ 末尾に <code>/audio/speech</code> が無ければ自動で足します。末尾スラッシュは除去します。
+                        </p>
+                        <label for="tts-api-key">APIキー:</label>
+                        <input type="password" id="tts-api-key" placeholder="空なら Authorization ヘッダーを送りません"
+                            aria-label="TTS APIキー">
+                        <label for="tts-model" style="margin-top: 15px;">モデル名:</label>
+                        <input type="text" id="tts-model" placeholder="例: gpt-4o-mini-tts" aria-label="TTS モデル名">
+                        <label for="tts-voices" style="margin-top: 15px;">ボイス一覧（カンマ区切り）:</label>
+                        <input type="text" id="tts-voices" placeholder="例: alloy, echo, fable, onyx, nova, shimmer"
+                            aria-label="カンマ区切りのボイス一覧">
+                        <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
+                            ※ ここに書いた一覧を下の選択欄から選びます。話者割当は SillyTavern と同じく手入力です。
+                        </p>
+
+                        <button id="tts-connection-test-btn" class="settings-action-button" style="font-size: 12px;">接続確認</button>
+                        <button id="tts-stop-btn" class="settings-action-button" style="font-size: 12px;">停止</button>
+                        <span id="tts-connection-status" style="font-size: 12px; margin-left: 8px; color: var(--text-secondary);"></span>
+
+                        <label for="tts-speed" style="margin-top: 15px;">速度: <span id="tts-speed-value">1.00</span> 倍</label>
+                        <input type="range" id="tts-speed" min="0.25" max="4" step="0.05" value="1" aria-label="読み上げ速度">
+                        <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
+                            ※ 本文には <code>model</code> / <code>voice</code> / <code>input</code> だけを送り、速度は再生側（<code>playbackRate</code>）で掛けます。サーバー非依存で効きます。
+                        </p>
+
+                        <details open style="margin-top: 12px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
+                            <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
+                                話者割当
+                            </summary>
+                            <div style="padding: 10px; padding-top: 5px;">
+                                <label for="tts-default-voice">デフォルトボイス（地の文）:</label>
+                                <select id="tts-default-voice" aria-label="地の文のボイス"></select>
+                                <label for="tts-generic-voice" style="margin-top: 10px;">汎用ボイス（話者名の無い引用や括弧）:</label>
+                                <select id="tts-generic-voice" aria-label="汎用のボイス"></select>
+                                <div id="tts-speaker-rows" style="margin-top: 12px;"></div>
+                                <p style="font-size: 11px; color: var(--text-secondary); margin-top: 8px; margin-bottom: 0;">
+                                    ※ 検出は<b>完全一致</b>で、<b>最長名を優先</b>します。名前は行頭・改行後・文境界だけを見ます。<br>
+                                    ※ 半角と全角のスペース、<code>()</code> と <code>（）</code>、<code>:</code> と <code>：</code>、<code>"</code> と <code>”</code> は同じとして扱います。<br>
+                                    ※ 同じ行での優先順: 1 名前+心理描写+セリフ / 2 名前+セリフ（「」『』または引用符） / 3 名前+心理描写だけ / 4 名前+<code>:</code> または <code>：</code>+その行の残り / 5 話者名なしの引用・心理描写は汎用ボイス / 6 残りは地の文。
+                                </p>
+                                <label class="checkbox-label" style="margin-top: 10px;">
+                                    <input type="checkbox" id="tts-narrate-dialogue-only-toggle">
+                                    地の文を読まずセリフだけ読み上げる
+                                </label>
+                            </div>
+                        </details>
+
+                        <details style="margin-top: 10px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
+                            <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
+                                送信前の正規表現フィルタ（1つ）
+                            </summary>
+                            <div style="padding: 10px; padding-top: 5px;">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="tts-regex-enabled-toggle">
+                                    正規表現フィルタを使う
+                                </label>
+                                <label for="tts-regex-pattern" style="margin-top: 8px;">パターン:</label>
+                                <input type="text" id="tts-regex-pattern" placeholder="例: \([^)]*\)"
+                                    aria-label="読み上げ前の正規表現フィルタ">
+                                <p style="font-size: 11px; color: var(--text-secondary); margin-top: 5px; margin-bottom: 0;">
+                                    ※ 該当箇所を読み上げ本文から除きます。コードブロック・URL・Markdown の装飾は常に読み上げません。
+                                </p>
+                            </div>
+                        </details>
+                    </div>
+                </details>
                 <details class="settings-group" id="settings-group-session-linking">
                     <summary
                         style="font-size: 16px; color: var(--text-link); border-bottom: 1px solid var(--border-tertiary); padding-bottom: 5px; margin-bottom: 15px; display: list-item; list-style: revert; cursor:pointer; font-weight: bold;">
@@ -8843,6 +8949,25 @@ elevationHoverOption: document.getElementById('elevation-hover-option'),
             illustrationEnabledToggle: document.getElementById('illustration-enabled-toggle'),
             illustrationModeSelect: document.getElementById('illustration-mode-select'),
             comfyBaseUrlInput: document.getElementById('comfy-base-url'),
+            // ▼ 読み上げ（TTS）▼
+            ttsModeToggleBtn: document.getElementById('tts-mode-toggle-btn'),
+            ttsEnabledToggle: document.getElementById('tts-enabled-toggle'),
+            ttsAutoSpeakToggle: document.getElementById('tts-auto-speak-toggle'),
+            ttsEndpointInput: document.getElementById('tts-endpoint'),
+            ttsApiKeyInput: document.getElementById('tts-api-key'),
+            ttsModelInput: document.getElementById('tts-model'),
+            ttsVoicesInput: document.getElementById('tts-voices'),
+            ttsSpeedInput: document.getElementById('tts-speed'),
+            ttsSpeedValue: document.getElementById('tts-speed-value'),
+            ttsDefaultVoiceSelect: document.getElementById('tts-default-voice'),
+            ttsGenericVoiceSelect: document.getElementById('tts-generic-voice'),
+            ttsSpeakerRows: document.getElementById('tts-speaker-rows'),
+            ttsDialogueOnlyToggle: document.getElementById('tts-narrate-dialogue-only-toggle'),
+            ttsRegexEnabledToggle: document.getElementById('tts-regex-enabled-toggle'),
+            ttsRegexPatternInput: document.getElementById('tts-regex-pattern'),
+            ttsTestBtn: document.getElementById('tts-connection-test-btn'),
+            ttsStopBtn: document.getElementById('tts-stop-btn'),
+            ttsStatus: document.getElementById('tts-connection-status'),
             comfyConnectionTestBtn: document.getElementById('comfy-connection-test-btn'),
             comfyConnectionStatus: document.getElementById('comfy-connection-status'),
             comfyWorkflowTextarea: document.getElementById('comfy-workflow-textarea'),
@@ -9161,6 +9286,20 @@ geminiIncludeThoughts: false,
                 comfyEditPromptBeforeSend: false,
                 // LoRA は最大4個。name が空のスロットは「使わない」
                 comfyLoras: buildDefaultComfyLoraSlots(),
+                // ▼ 読み上げ（TTS）▼ OpenAI Compatible のみ。APIキーは既定空（IndexedDB にのみ保存）
+                ttsEnabled: false,
+                ttsMode: 'auto',              // 'auto' = 応答受信完了後に再生 / 'manual' = ボタンでのみ
+                ttsEndpoint: '',              // 例: https://api.example.com/v1
+                ttsApiKey: '',
+                ttsModel: '',
+                ttsVoices: '',                // カンマ区切りのボイス一覧
+                ttsSpeed: 1.0,
+                ttsDefaultVoice: '',          // 地の文
+                ttsGenericVoice: '',          // 話者名の無い引用や括弧
+                ttsSpeakers: [],              // [{ name, voice }] 登場人物 1〜5
+                ttsNarrateDialogueOnly: false, // 地の文を読まずセリフだけ読み上げる
+                ttsRegexEnabled: false,
+                ttsRegexPattern: '',          // 送信前の正規表現フィルタ（1つ）
                 // ▲ ここまで ▲
 deepSeekApiKey: '',
 deepSeekApiEndpoint: '',
@@ -11443,6 +11582,415 @@ const dbUtils = {
             },
         };
 
+        // ▼ 読み上げ（TTS）▼ SillyTavern の TTS 拡張の操作を模倣する。
+        // プロバイダは OpenAI Compatible のみ。POST {endpoint}/audio/speech へ
+        // { model, voice, input } を送り、戻ってきた音声バイトをキューで順に再生する。
+        // 再生を重ねない。停止はキューを破って現在の音声も止める。
+        const TTS_SPEAKER_SLOTS = 5;          // 登場人物 1〜5
+        const TTS_INPUT_CHUNK_CHARS = 1200;   // audio/speech の input は 4096 字上限。安全側に切る
+
+        const ttsUtils = {
+            // ── 正規化 ──────────────────────────────────────
+            // 半角と全角のスペース、() と （）、: と ：、" と ” を同じとして扱う。
+            // 読み上げ文そのものにも適用してよい（括弧やコロンは音にならない）。
+            normalizeWidths(text) {
+                return String(text || '')
+                    .replace(/[（]/g, '(').replace(/[）]/g, ')')
+                    .replace(/[：]/g, ':')
+                    .replace(/[“”]/g, '"')
+                    .replace(/[　]/g, ' ');
+            },
+            normalizeName(name) {
+                return this.normalizeWidths(name).replace(/\s+/g, ' ').trim();
+            },
+
+            // ── 読み上げ前のテキスト整形 ────────────────────
+            // コードブロック・URL・Markdown の装飾は読まない。
+            // 送信前の正規表現フィルタは 1 つだけ持てる（SillyTavern の apply_regex 相当）。
+            cleanForSpeech(rawText) {
+                let text = String(rawText || '');
+
+                // 1. 全角・半角の吸収。以降（ユーザの正規表現を含む）は常に半角形で見る
+                text = this.normalizeWidths(text);
+
+                // 2. 送信前フィルタ（ユーザ定義の 1 本）
+                const pattern = (state.settings.ttsRegexEnabled !== false)
+                    ? String(state.settings.ttsRegexPattern || '').trim() : '';
+                if (pattern) {
+                    try {
+                        const re = new RegExp(pattern, 'g');
+                        text = text.replace(re, '');
+                    } catch (error) {
+                        console.warn('[TTS] 正規表現フィルタが不正です:', pattern, error);
+                    }
+                }
+
+                // 3. コードブロックとインラインコード
+                text = text.replace(/```[\s\S]*?```/g, ' ');
+                text = text.replace(/~~~[\s\S]*?~~~/g, ' ');
+                text = text.replace(/`[^`\n]*`/g, ' ');
+
+                // 4. URL
+                text = text.replace(/https?:\/\/[^\s<>\]）)】]+/gi, ' ');
+                text = text.replace(/\bwww\.[^\s<>\]）)】]+/gi, ' ');
+
+                // 5. Markdown の装飾
+                text = text.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ');            // 画像
+                text = text.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');          // リンクはラベルだけ残す
+                text = text.replace(/<\/?[a-zA-Z][^>]*>/g, ' ');              // HTML タグ
+                text = text.replace(/^[ \t]*#{1,6}[ \t]*/gm, '');             // 見出し
+                text = text.replace(/^[ \t]*>[ \t]*/gm, '');                  // 引用
+                text = text.replace(/^[ \t]*[-*+[=]{2,}[ \t]*$/gm, ' ');      // 区切り線
+                text = text.replace(/^[ \t]*(?:[-*+]|\d+\.)[ \t]+/gm, '');    // 箇条書き
+                text = text.replace(/(\*\*\*|___)/g, '');
+                text = text.replace(/(\*\*|__)/g, '');
+                text = text.replace(/~~/g, '');
+                text = text.replace(/^[ \t]*\|+[ \t]*|[ \t]*\|+[ \t]*$/gm, ' ');
+                text = text.replace(/\*([^*\n]+)\*/g, '$1');                  // *斜体*
+
+                // 6. 整形後の空白を詰める（行自体は保持して話者検出に使う）
+                text = text.replace(/[ \t]+/g, ' ');
+                text = text.replace(/\n{3,}/g, '\n\n');
+                return text.trim();
+            },
+
+            // ── 話者割当 ────────────────────────────────────
+            // 設定で手入力した 名前 + ボイス。最長名を優先するので長さ順に並べる。
+            speakerTable() {
+                const rows = Array.isArray(state.settings.ttsSpeakers) ? state.settings.ttsSpeakers : [];
+                const table = [];
+                for (const row of rows) {
+                    const raw = row && typeof row === 'object' ? String(row.name || '') : String(row || '');
+                    const name = this.normalizeName(raw);
+                    if (!name) continue;
+                    table.push({ name, voice: String((row && row.voice) || '') });
+                }
+                table.sort((a, b) => b.name.length - a.name.length);
+                return table;
+            },
+
+            // 話者名は行頭・改行後・文境界に現れたものだけ見る。
+            isSpeakerBoundary(text, index) {
+                if (index === 0) return true;
+                let i = index - 1;
+                while (i >= 0 && (text[i] === ' ' || text[i] === '\t')) i--;
+                if (i < 0) return true;
+                const prev = text[i];
+                // 文の終わり、改行、開き括弧・引用符の直後
+                return '\n。！？!?…〜「『（("'.includes(prev);
+            },
+
+            // 名前の直後にある 心理描写 () と セリフ 「」『』 " をまとめて消費する。
+            // 1. 名前 + 心理描写 + セリフ / 2. 名前 + セリフ / 3. 名前 + 心理描写
+            // を、連続した分だけ話者本人のボイスとして扱う。
+            matchSpeakerTail(tail) {
+                const NARR = /^[ \t]*\((?!\s)([^()]*)\)/;
+                const QUOTE = /^[ \t]*(?:「(?!\s)([^」]*)」|『(?!\s)([^』]*)』|"(?!\s)([^"]*)")/;
+                const segments = [];
+                let rest = tail;
+                let matched = false;
+                while (true) {
+                    const narr = NARR.exec(rest);
+                    if (narr) {
+                        segments.push({ kind: 'action', text: narr[1] });
+                        rest = rest.slice(narr[0].length);
+                        matched = true;
+                        continue;
+                    }
+                    const quote = QUOTE.exec(rest);
+                    if (quote) {
+                        segments.push({ kind: 'dialogue', text: quote[1] || quote[2] || quote[3] });
+                        rest = rest.slice(quote[0].length);
+                        matched = true;
+                        continue;
+                    }
+                    break;
+                }
+                if (matched) return { segments, consumed: tail.length - rest.length };
+
+                // 4. 名前 + : または ： + その行の残り
+                const colon = /^[ \t]*:[ \t]*/.exec(rest);
+                if (colon) {
+                    const lineEnd = rest.indexOf('\n');
+                    const spoken = lineEnd === -1 ? rest.slice(colon[0].length) : rest.slice(colon[0].length, lineEnd);
+                    return { segments: [{ kind: 'dialogue', text: spoken }], consumed: tail.length };
+                }
+                return null;
+            },
+
+            // 5. 話者名のない引用・心理描写は汎用ボイス。6. 残りは地の文。
+            splitGeneric(text) {
+                const out = [];
+                const re = /(\([^()]*\))|(「[^」]*」)|(『[^』]*』)|("[^"]*")/g;
+                let lastIndex = 0;
+                let match;
+                while ((match = re.exec(text)) !== null) {
+                    if (match.index > lastIndex) {
+                        const other = text.slice(lastIndex, match.index).trim();
+                        if (other) out.push({ kind: 'narration', text: other });
+                    }
+                    const piece = match[0];
+                    const kind = match[1] ? 'action' : 'dialogue';
+                    const content = piece.slice(1, -1).trim();
+                    if (content) out.push({ kind, text: content });
+                    lastIndex = match.index + piece.length;
+                }
+                if (lastIndex < text.length) {
+                    const other = text.slice(lastIndex).trim();
+                    if (other) out.push({ kind: 'narration', text: other });
+                }
+                return out;
+            },
+
+            // 1 行ぶんを読んで 話者ボイスつきの断片へ分解する。
+            segmentLine(line, speakers) {
+                const out = [];
+                let rest = line;
+                let guard = 0;
+                while (rest && guard++ < 200) {
+                    const marker = this.findSpeakerMarker(rest, speakers);
+                    if (!marker) {
+                        out.push(...this.splitGeneric(rest));
+                        break;
+                    }
+                    const before = rest.slice(0, marker.start);
+                    if (before.trim()) out.push(...this.splitGeneric(before));
+                    if (marker.tailMatch) {
+                        for (const seg of marker.tailMatch.segments) {
+                            out.push({ kind: seg.kind, text: seg.text, voice: marker.speaker.voice });
+                        }
+                        rest = rest.slice(marker.start + marker.name.length + marker.tailMatch.consumed);
+                    } else {
+                        // 名前の後に 引用・括弧・コロンが続かないなら、その名前は地の文の一部
+                        rest = rest.slice(marker.start + marker.name.length);
+                        out.push({ kind: 'narration', text: marker.name });
+                    }
+                }
+                return out;
+            },
+
+            // 最長名を優先。同じ位置では長い名前が勝つ。
+            findSpeakerMarker(text, speakers) {
+                if (!speakers.length) return null;
+                for (let i = 0; i < text.length; i++) {
+                    if (!this.isSpeakerBoundary(text, i)) continue;
+                    for (const speaker of speakers) {
+                        if (!text.startsWith(speaker.name, i)) continue;
+                        const after = text[i + speaker.name.length];
+                        if (after && /[A-Za-z0-9぀-ヿ一-鿿]/.test(after)) continue; // 部分一致は使わない
+                        const tail = text.slice(i + speaker.name.length);
+                        return { start: i, name: speaker.name, speaker, tailMatch: this.matchSpeakerTail(tail) };
+                    }
+                }
+                return null;
+            },
+
+            // 応答本文 → 再生キューへ入れる断片（voice 付き）
+            buildSegments(rawContent) {
+                const cleaned = this.cleanForSpeech(rawContent);
+                if (!cleaned) return [];
+                const speakers = this.speakerTable();
+                const dialogueOnly = !!state.settings.ttsNarrateDialogueOnly;
+                const segments = [];
+                for (const line of cleaned.split('\n')) {
+                    if (!line.trim()) continue;
+                    for (const seg of this.segmentLine(line, speakers)) {
+                        // オンなら地の文をキューに入れない
+                        if (dialogueOnly && seg.kind === 'narration') continue;
+                        const voice = seg.voice
+                            || (seg.kind === 'narration' ? state.settings.ttsDefaultVoice : state.settings.ttsGenericVoice);
+                        if (!String(voice || '').trim()) continue;   // ボイス未設定の断片は読まない
+                        segments.push({ text: seg.text.trim(), voice: String(voice).trim(), kind: seg.kind });
+                    }
+                }
+                return segments;
+            },
+
+            // audio/speech の input 上限を意識して文の切れ目で切る
+            chunkText(text) {
+                const source = String(text || '');
+                if (source.length <= TTS_INPUT_CHUNK_CHARS) return [source];
+                const pieces = [];
+                let rest = source;
+                while (rest.length > TTS_INPUT_CHUNK_CHARS) {
+                    const window = rest.slice(0, TTS_INPUT_CHUNK_CHARS);
+                    let cut = -1;
+                    for (const mark of ['。', '？', '！', '、', ' ', '\n']) {
+                        const at = window.lastIndexOf(mark);
+                        if (at > cut) cut = at;
+                    }
+                    cut = cut > TTS_INPUT_CHUNK_CHARS / 3 ? cut + 1 : TTS_INPUT_CHUNK_CHARS;
+                    pieces.push(rest.slice(0, cut));
+                    rest = rest.slice(cut);
+                }
+                if (rest.trim()) pieces.push(rest);
+                return pieces;
+            },
+
+            // ── 呼び出し ────────────────────────────────────
+            normalizeEndpoint(endpoint) {
+                let base = String(endpoint || '').trim().replace(/\/+$/, '');
+                if (!base) return '';
+                if (/\/audio\/speech$/i.test(base)) return base;
+                return `${base}/audio/speech`;
+            },
+
+            // 挿絵生成と同じく、fetch の TypeError は区別がつかないため対処法をメッセージに出す
+            corsErrorMessage(error) {
+                return `TTS サーバーに届きませんでした (${error && error.message ? error.message : 'fetch 失敗'})。`
+                    + ' OpenAI Compatible サーバーで CORS が許可されているか確認してください。'
+                    + ' ローカルサーバーなら Access-Control-Allow-Origin にこのページオリジンを返す設定が必要です。'
+                    + ' GitHub Pages 上の公開オリジンからは、利用者自身のローカルや Tailscale のサーバーへは届かない場合があります。';
+            },
+
+            async synthesize(text, voice) {
+                const settings = state.settings;
+                const url = this.normalizeEndpoint(settings.ttsEndpoint);
+                if (!url) throw new Error('TTS のエンドポイントが設定されていません。');
+                if (!String(settings.ttsModel || '').trim()) throw new Error('TTS のモデル名が設定されていません。');
+                if (!String(voice || '').trim()) throw new Error('読み上げに使うボイスが設定されていません。');
+                const apiKey = String(settings.ttsApiKey || '').trim();
+
+                const headers = { 'Content-Type': 'application/json' };
+                if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+                let response;
+                try {
+                    response = await fetch(url, {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({
+                            model: String(settings.ttsModel || '').trim(),
+                            voice,
+                            input: text,
+                        }),
+                    });
+                } catch (error) {
+                    throw new Error(this.corsErrorMessage(error));
+                }
+
+                if (!response.ok) {
+                    let detail = '';
+                    try { detail = (await response.text()).slice(0, 300); } catch (_) { /* 本文なし */ }
+                    throw new Error(`TTS サーバーがエラーを返しました (HTTP ${response.status})${detail ? `: ${detail}` : ''}`);
+                }
+                const blob = await response.blob();
+                if (!blob || blob.size === 0) throw new Error('TTS から返された音声空でした。');
+                return URL.createObjectURL(blob);
+            },
+
+            // ── 再生キュー ──────────────────────────────────
+            queue: [],
+            currentAudio: null,
+            playing: false,
+            generation: 0,   // 停止のたびに増やし、実行中の取得結果を捨てる
+            lastManual: false,
+
+            // manual = ボタン発。失敗時に設定欄だけでなくダイアログでも案内する
+            enqueueMessage(index, manual) {
+                this.lastManual = !!manual;
+                const message = state.currentMessages[index];
+                if (!message || message.role !== 'model') return 0;
+                const segments = this.buildSegments(message.content);
+                if (!segments.length) return 0;
+                let added = 0;
+                for (const segment of segments) {
+                    for (const chunk of this.chunkText(segment.text)) {
+                        this.queue.push({ text: chunk, voice: segment.voice });
+                        added++;
+                    }
+                }
+                this.pump();
+                return added;
+            },
+
+            // 再生はキューで順に鳴らし、重ねない
+            async pump() {
+                if (this.playing) return;
+                const job = this.queue.shift();
+                if (!job) { this.updateStatus(''); return; }
+                this.playing = true;
+                const generation = this.generation;
+                try {
+                    const objectUrl = await this.synthesize(job.text, job.voice);
+                    if (generation !== this.generation) {
+                        URL.revokeObjectURL(objectUrl);
+                        this.playing = false;
+                        return;
+                    }
+                    const audio = new Audio(objectUrl);
+                    const speed = Number(state.settings.ttsSpeed);
+                    if (isFinite(speed) && speed > 0) {
+                        audio.playbackRate = Math.min(4, Math.max(0.25, speed));
+                        try { audio.preservesPitch = true; } catch (_) { /* 未対応ブラウザあり */ }
+                    }
+                    this.currentAudio = audio;
+                    this.updateStatus(`読み上げ中…（残り ${this.queue.length} 件）`);
+                    audio.onended = audio.onerror = () => {
+                        URL.revokeObjectURL(objectUrl);
+                        if (this.currentAudio === audio) this.currentAudio = null;
+                        this.playing = false;
+                        if (generation === this.generation) this.pump();
+                    };
+                    await audio.play();
+                } catch (error) {
+                    this.playing = false;
+                    this.currentAudio = null;
+                    this.queue.length = 0;
+                    this.updateStatus(`読み上げに失敗: ${error.message}`, true);
+                    console.error('[TTS]', error);
+                    // 挿絵生成と同じく、CORS 系の失敗は対処法をそのまま出す
+                    if (this.lastManual) uiUtils.showCustomAlert(`読み上げに失敗しました: ${error.message}`);
+                }
+            },
+
+            // 停止はキューを破棄する
+            stopAll() {
+                this.generation++;
+                this.queue.length = 0;
+                if (this.currentAudio) {
+                    try {
+                        this.currentAudio.onended = null;
+                        this.currentAudio.onerror = null;
+                        this.currentAudio.pause();
+                    } catch (_) { /* すでに破棄済み */ }
+                    if (this.currentAudio.src) URL.revokeObjectURL(this.currentAudio.src);
+                    this.currentAudio = null;
+                }
+                this.playing = false;
+                this.updateStatus('停止しました');
+            },
+
+            updateStatus(message, isError) {
+                if (!elements.ttsStatus) return;
+                elements.ttsStatus.textContent = message || '';
+                elements.ttsStatus.style.color = isError ? 'var(--text-error, var(--text-link))' : 'var(--text-secondary)';
+            },
+
+            // 設定の「接続確認」。短い文を 1 回だけ合成して再生する
+            async testConnection() {
+                const objectUrl = await this.synthesize('接続確認のテストです。', String(state.settings.ttsDefaultVoice || '').trim()
+                    || (this.voiceChoices()[0] || ''));
+                try {
+                    const audio = new Audio(objectUrl);
+                    audio.onended = () => URL.revokeObjectURL(objectUrl);
+                    await audio.play();
+                } catch (error) {
+                    URL.revokeObjectURL(objectUrl);
+                    throw error;
+                }
+                return '音声を受け取りました';
+            },
+
+            // カンマ区切りのボイス一覧
+            voiceChoices() {
+                return String(state.settings.ttsVoices || '')
+                    .split(',')
+                    .map(v => v.trim())
+                    .filter(v => v.length > 0);
+            },
+        };
+
         function katakanaToHiragana(str) {
             if (typeof str !== 'string') return '';
             return str.replace(/[\u30a1-\u30f6]/g, function (match) {
@@ -12194,6 +12742,20 @@ appendMessage(role, content, index, isStreamingPlaceholder = false, cascadeInfo 
                     copyButton.title = 'テキストをコピー';
                     copyButton.classList.add('js-copy-btn');
                     actionsDiv.appendChild(copyButton);
+
+                    // 応答ごとにメガホンボタン。読み上げ済みでも押し直せる
+                    if (role === 'model') {
+                        const ttsButton = document.createElement('button');
+                        ttsButton.classList.add('js-tts-btn');
+                        ttsButton.dataset.index = index;
+                        ttsButton.title = 'この応答を読み上げ';
+                        ttsButton.setAttribute('aria-label', 'この応答を読み上げ');
+                        ttsButton.innerHTML = '<svg class="tts-megaphone-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">'
+                            + '<path fill="currentColor" d="M3 10.5v3a1.5 1.5 0 0 0 1.5 1.5H8l5.2 3.9c.9.7 2.3.1 2.3-1V6.1c0-1.1-1.4-1.7-2.3-1L8 9H4.5A1.5 1.5 0 0 0 3 10.5z" />'
+                            + '<path fill="currentColor" d="M18.4 9.4a3.6 3.6 0 0 1 0 5.2v1.1a4.7 4.7 0 0 0 0-7.4z" />'
+                            + '</svg>';
+                        actionsDiv.appendChild(ttsButton);
+                    }
 
                     if (role === 'user' || role === 'model') {
                         const retryButton = document.createElement('button');
@@ -14002,6 +14564,143 @@ elements.footerTapScrollToBottomToggle.checked = state.settings.footerTapScrollT
                 });
 
                 this.applyIllustrationSettingsToUI();
+                this.applyTtsSettingsToUI();
+            },
+            // ▼ 読み上げ（TTS）▼
+            applyTtsSettingsToUI() {
+                if (!elements.ttsEnabledToggle) return;
+
+                elements.ttsEnabledToggle.checked = !!state.settings.ttsEnabled;
+                const isAuto = state.settings.ttsMode !== 'manual';
+                if (elements.ttsAutoSpeakToggle) elements.ttsAutoSpeakToggle.checked = isAuto;
+                elements.ttsEndpointInput.value = state.settings.ttsEndpoint || '';
+                elements.ttsApiKeyInput.value = state.settings.ttsApiKey || '';
+                elements.ttsModelInput.value = state.settings.ttsModel || '';
+                elements.ttsVoicesInput.value = state.settings.ttsVoices || '';
+                const speed = Number(state.settings.ttsSpeed);
+                elements.ttsSpeedInput.value = isFinite(speed) ? Math.min(4, Math.max(0.25, speed)) : 1;
+                elements.ttsSpeedValue.textContent = Number(elements.ttsSpeedInput.value).toFixed(2);
+                elements.ttsDialogueOnlyToggle.checked = !!state.settings.ttsNarrateDialogueOnly;
+                elements.ttsRegexEnabledToggle.checked = !!state.settings.ttsRegexEnabled;
+                elements.ttsRegexPatternInput.value = state.settings.ttsRegexPattern || '';
+
+                this.renderTtsVoiceSelects();
+                this.renderTtsSpeakerRows();
+                this.updateTtsFooterButton();
+            },
+            // ボイス一覧（カンマ区切り）から選択欄を作り、保存値が残るように再構築する
+            renderTtsVoiceSelects() {
+                const choices = ttsUtils.voiceChoices();
+                const pairs = [
+                    [elements.ttsDefaultVoiceSelect, state.settings.ttsDefaultVoice, '（未設定）'],
+                    [elements.ttsGenericVoiceSelect, state.settings.ttsGenericVoice, '（未設定）'],
+                ];
+                for (const [select, saved, blankLabel] of pairs) {
+                    if (!select) continue;
+                    select.innerHTML = '';
+                    const blank = document.createElement('option');
+                    blank.value = '';
+                    blank.textContent = blankLabel;
+                    select.appendChild(blank);
+                    for (const voice of choices) {
+                        const option = document.createElement('option');
+                        option.value = voice;
+                        option.textContent = voice;
+                        select.appendChild(option);
+                    }
+                    if (saved && !choices.includes(saved)) {
+                        const option = document.createElement('option');
+                        option.value = saved;
+                        option.textContent = `${saved}（一覧に無い保存値）`;
+                        select.appendChild(option);
+                    }
+                    select.value = saved || '';
+                }
+                for (const select of (elements.ttsSpeakerRows ? elements.ttsSpeakerRows.querySelectorAll('select.js-tts-speaker-voice') : [])) {
+                    const saved = select.value;
+                    select.innerHTML = '';
+                    const blank = document.createElement('option');
+                    blank.value = '';
+                    blank.textContent = '（読まない）';
+                    select.appendChild(blank);
+                    for (const voice of choices) {
+                        const option = document.createElement('option');
+                        option.value = voice;
+                        option.textContent = voice;
+                        select.appendChild(option);
+                    }
+                    if (saved && !choices.includes(saved)) {
+                        const option = document.createElement('option');
+                        option.value = saved;
+                        option.textContent = `${saved}（一覧に無い保存値）`;
+                        select.appendChild(option);
+                    }
+                    select.value = saved || '';
+                }
+            },
+            // 話者割当は設定で手入力（登場人物 1〜5）
+            renderTtsSpeakerRows() {
+                if (!elements.ttsSpeakerRows) return;
+                const rows = Array.isArray(state.settings.ttsSpeakers) ? state.settings.ttsSpeakers : [];
+                while (rows.length < TTS_SPEAKER_SLOTS) rows.push({ name: '', voice: '' });
+                state.settings.ttsSpeakers = rows.slice(0, TTS_SPEAKER_SLOTS);
+                const choices = ttsUtils.voiceChoices();
+
+                elements.ttsSpeakerRows.innerHTML = '';
+                state.settings.ttsSpeakers.forEach((row, i) => {
+                    const wrap = document.createElement('div');
+                    wrap.style.cssText = 'display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px; align-items:center;';
+
+                    const label = document.createElement('span');
+                    label.textContent = `登場人物${i + 1}`;
+                    label.style.cssText = 'font-size:12px; color:var(--text-secondary); min-width:70px;';
+
+                    const nameInput = document.createElement('input');
+                    nameInput.type = 'text';
+                    nameInput.className = 'js-tts-speaker-name';
+                    nameInput.placeholder = '名前';
+                    nameInput.value = row.name || '';
+                    nameInput.setAttribute('aria-label', `登場人物${i + 1}の名前`);
+                    nameInput.style.cssText = 'flex:1 1 140px;';
+
+                    const voiceSelect = document.createElement('select');
+                    voiceSelect.className = 'js-tts-speaker-voice';
+                    voiceSelect.setAttribute('aria-label', `登場人物${i + 1}のボイス`);
+                    voiceSelect.style.cssText = 'flex:1 1 140px;';
+                    const blank = document.createElement('option');
+                    blank.value = '';
+                    blank.textContent = '（読まない）';
+                    voiceSelect.appendChild(blank);
+                    for (const voice of choices) {
+                        const option = document.createElement('option');
+                        option.value = voice;
+                        option.textContent = voice;
+                        voiceSelect.appendChild(option);
+                    }
+                    if (row.voice && !choices.includes(row.voice)) {
+                        const option = document.createElement('option');
+                        option.value = row.voice;
+                        option.textContent = `${row.voice}（一覧に無い保存値）`;
+                        voiceSelect.appendChild(option);
+                    }
+                    voiceSelect.value = row.voice || '';
+
+                    wrap.appendChild(label);
+                    wrap.appendChild(nameInput);
+                    wrap.appendChild(voiceSelect);
+                    elements.ttsSpeakerRows.appendChild(wrap);
+                });
+            },
+            // 入力欄付近の自動／手動ボタン。自動は赤地に白のメガホン、手動はグレー地に白のメガホン
+            updateTtsFooterButton() {
+                if (!elements.ttsModeToggleBtn) return;
+                const enabled = !!state.settings.ttsEnabled;
+                elements.ttsModeToggleBtn.classList.toggle('hidden', !enabled);
+                if (!enabled) return;
+                const isAuto = state.settings.ttsMode !== 'manual';
+                elements.ttsModeToggleBtn.classList.toggle('mode-auto', isAuto);
+                elements.ttsModeToggleBtn.classList.toggle('mode-manual', !isAuto);
+                elements.ttsModeToggleBtn.title = `読み上げ: ${isAuto ? '自動' : '手動'}（クリックで切替）`;
             },
             applyIllustrationSettingsToUI() {
                 if (!elements.illustrationEnabledToggle) return;
@@ -15729,6 +16428,46 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                 if (elements.illustrationGenerateLastBtn) {
                     elements.illustrationGenerateLastBtn.addEventListener('click', () => this.generateIllustration());
                 }
+                // ▼ 読み上げ（TTS）▼
+                if (elements.ttsModeToggleBtn) {
+                    elements.ttsModeToggleBtn.addEventListener('click', () => this.toggleTtsMode());
+                }
+                if (elements.ttsStopBtn) {
+                    elements.ttsStopBtn.addEventListener('click', () => this.stopTts());
+                }
+                if (elements.ttsTestBtn) {
+                    elements.ttsTestBtn.addEventListener('click', async () => {
+                        ttsUtils.updateStatus('確認中…');
+                        try {
+                            const message = await ttsUtils.testConnection();
+                            ttsUtils.updateStatus(message);
+                        } catch (error) {
+                            ttsUtils.updateStatus(error.message, true);
+                        }
+                    });
+                }
+                if (elements.ttsSpeedInput && elements.ttsSpeedValue) {
+                    elements.ttsSpeedInput.addEventListener('input', () => {
+                        elements.ttsSpeedValue.textContent = Number(elements.ttsSpeedInput.value).toFixed(2);
+                    });
+                }
+                if (elements.ttsVoicesInput) {
+                    // 一覧を変えたら選択欄を作り直す。未保存の選択は state へ写してから残す
+                    elements.ttsVoicesInput.addEventListener('change', () => {
+                        if (elements.ttsDefaultVoiceSelect) state.settings.ttsDefaultVoice = elements.ttsDefaultVoiceSelect.value;
+                        if (elements.ttsGenericVoiceSelect) state.settings.ttsGenericVoice = elements.ttsGenericVoiceSelect.value;
+                        if (elements.ttsSpeakerRows) {
+                            const names = elements.ttsSpeakerRows.querySelectorAll('input.js-tts-speaker-name');
+                            const voices = elements.ttsSpeakerRows.querySelectorAll('select.js-tts-speaker-voice');
+                            state.settings.ttsSpeakers = Array.from(names).map((input, i) => ({
+                                name: input.value,
+                                voice: voices[i] ? voices[i].value : '',
+                            }));
+                        }
+                        uiUtils.renderTtsVoiceSelects();
+                        uiUtils.renderTtsSpeakerRows();
+                    });
+                }
                 if (elements.comfyConnectionTestBtn) {
                     elements.comfyConnectionTestBtn.addEventListener('click', async () => {
                         elements.comfyConnectionStatus.textContent = '確認中…';
@@ -16565,6 +17304,9 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                         }
                         if (button.classList.contains('js-copy-btn')) {
                             appLogic.copyMessageText(index, button); return;
+                        }
+                        if (button.classList.contains('js-tts-btn')) {
+                            appLogic.speakMessage(index); return;
                         }
                         if (button.classList.contains('js-retry-btn')) {
                             const role = clickedMessage.classList.contains('model') ? 'model' : 'user';
@@ -17978,6 +18720,31 @@ helpIcons.forEach(icon => {
                 uiUtils.updateIllustrationFooterButtons();
                 if (elements.illustrationModeSelect) elements.illustrationModeSelect.value = next;
                 uiUtils.showCustomAlert(`挿絵の生成タイミングを「${next === 'auto' ? '自動' : '手動'}」に切り替えました。`);
+            },
+            // ▼ 読み上げ（TTS）▼
+            async toggleTtsMode() {
+                const next = state.settings.ttsMode === 'manual' ? 'auto' : 'manual';
+                state.settings.ttsMode = next;
+                await dbUtils.saveSetting('ttsMode', next);
+                uiUtils.updateTtsFooterButton();
+                if (elements.ttsAutoSpeakToggle) elements.ttsAutoSpeakToggle.checked = next === 'auto';
+                await uiUtils.showCustomAlert(`読み上げを「${next === 'auto' ? '自動' : '手動'}」に切り替えました。`);
+            },
+            // 応答ごとのメガホンボタン。自動・手動で同じ経路を使い、キューへ入れるだけ返す
+            async speakMessage(index, silent) {
+                if (!state.settings.ttsEnabled) {
+                    if (!silent) {
+                        await uiUtils.showCustomAlert('読み上げが有効ではありません。設定の「読み上げ（TTS）」で有効にしてください。');
+                    }
+                    return;
+                }
+                const added = ttsUtils.enqueueMessage(index, !silent);
+                if (!added && !silent) {
+                    await uiUtils.showCustomAlert('読み上げる本文が見つかりませんでした。ボイスが未設定の可能性もあります。');
+                }
+            },
+            stopTts() {
+                ttsUtils.stopAll();
             },
             // 現在のセッションで使われている API 種別・キー・モデル名を handleSend と同じ順序で解決する
             resolveSessionApiCredentials() {
@@ -19556,6 +20323,16 @@ uiUtils.renderChatMessages(shouldMaintainScroll);
                             && !abortedForIllustration && !unsuccessfulForIllustration && !state.illustrationJob) {
                             setTimeout(() => this.generateIllustration(), 0);
                         }
+
+                        // 自動読み上げは、応答の受信が完了した場合だけ起動する。
+                        // 中断・エラー完了では起動しない。本編の送信はブロックしない。
+                        if (state.settings.ttsEnabled && state.settings.ttsMode === 'auto'
+                            && !abortedForIllustration && !unsuccessfulForIllustration) {
+                            const lastTtsIndex = state.currentMessages.length - 1;
+                            if (state.currentMessages[lastTtsIndex] && state.currentMessages[lastTtsIndex].role === 'model') {
+                                setTimeout(() => this.speakMessage(lastTtsIndex, true), 0);
+                            }
+                        }
                     }
                 }
 
@@ -20516,6 +21293,30 @@ newSettings.footerTapScrollToBottom = elements.footerTapScrollToBottomToggle.che
                 newSettings.comfyEditPromptBeforeSend = elements.comfyEditPromptToggle.checked;
                 newSettings.comfyLoras = Array.isArray(state.settings.comfyLoras)
                     ? state.settings.comfyLoras : buildDefaultComfyLoraSlots();
+
+                // ▼ 読み上げ（TTS）▼ APIキーは IndexedDB にだけ保存する
+                newSettings.ttsEnabled = elements.ttsEnabledToggle.checked;
+                newSettings.ttsMode = elements.ttsAutoSpeakToggle.checked ? 'auto' : 'manual';
+                newSettings.ttsEndpoint = ttsUtils.normalizeEndpoint(elements.ttsEndpointInput.value);
+                newSettings.ttsApiKey = elements.ttsApiKeyInput.value.trim();
+                newSettings.ttsModel = elements.ttsModelInput.value.trim();
+                newSettings.ttsVoices = elements.ttsVoicesInput.value;
+                const ttsSpeedValue = parseFloat(elements.ttsSpeedInput.value);
+                newSettings.ttsSpeed = isFinite(ttsSpeedValue) ? Math.min(4, Math.max(0.25, ttsSpeedValue)) : 1;
+                newSettings.ttsDefaultVoice = elements.ttsDefaultVoiceSelect ? (elements.ttsDefaultVoiceSelect.value || '') : '';
+                newSettings.ttsGenericVoice = elements.ttsGenericVoiceSelect ? (elements.ttsGenericVoiceSelect.value || '') : '';
+                newSettings.ttsNarrateDialogueOnly = elements.ttsDialogueOnlyToggle.checked;
+                newSettings.ttsRegexEnabled = elements.ttsRegexEnabledToggle.checked;
+                newSettings.ttsRegexPattern = elements.ttsRegexPatternInput.value;
+                if (elements.ttsSpeakerRows) {
+                    const nameInputs = elements.ttsSpeakerRows.querySelectorAll('input.js-tts-speaker-name');
+                    const voiceSelects = elements.ttsSpeakerRows.querySelectorAll('select.js-tts-speaker-voice');
+                    newSettings.ttsSpeakers = Array.from(nameInputs).slice(0, TTS_SPEAKER_SLOTS)
+                        .map((input, i) => ({
+                            name: input.value.trim(),
+                            voice: voiceSelects[i] ? (voiceSelects[i].value || '') : '',
+                        }));
+                }
                 // ▲ ここまで ▲
 
                 try {

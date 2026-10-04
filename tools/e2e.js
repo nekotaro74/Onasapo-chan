@@ -23,7 +23,30 @@ const PNG_1PX = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
     'base64');
 
+// 短い無音 WAV。Audio が復号できて onended が発火する長さ
+function makeWav(ms) {
+    const rate = 8000;
+    const samples = Math.max(1, Math.round(rate * ms / 1000));
+    const data = Buffer.alloc(samples * 2); // 16bit mono 無音
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + data.length, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);        // PCM
+    header.writeUInt16LE(1, 22);        // mono
+    header.writeUInt32LE(rate, 24);
+    header.writeUInt32LE(rate * 2, 28); // byte rate
+    header.writeUInt16LE(2, 32);        // block align
+    header.writeUInt16LE(16, 34);       // bits
+    header.write('data', 36);
+    header.writeUInt32LE(data.length, 40);
+    return Buffer.concat([header, data]);
+}
+
 let lastPromptBody = null;
+let ttsRequests = [];
 let historyPolls = 0;
 let promptPosts = 0;
 let objectInfoRequests = 0;
@@ -32,6 +55,36 @@ let loraFiles = [{ name: 'animeDetail.safetensors' }, { name: 'inkSketch.safeten
 function createServer() {
     return http.createServer((req, res) => {
         const url = new URL(req.url, `http://127.0.0.1:${PORT}`);
+
+        // OpenAI Compatible な audio/speech もどき
+        if (url.pathname === '/mock-tts/v1/audio/speech' && req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => { body += chunk; });
+            req.on('end', () => {
+                let parsed = null;
+                try { parsed = JSON.parse(body); } catch (_) { /* 非 JSON */ }
+                ttsRequests.push({
+                    body: parsed,
+                    raw: body,
+                    auth: req.headers['authorization'] || null,
+                    contentType: req.headers['content-type'] || null,
+                });
+                res.setHeader('Content-Type', 'audio/wav');
+                res.end(makeWav(20));
+            });
+            return;
+        }
+        if (url.pathname === '/mock-tts/requests' && req.method === 'DELETE') {
+            ttsRequests = [];
+            res.setHeader('Content-Type', 'application/json');
+            res.end('[]');
+            return;
+        }
+        if (url.pathname === '/mock-tts/requests') {
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify(ttsRequests));
+            return;
+        }
 
         if (url.pathname.startsWith('/mock-comfy/')) {
             const endpoint = url.pathname.replace('/mock-comfy/', '');
@@ -620,14 +673,176 @@ const FOOTER_BUTTON_SCRIPT = `(async () => {
     const manualColors = rgb(getComputedStyle(toggle).backgroundColor) === 'rgb(117,117,117)';
     state.settings.illustrationMode = 'manual';
     uiUtils.updateIllustrationFooterButtons();
+    // 読み上げの自動/手動ボタン。自動は赤地に白のメガホン、手動はグレー地に白のメガホン
     const megaphone = document.getElementById('tts-mode-toggle-btn');
+    const megaphoneHiddenWhenDisabled = megaphone.classList.contains('hidden');
+    state.settings.ttsEnabled = true;
+    state.settings.ttsMode = 'auto';
+    uiUtils.updateTtsFooterButton();
+    await new Promise(r => setTimeout(r, 400));
+    const ttsAutoClasses = megaphone.classList.contains('mode-auto') && !megaphone.classList.contains('mode-manual');
+    const ttsAutoStyle = getComputedStyle(megaphone);
+    const ttsAutoColors = rgb(ttsAutoStyle.color) === 'rgb(255,255,255)'
+        && rgb(ttsAutoStyle.backgroundColor) === 'rgb(198,40,40)';
+    state.settings.ttsMode = 'manual';
+    uiUtils.updateTtsFooterButton();
+    await new Promise(r => setTimeout(r, 400));
+    const ttsManualClasses = megaphone.classList.contains('mode-manual') && !megaphone.classList.contains('mode-auto');
+    const ttsManualColors = rgb(getComputedStyle(megaphone).backgroundColor) === 'rgb(117,117,117)';
+    const ttsVisibleWhenEnabled = !megaphone.classList.contains('hidden');
+    state.settings.ttsEnabled = false;
+    uiUtils.updateTtsFooterButton();
     return {
         hiddenWhenDisabled: hiddenWhenDisabled,
         autoLabel: autoLabel, manualLabel: manualLabel,
         autoClasses: autoClasses, manualClasses: manualClasses,
         noOverflow: noOverflow, autoColors: autoColors, manualColors: manualColors,
         megaphoneIcon: !!megaphone.querySelector('svg'),
-        megaphoneHidden: megaphone.classList.contains('hidden'),
+        megaphoneHidden: megaphoneHiddenWhenDisabled,
+        ttsVisibleWhenEnabled: ttsVisibleWhenEnabled,
+        ttsAutoClasses: ttsAutoClasses, ttsAutoColors: ttsAutoColors,
+        ttsManualClasses: ttsManualClasses, ttsManualColors: ttsManualColors,
+    };
+})()`;
+
+// 読み上げの設定欄と、応答ごとのメガホンボタン
+const TTS_UI_SCRIPT = `(() => {
+    const group = document.getElementById('settings-group-tts');
+    const requiredIds = [
+        'tts-enabled-toggle', 'tts-auto-speak-toggle', 'tts-endpoint', 'tts-api-key', 'tts-model',
+        'tts-voices', 'tts-speed', 'tts-default-voice', 'tts-generic-voice', 'tts-speaker-rows',
+        'tts-narrate-dialogue-only-toggle', 'tts-regex-enabled-toggle', 'tts-regex-pattern',
+        'tts-connection-test-btn', 'tts-stop-btn',
+    ];
+    const missingIds = requiredIds.filter(id => !document.getElementById(id));
+
+    state.settings.ttsEnabled = true;
+    state.settings.ttsVoices = 'alloy, echo, nova';
+    state.settings.ttsSpeakers = [{ name: 'まゆみ', voice: 'echo' }];
+    uiUtils.applyTtsSettingsToUI();
+
+    const speakerRows = elements.ttsSpeakerRows.querySelectorAll('input.js-tts-speaker-name').length;
+    const voiceOptions = Array.from(elements.ttsDefaultVoiceSelect.options).map(o => o.value);
+    const speakerVoiceValue = elements.ttsSpeakerRows
+        .querySelector('select.js-tts-speaker-voice').value;
+
+    // 応答本文にメガホンボタンが付くか
+    const modelIndex = state.currentMessages.findIndex(m => m.role === 'model');
+    const megaphones = document.querySelectorAll('.message-actions .js-tts-btn');
+    const megaphoneForModel = modelIndex !== -1
+        && !!document.querySelector('.message-actions .js-tts-btn[data-index="' + modelIndex + '"] svg');
+
+    // 後続の再読込テストに影響しないよう戻す
+    state.settings.ttsEnabled = false;
+    state.settings.ttsVoices = '';
+    state.settings.ttsSpeakers = [];
+
+    return {
+        groupExists: !!group,
+        missingIds: missingIds,
+        speakerRows: speakerRows,
+        voiceOptions: voiceOptions,
+        speakerVoiceValue: speakerVoiceValue,
+        megaphoneCount: megaphones.length,
+        megaphoneForModel: megaphoneForModel,
+    };
+})()`;
+
+// 読み上げ: モック OpenAI Compatible サーバーへ実際に送り、キュー再生・停止・本文抽出を確認する
+const TTS_PLAY_SCRIPT = `(async () => {
+    // 再生を重ねないことを数えるため Audio を包む
+    const RealAudio = window.Audio;
+    let concurrent = 0, maxConcurrent = 0;
+    window.Audio = function (src) {
+        const a = new RealAudio(src);
+        const origPlay = a.play.bind(a);
+        a.play = () => {
+            concurrent++;
+            if (concurrent > maxConcurrent) maxConcurrent = concurrent;
+            const done = () => { concurrent = Math.max(0, concurrent - 1); };
+            a.addEventListener('ended', done);
+            a.addEventListener('error', done);
+            return origPlay();
+        };
+        return a;
+    };
+
+    const drain = async () => {
+        let waited = 0;
+        while ((ttsUtils.queue.length > 0 || ttsUtils.playing) && waited < 10000) {
+            await new Promise(r => setTimeout(r, 100));
+            waited += 100;
+        }
+        return ttsUtils.queue.length === 0 && !ttsUtils.playing;
+    };
+    const recorded = async () => await (await fetch('/mock-tts/requests')).json();
+
+    state.settings.ttsEnabled = true;
+    state.settings.ttsMode = 'manual';
+    state.settings.ttsEndpoint = location.origin + '/mock-tts/v1';
+    state.settings.ttsApiKey = 'mock-tts-key';
+    state.settings.ttsModel = 'mock-tts-model';
+    state.settings.ttsVoices = 'alloy, echo';
+    state.settings.ttsDefaultVoice = 'alloy';
+    state.settings.ttsGenericVoice = 'echo';
+    state.settings.ttsSpeakers = [{ name: 'まゆみ', voice: 'echo' }, { name: 'れな', voice: 'alloy' }];
+    state.settings.ttsNarrateDialogueOnly = false;
+    state.settings.ttsRegexEnabled = false;
+    state.settings.ttsSpeed = 1;
+    ttsUtils.stopAll();
+
+    const modelIndex = state.currentMessages.findIndex(m => m.role === 'model');
+    const originalContent = state.currentMessages[modelIndex].content;
+
+    // 1. 実際に送る内容とヘッダー
+    await fetch('/mock-tts/requests', { method: 'DELETE' });
+    state.currentMessages[modelIndex].content = 'まゆみ「いち」れな「に」';
+    const added = ttsUtils.enqueueMessage(modelIndex);
+    const drained = await drain();
+    const requests = await recorded();
+
+    // 2. 停止はキューを破棄する
+    ttsUtils.stopAll();
+    const queuedAgain = ttsUtils.enqueueMessage(modelIndex);
+    ttsUtils.stopAll();
+    const stoppedClean = ttsUtils.queue.length === 0 && ttsUtils.playing === false;
+
+    // 3. 地の文を読まずセリフだけ読み上げる
+    await fetch('/mock-tts/requests', { method: 'DELETE' });
+    state.settings.ttsNarrateDialogueOnly = true;
+    state.currentMessages[modelIndex].content = '夜風が吹いていた。まゆみ「いち」';
+    ttsUtils.enqueueMessage(modelIndex);
+    await drain();
+    const dialogueOnlyRequests = await recorded();
+
+    // 4. CORS 失敗は挿絵生成と同じように対処法を案内する
+    const realAlert = uiUtils.showCustomAlert;
+    const alerts = [];
+    uiUtils.showCustomAlert = (m) => { alerts.push(m); return Promise.resolve(); };
+    state.settings.ttsEndpoint = 'http://127.0.0.1:1/v1';   // 届かない先
+    state.currentMessages[modelIndex].content = 'まゆみ「いち」';
+    appLogic.speakMessage(modelIndex, false);
+    await drain();
+    uiUtils.showCustomAlert = realAlert;
+    ttsUtils.stopAll();
+
+    window.Audio = RealAudio;
+    state.currentMessages[modelIndex].content = originalContent;
+    state.settings.ttsEnabled = false;
+    state.settings.ttsNarrateDialogueOnly = false;
+    state.settings.ttsSpeakers = [];
+
+    return {
+        added: added, drained: drained, maxConcurrent: maxConcurrent,
+        requestCount: requests.length,
+        keySets: Array.from(new Set(requests.map(r => Object.keys(r.body || {}).sort().join(',')))),
+        auths: Array.from(new Set(requests.map(r => r.auth))),
+        models: Array.from(new Set(requests.map(r => r.body && r.body.model))),
+        voices: requests.map(r => r.body && r.body.voice),
+        inputs: requests.map(r => r.body && r.body.input),
+        queuedAgain: queuedAgain, stoppedClean: stoppedClean,
+        dialogueOnlyInputs: dialogueOnlyRequests.map(r => r.body && r.body.input),
+        corsAlerts: alerts,
     };
 })()`;
 
@@ -880,6 +1095,9 @@ async function main() {
         `--remote-debugging-port=${DEBUG_PORT}`,
         '--disable-gpu',
         '--no-sandbox',
+        // 読み上げの再生テストはユーザー操作なしで Audio.play() を呼ぶ
+        '--autoplay-policy=no-user-gesture-required',
+        '--mute-audio',
         '--user-data-dir=' + path.join(require('os').tmpdir(), 'onasapo-e2e-profile'),
         'about:blank',
     ], { stdio: 'ignore' });
@@ -954,6 +1172,8 @@ async function main() {
         const regenerateResult = await evaluate(REGENERATE_SCRIPT);
         const loraResult = await evaluate(LORA_SCRIPT);
         const footerResult = await evaluate(FOOTER_BUTTON_SCRIPT);
+        const ttsUiResult = await evaluate(TTS_UI_SCRIPT);
+        const ttsPlayResult = await evaluate(TTS_PLAY_SCRIPT);
         const editResult = await evaluate(EDIT_PROMPT_SCRIPT);
 
         // ページを開き直して、保存済み挿絵が履歴に表示されるか
@@ -1076,6 +1296,38 @@ async function main() {
             ['挿絵の手動はグレー地に白文字', footerResult.manualClasses === true && footerResult.manualColors === true],
             ['読み上げのメガホンボタンは入力欄付近にあり、アイコンは SVG',
                 footerResult.megaphoneIcon === true && footerResult.megaphoneHidden === true],
+            ['読み上げオフでメガホンボタンが隠れ、オンで出る',
+                footerResult.megaphoneHidden === true && footerResult.ttsVisibleWhenEnabled === true],
+            ['読み上げの自動は赤地に白のメガホン',
+                footerResult.ttsAutoClasses === true && footerResult.ttsAutoColors === true],
+            ['読み上げの手動はグレー地に白のメガホン',
+                footerResult.ttsManualClasses === true && footerResult.ttsManualColors === true],
+
+            ['読み上げの設定欄がある', ttsUiResult.groupExists === true && ttsUiResult.missingIds.length === 0],
+            ['話者割当は登場人物 1〜5 の 5 行', ttsUiResult.speakerRows === 5],
+            ['ボイス一覧はカンマ区切りから作る',
+                JSON.stringify(ttsUiResult.voiceOptions) === JSON.stringify(['', 'alloy', 'echo', 'nova'])],
+            ['話者割当の保存値が選択に残る', ttsUiResult.speakerVoiceValue === 'echo'],
+            ['応答ごとにメガホンボタンが付く', ttsUiResult.megaphoneForModel === true],
+
+            ['読み上げ: audio/speech へ実際に送る', ttsPlayResult.requestCount === 2 && ttsPlayResult.drained === true],
+            ['読み上げ: body は model / voice / input のみ',
+                JSON.stringify(ttsPlayResult.keySets) === JSON.stringify(['input,model,voice'])],
+            ['読み上げ: model 名を送る', ttsPlayResult.models[0] === 'mock-tts-model'],
+            ['読み上げ: APIキーを Bearer で送る', ttsPlayResult.auths[0] === 'Bearer mock-tts-key'],
+            ['読み上げ: 話者ごとにボイスを切り替える',
+                JSON.stringify(ttsPlayResult.voices) === JSON.stringify(['echo', 'alloy'])],
+            ['読み上げ: セリフだけを送る',
+                JSON.stringify(ttsPlayResult.inputs) === JSON.stringify(['いち', 'に'])],
+            ['読み上げ: 再生は重ねずキューで順に鳴らす', ttsPlayResult.maxConcurrent === 1],
+            ['読み上げ: 停止はキューを破棄する',
+                ttsPlayResult.queuedAgain === 2 && ttsPlayResult.stoppedClean === true],
+            ['読み上げ: 地の文を読まないをオンにすると地の文は送らない',
+                JSON.stringify(ttsPlayResult.dialogueOnlyInputs) === JSON.stringify(['いち'])],
+            ['読み上げ: CORS 失敗は挿絵生成と同じように対処法を案内する',
+                ttsPlayResult.corsAlerts.length === 1
+                && /CORS/.test(ttsPlayResult.corsAlerts[0])
+                && /TTS サーバーに届きませんでした/.test(ttsPlayResult.corsAlerts[0])],
 
             ['送信前編集オフなら編集ダイアログを開かない',
                 editResult.editOff.dialogOpened === false && !/使われない文章/.test(editResult.editOff.sent || '')],
