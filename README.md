@@ -59,9 +59,24 @@ SillyTavern の Image Generation 拡張における「The Last Message」だけ�
   GitHub Pages 上の公開オリジンからは、利用者自身のローカルや Tailscale の ComfyUI へは届かない場合があります。
   ローカル起動（`__winlocal.bat`）での動作確認を推奨します。
 - 貼り付けるのは **API 形式**のワークフロー JSON です。UI 形式（`nodes` / `links` を持つ形式）は理由付きで拒否します。
-- 差し込みは `"%"` で囲まれた JSON 文字列リテラル全体が一致した箇所だけで行い、ワークフローを壊しません。
-  使用可能なトークン: `%prompt%` `%negative_prompt%` `%seed%` `%width%` `%height%` `%steps%` `%cfg%`
-  （SillyTavern 系ワークフローとの互換のため `%scale%` にも同じ値を入れます）。ワークフローに存在するものだけ置換されます。
+- ワークフローは**複数登録**できます。一覧で「使用中」を切り替え、追加・改名・複製・削除、JSON の書き出し・読み込みができます。
+  旧バージョンで 1 件だけ保存していたワークフローは、起動時に「移行されたワークフロー」として自動登録されます。
+- 差し込みは **JSON をパースしたうえで文字列値の中身だけ**を処理します。ワークフローを壊しません。
+  - 値そのものを差し込む箇所は `"text": "%prompt%"` のように書きます。数値・真偽値は quotes なしで入ります（`"seed": "%seed%"` → `42`）。
+  - 文中へ埋め込んでも置換されます（`"text": "masterpiece, %prompt%"` → `masterpiece, best quality, ...`）。
+- 使用可能なトークン: `%prompt%` `%negative_prompt%` `%model%` `%vae%` `%text_encoder%` `%sampler%` `%scheduler%`
+  `%steps%` `%cfg%` `%denoise%` `%clip_skip%` `%width%` `%height%` `%seed%` `%user_avatar%` `%char_avatar%`
+  （SillyTavern 系ワークフローとの互換のため `%scale%` にも `%cfg%` と同じ値を入れます）。
+  `%clip_skip%` は SillyTavern と同じく**負の値**として ComfyUI へ渡します（設定には正の値を入力します）。
+  `%user_avatar%` / `%char_avatar%` はアプリの設定アイコンを base64 で差し込みます（未設定なら 1x1 PNG）。
+- **カスタム プレースホルダ**を任意数登録できます。find に `outfit`、replace に `1girl, school uniform` と書くと、
+  ワークフロー内の `%outfit%` へ差し込まれます。replace 内の `{{char}}` / `{{user}}` は表示名に置換されます。
+- 編集画面に**プレースホルダ検出**（✅ 検出 / ❌ 未検出）を表示します。
+- **未対応のプレースホルダが残っている場合、ComfyUI へは送らずローカルでエラーにします**（トークン名を列挙）。
+  このチェックは LLM を呼ぶ前にも走るため、不正なワークフローで API トークンを消費しません。
+- モデル / VAE / テキストエンコーダ / Sampling method / Scheduler は、接続先の ComfyUI の `/object_info` から
+  「一覧取得」でプルダウンに反映します。取得に失敗しても保存済みの値は残り、サーバーに無い値も消しません。
+  解像度プリセット、Sampling Steps、CFG scale、幅・高さ、Denoise、CLIP Skip、Seed は直接入力します。
 - 画像は ComfyUI 側の一時 URL ではなく、取得したバイトを data URL として履歴に保存します。
   履歴が肥大化しないよう、保存前に最大辺と最大バイトで縮小します。
 - 挿絵の失敗は本編テキストと分離して、そのメッセージ直下にだけ表示します。ComfyUI が落ちていてもチャットは使えます。

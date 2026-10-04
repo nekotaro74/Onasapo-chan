@@ -7693,17 +7693,48 @@ font-size: 1.142em !important;
                         <button id="comfy-connection-test-btn" class="settings-action-button" style="font-size: 12px;">接続確認</button>
                         <span id="comfy-connection-status" style="font-size: 12px; margin-left: 8px; color: var(--text-secondary);"></span>
 
-                        <label for="comfy-workflow-textarea" style="margin-top: 15px;">API形式ワークフロー JSON:</label>
-                        <textarea id="comfy-workflow-textarea" rows="8"
-                            placeholder='ComfyUI の「Save (API Format)」で書き出した JSON を貼り付けます。例: {"3": {"class_type": "CLIPTextEncode", "inputs": {"text": "%prompt%"}}}'
-                            aria-label="API形式ワークフロー JSON"></textarea>
-                        <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
-                            ※ UI形式（<code>nodes</code> / <code>links</code> を持つ形式）は受け付けません。API形式で保存してください。<br>
-                            ※ 差し込み先は文字列値として <code>"%prompt%"</code> のように書いた箇所だけです（ワークフローを壊さないため、JSON文字列リテラル全体が一致した場合のみ置換します）。<br>
-                            ※ 使用可能なトークン: <code>%prompt%</code> <code>%negative_prompt%</code> <code>%seed%</code> <code>%width%</code> <code>%height%</code> <code>%steps%</code> <code>%cfg%</code>（<code>%scale%</code> にも同じ値を入れます）。ワークフローに存在するものだけ置換されます。
-                        </p>
-                        <button id="comfy-workflow-validate-btn" class="settings-action-button" style="font-size: 12px;">ワークフロー検証</button>
-                        <span id="comfy-workflow-status" style="font-size: 12px; margin-left: 8px; color: var(--text-secondary);"></span>
+                        <label style="margin-top: 15px;">ワークフロー一覧:</label>
+                        <div id="comfy-workflow-list" class="api-keys-list" style="margin-top: 5px; margin-bottom: 10px;"></div>
+                        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                            <button type="button" id="comfy-workflow-add-btn" class="add-api-key-btn" style="flex: 1 1 auto;">新規に追加</button>
+                            <button type="button" id="comfy-workflow-export-all-btn" class="settings-action-button" style="font-size: 12px;">一覧を書き出し</button>
+                            <button type="button" id="comfy-workflow-import-btn" class="settings-action-button" style="font-size: 12px;">読み込み</button>
+                            <input type="file" id="comfy-workflow-import-input" accept="application/json,.json" style="display: none;">
+                        </div>
+
+                        <details open style="margin-top: 12px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
+                            <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
+                                ワークフロー編集（使用中の 1 件）
+                            </summary>
+                            <div style="padding: 10px; padding-top: 5px;">
+                                <label for="comfy-workflow-textarea">API形式ワークフロー JSON:</label>
+                                <textarea id="comfy-workflow-textarea" rows="10"
+                                    placeholder='ComfyUI の「Save (API Format)」で書き出した JSON を貼り付けます。例: {"3": {"class_type": "CLIPTextEncode", "inputs": {"text": "%prompt%"}}}'
+                                    aria-label="API形式ワークフロー JSON"></textarea>
+                                <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
+                                    ※ UI形式（<code>nodes</code> / <code>links</code> を持つ形式）は受け付けません。API形式で保存してください。<br>
+                                    ※ 文字列値の中なら文中に埋め込んでも置換されます（例: <code>"masterpiece, %prompt%"</code>）。値そのものを差し込む箇所は <code>"%seed%"</code> のように書くと数値として入ります。<br>
+                                    ※ 未対応のトークンが残っている場合は ComfyUI へ送らず、ここでエラーを表示します。
+                                </p>
+                                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                    <div style="flex: 1 1 260px;">
+                                        <div style="font-size: 12px; font-weight: bold; color: var(--text-secondary);">プレースホルダ検出</div>
+                                        <ul id="comfy-token-status-list"
+                                            style="list-style: none; padding: 0; margin: 4px 0 0 0; font-size: 11px; columns: 2; column-gap: 10px;"></ul>
+                                    </div>
+                                    <div style="flex: 1 1 260px;">
+                                        <div style="font-size: 12px; font-weight: bold; color: var(--text-secondary);">カスタム プレースホルダ</div>
+                                        <div id="comfy-custom-placeholder-list" style="margin: 4px 0;"></div>
+                                        <button type="button" id="comfy-custom-placeholder-add-btn" class="settings-action-button" style="font-size: 12px;">＋ 追加</button>
+                                        <p style="font-size: 11px; color: var(--text-secondary); margin-top: 5px;">
+                                            ※ find に <code>outfit</code> を入れると、ワークフロー内の <code>%outfit%</code> へ replace の値を差し込みます。<code>{{char}}</code> / <code>{{user}}</code> は表示名に置換されます。
+                                        </p>
+                                    </div>
+                                </div>
+                                <button id="comfy-workflow-validate-btn" class="settings-action-button" style="font-size: 12px; margin-top: 10px;">ワークフロー検証</button>
+                                <span id="comfy-workflow-status" style="font-size: 12px; margin-left: 8px; color: var(--text-secondary);"></span>
+                            </div>
+                        </details>
 
                         <details style="margin-top: 15px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
                             <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
@@ -7716,6 +7747,10 @@ font-size: 1.142em !important;
                                 <textarea id="comfy-character-prefix" rows="2" placeholder="例: 1girl, long silver hair"></textarea>
                                 <label for="comfy-negative-prompt">ネガティブプロンプト:</label>
                                 <textarea id="comfy-negative-prompt" rows="2" placeholder="例: lowres, bad anatomy, bad hands"></textarea>
+                                <label class="checkbox-label" style="margin-top: 8px;">
+                                    <input type="checkbox" id="comfy-use-character-prefix-toggle">
+                                    キャラ外見プレフィックスを合成に含める
+                                </label>
                                 <p style="font-size: 11px; color: var(--text-secondary); margin-top: 0; margin-bottom: 0;">
                                     ※ 共通 → キャラの順でカンマ区切り連結し、LLMが生成したキーワードを末尾に添えます。
                                 </p>
@@ -7745,6 +7780,43 @@ font-size: 1.142em !important;
                             </div>
                         </details>
 
+                        <details open style="margin-top: 10px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
+                            <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
+                                接続先 ComfyUI の環境（モデル / VAE / テキストエンコーダ / サンプラ / スケジューラ）
+                            </summary>
+                            <div style="padding: 10px; padding-top: 5px;">
+                                <button id="comfy-object-info-refresh-btn" class="settings-action-button" style="font-size: 12px;">一覧取得</button>
+                                <span id="comfy-object-info-status" style="font-size: 12px; margin-left: 8px; color: var(--text-secondary);"></span>
+                                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
+                                    <div style="flex: 1 1 220px;">
+                                        <label for="comfy-model-select">モデル:</label>
+                                        <select id="comfy-model-select" aria-label="モデル"></select>
+                                    </div>
+                                    <div style="flex: 1 1 220px;">
+                                        <label for="comfy-vae-select">VAE:</label>
+                                        <select id="comfy-vae-select" aria-label="VAE"></select>
+                                    </div>
+                                    <div style="flex: 1 1 220px;">
+                                        <label for="comfy-text-encoder-select">テキストエンコーダ:</label>
+                                        <select id="comfy-text-encoder-select" aria-label="テキストエンコーダ"></select>
+                                    </div>
+                                    <div style="flex: 1 1 160px;">
+                                        <label for="comfy-sampler-select">Sampling method:</label>
+                                        <select id="comfy-sampler-select" aria-label="Sampling method"></select>
+                                    </div>
+                                    <div style="flex: 1 1 160px;">
+                                        <label for="comfy-scheduler-select">Scheduler:</label>
+                                        <select id="comfy-scheduler-select" aria-label="Scheduler"></select>
+                                    </div>
+                                </div>
+                                <p style="font-size: 11px; color: var(--text-secondary); margin-top: 8px; margin-bottom: 0;">
+                                    ※ 接続先の <code>/object_info</code> から取得します。モデルは <code>%model%</code>、VAE は <code>%vae%</code>、テキストエンコーダは <code>%text_encoder%</code>、Sampling method は <code>%sampler%</code>、Scheduler は <code>%scheduler%</code> として差し込まれます。<br>
+                                    ※ 取得に失敗しても、すでに保存している値はそのまま残ります（生成は接続先の ComfyUI が値を検証します）。<br>
+                                    ※ テキストエンコーダは SillyTavern に無い本アプリ独自の項目です。
+                                </p>
+                            </div>
+                        </details>
+
                         <details style="margin-top: 10px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
                             <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
                                 生成パラメータ
@@ -7764,12 +7836,30 @@ font-size: 1.142em !important;
                                         <input type="number" id="comfy-steps" min="1" max="200" step="1">
                                     </div>
                                     <div style="flex: 1 1 120px;">
-                                        <label for="comfy-cfg">cfg:</label>
+                                        <label for="comfy-cfg">CFG scale:</label>
                                         <input type="number" id="comfy-cfg" min="0" max="30" step="0.5">
+                                    </div>
+                                </div>
+                                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
+                                    <div style="flex: 1 1 140px;">
+                                        <label for="comfy-resolution-preset">解像度プリセット:</label>
+                                        <select id="comfy-resolution-preset" aria-label="解像度プリセット"></select>
+                                    </div>
+                                    <div style="flex: 1 1 120px;">
+                                        <label for="comfy-denoise">Denoise:</label>
+                                        <input type="number" id="comfy-denoise" min="0" max="1" step="0.01">
+                                    </div>
+                                    <div style="flex: 1 1 120px;">
+                                        <label for="comfy-clip-skip">CLIP Skip:</label>
+                                        <input type="number" id="comfy-clip-skip" min="1" max="12" step="1">
                                     </div>
                                 </div>
                                 <label for="comfy-seed" style="margin-top: 10px;">seed (-1 で毎回ランダム):</label>
                                 <input type="number" id="comfy-seed" min="-1" step="1">
+                                <p style="font-size: 11px; color: var(--text-secondary); margin-top: 5px; margin-bottom: 0;">
+                                    ※ 幅・高さ・steps・CFG scale・Denoise・CLIP Skip・seed は、ワークフロー内の <code>%width%</code> <code>%height%</code> <code>%steps%</code> <code>%cfg%</code>（<code>%scale%</code> にも同じ値）<code>%denoise%</code> <code>%clip_skip%</code> <code>%seed%</code> に差し込まれます。CLIP Skip は ComfyUI 側では負の値として渡されます。<br>
+                                    ※ 幅・高さの直接入力は「カスタム」のときだけ使われます。
+                                </p>
                                 <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
                                     <div style="flex: 1 1 140px;">
                                         <label for="comfy-timeout-ms">タイムアウト (ms):</label>
@@ -8076,8 +8166,21 @@ A correctly formatted example response would be:
         const DEFAULT_COMFY_HEIGHT = 512;
         const DEFAULT_COMFY_STEPS = 20;
         const DEFAULT_COMFY_CFG = 7;
+        const DEFAULT_COMFY_DENOISE = 1;
+        const DEFAULT_COMFY_CLIP_SKIP = 1;
         const DEFAULT_COMFY_TIMEOUT_MS = 180000;
         const DEFAULT_COMFY_POLL_INTERVAL_MS = 1500;
+        // 解像度プリセット（SillyTavern の Resolution ドロップダウン相当）。value は "幅x高さ"
+        const COMFY_RESOLUTION_PRESETS = [
+            { value: '512x512', label: '512 x 512' },
+            { value: '512x768', label: '512 x 768 (縦)' },
+            { value: '768x512', label: '768 x 512 (横)' },
+            { value: '768x768', label: '768 x 768' },
+            { value: '1024x1024', label: '1024 x 1024 (SDXL)' },
+            { value: '1024x1536', label: '1024 x 1536 (SDXL 縦)' },
+            { value: '1536x1024', label: '1536 x 1024 (SDXL 横)' },
+            { value: 'custom', label: 'カスタム（下の幅・高さを使う）' },
+        ];
         // 履歴に data URL で保存するため、縮小と上限で容量を抑える
         const DEFAULT_COMFY_MAX_IMAGE_EDGE = 1024;
         const DEFAULT_COMFY_MAX_IMAGE_BYTES = 400 * 1024;
@@ -8491,8 +8594,25 @@ elevationHoverOption: document.getElementById('elevation-hover-option'),
             comfyWorkflowTextarea: document.getElementById('comfy-workflow-textarea'),
             comfyWorkflowValidateBtn: document.getElementById('comfy-workflow-validate-btn'),
             comfyWorkflowStatus: document.getElementById('comfy-workflow-status'),
+            comfyWorkflowList: document.getElementById('comfy-workflow-list'),
+            comfyWorkflowAddBtn: document.getElementById('comfy-workflow-add-btn'),
+            comfyWorkflowExportAllBtn: document.getElementById('comfy-workflow-export-all-btn'),
+            comfyWorkflowImportBtn: document.getElementById('comfy-workflow-import-btn'),
+            comfyWorkflowImportInput: document.getElementById('comfy-workflow-import-input'),
+            comfyTokenStatusList: document.getElementById('comfy-token-status-list'),
+            comfyCustomPlaceholderList: document.getElementById('comfy-custom-placeholder-list'),
+            comfyCustomPlaceholderAddBtn: document.getElementById('comfy-custom-placeholder-add-btn'),
+            comfyObjectInfoRefreshBtn: document.getElementById('comfy-object-info-refresh-btn'),
+            comfyObjectInfoStatus: document.getElementById('comfy-object-info-status'),
+            comfyModelSelect: document.getElementById('comfy-model-select'),
+            comfyVaeSelect: document.getElementById('comfy-vae-select'),
+            comfyTextEncoderSelect: document.getElementById('comfy-text-encoder-select'),
+            comfySamplerSelect: document.getElementById('comfy-sampler-select'),
+            comfySchedulerSelect: document.getElementById('comfy-scheduler-select'),
+            comfyResolutionPresetSelect: document.getElementById('comfy-resolution-preset'),
             comfyPromptPrefixTextarea: document.getElementById('comfy-prompt-prefix'),
             comfyCharacterPrefixTextarea: document.getElementById('comfy-character-prefix'),
+            comfyUseCharacterPrefixToggle: document.getElementById('comfy-use-character-prefix-toggle'),
             comfyNegativePromptTextarea: document.getElementById('comfy-negative-prompt'),
             comfyImagePromptTemplateTextarea: document.getElementById('comfy-image-prompt-template'),
             comfyTemplateResetBtn: document.getElementById('comfy-template-reset-btn'),
@@ -8500,6 +8620,8 @@ elevationHoverOption: document.getElementById('elevation-hover-option'),
             comfyHeightInput: document.getElementById('comfy-height'),
             comfyStepsInput: document.getElementById('comfy-steps'),
             comfyCfgInput: document.getElementById('comfy-cfg'),
+            comfyDenoiseInput: document.getElementById('comfy-denoise'),
+            comfyClipSkipInput: document.getElementById('comfy-clip-skip'),
             comfySeedInput: document.getElementById('comfy-seed'),
             comfyTimeoutMsInput: document.getElementById('comfy-timeout-ms'),
             comfyPollIntervalMsInput: document.getElementById('comfy-poll-interval-ms'),
@@ -8743,15 +8865,28 @@ geminiIncludeThoughts: false,
                 illustrationEnabled: false,
                 illustrationMode: 'auto', // 'auto' = 応答完了直後 / 'manual' = 手動のみ
                 comfyBaseUrl: DEFAULT_COMFY_BASE_URL,
-                comfyWorkflow: '',
+                // 複数ワークフロー管理（旧 comfyWorkflow 単一文字列からは loadSettings で移行する）
+                comfyWorkflows: [],
+                comfyActiveWorkflowId: '', // null にしない（loadSettings の数値変換で壊れる）
+                comfyCustomPlaceholders: [], // [{ find, replace }]
                 comfyPromptPrefix: '',
                 comfyCharacterPrefix: '',
+                comfyUseCharacterPrefix: true,
                 comfyNegativePrompt: '',
                 comfyImagePromptTemplate: DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE,
+                // 接続先 ComfyUI の object_info から選ぶ項目（保存値はサーバーの生の名前）
+                comfyModel: '',
+                comfyVae: '',
+                comfyTextEncoder: '',
+                comfySampler: '',
+                comfyScheduler: '',
+                comfyResolutionPreset: 'custom',
                 comfyWidth: DEFAULT_COMFY_WIDTH,
                 comfyHeight: DEFAULT_COMFY_HEIGHT,
                 comfySteps: DEFAULT_COMFY_STEPS,
                 comfyCfg: DEFAULT_COMFY_CFG,
+                comfyDenoise: DEFAULT_COMFY_DENOISE,
+                comfyClipSkip: DEFAULT_COMFY_CLIP_SKIP,
                 comfySeed: -1, // -1 で毎回ランダム
                 comfyTimeoutMs: DEFAULT_COMFY_TIMEOUT_MS,
                 comfyPollIntervalMs: DEFAULT_COMFY_POLL_INTERVAL_MS,
@@ -9379,6 +9514,22 @@ const dbUtils = {
                                 state.settings.activeProofreadingConfigId = oldConfig.id;
                             }
 
+                            // ── 挿絵生成: 単一ワークフロー文字列 → 名前付き一覧 ──
+                            const normalizedWorkflows = illustrationUtils.normalizeWorkflowList(
+                                loadedSettings.comfyWorkflows, loadedSettings.comfyActiveWorkflowId);
+                            state.settings.comfyWorkflows = normalizedWorkflows.list;
+                            state.settings.comfyActiveWorkflowId = normalizedWorkflows.activeId;
+                            const legacyWorkflow = typeof loadedSettings.comfyWorkflow === 'string'
+                                ? loadedSettings.comfyWorkflow.trim() : '';
+                            if (legacyWorkflow && state.settings.comfyWorkflows.length === 0) {
+                                const migratedId = 'wf-' + Date.now();
+                                state.settings.comfyWorkflows = [{ id: migratedId, name: '移行されたワークフロー', json: legacyWorkflow }];
+                                state.settings.comfyActiveWorkflowId = migratedId;
+                            }
+                            if (!Array.isArray(state.settings.comfyCustomPlaceholders)) {
+                                state.settings.comfyCustomPlaceholders = [];
+                            }
+
                             resolve(state.settings);
                         };
                         request.onerror = (event) => reject(`設定読み込みエラー: ${event.target.error}`);
@@ -9637,10 +9788,11 @@ const dbUtils = {
                 return { ok: true, object: parsed, nodeCount: nodeEntries.length };
             },
 
-            // ワークフロー内に実際に存在する %トークン% を列挙する
+            // ワークフロー内に実際に存在する %トークン% を列挙する。
+            // 周縁の引用符は要求しないので、本文へ埋め込まれたトークンも検出する。
             findPlaceholders(workflowText) {
                 const found = new Set();
-                const re =/"%([a-zA-Z_][a-zA-Z0-9_]*)%"/g;
+                const re = /%([a-zA-Z_][a-zA-Z0-9_]*)%/g;
                 let match;
                 while ((match = re.exec(workflowText || '')) !== null) {
                     found.add(match[1]);
@@ -9648,40 +9800,197 @@ const dbUtils = {
                 return Array.from(found);
             },
 
-            // SillyTavern と同じ差し込み方。
-            // 検索語に常に surrounding quotes を含めることで、本文の部分一致で JSON を壊さない。
-            // 置換値は JSON.stringify するので文字列はエスケープされ、数値は quotes なしで入る。
-            substitutePlaceholders(workflowText, values) {
-                let workflow = workflowText;
-                for (const [token, value] of Object.entries(values)) {
-                    if (value === undefined || value === null) continue;
-                    workflow = workflow.replaceAll(`"%${token}%"`, JSON.stringify(value));
+            // 文字列値 1 個への差し込み。
+            // 全体が %token% なら値をそのまま返す（数値は quotes なしで入る）。
+            // 文中に埋め込まれていた場合は String(value) を補間する。
+            // 未知のトークンは unresolved に集め、原文を残す（後段でエラーにする）。
+            substituteInString(str, values, unresolved) {
+                const whole = /^%([a-zA-Z_][a-zA-Z0-9_]*)%$/.exec(str);
+                if (whole) {
+                    if (!Object.prototype.hasOwnProperty.call(values, whole[1])) {
+                        unresolved.add(whole[1]);
+                        return str;
+                    }
+                    return values[whole[1]];
                 }
-                return workflow;
+                return str.replace(/%([a-zA-Z_][a-zA-Z0-9_]*)%/g, (wholeMatch, token) => {
+                    if (!Object.prototype.hasOwnProperty.call(values, token)) {
+                        unresolved.add(token);
+                        return wholeMatch;
+                    }
+                    const value = values[token];
+                    return (value === null || value === undefined) ? '' : String(value);
+                });
             },
 
-            // 設定の値 → ワークフローへ差し込むトークン値。ワークフローに存在するものだけ返す。
-            buildPlaceholderValues(workflowText) {
-                const present = new Set(this.findPlaceholders(workflowText));
-                const seed = (typeof state.settings.comfySeed === 'number' && state.settings.comfySeed >= 0)
-                    ? state.settings.comfySeed
-                    : Math.round(Math.random() * Number.MAX_SAFE_INTEGER);
-                const candidates = {
-                    prompt: null, // 生成後に埋める
-                    negative_prompt: state.settings.comfyNegativePrompt || '',
-                    seed: seed,
-                    width: state.settings.comfyWidth,
-                    height: state.settings.comfyHeight,
-                    steps: state.settings.comfySteps,
-                    cfg: state.settings.comfyCfg,
+            // パース済みワークフローを再帰走査して %トークン% を差し込む。
+            // 生テキストを置換しないため、差し込み後に JSON が壊れることはない。
+            substituteTokens(nodeObject, values) {
+                const unresolved = new Set();
+                const walk = (value) => {
+                    if (typeof value === 'string') return this.substituteInString(value, values, unresolved);
+                    if (Array.isArray(value)) return value.map(walk);
+                    if (value && typeof value === 'object') {
+                        const walked = {};
+                        for (const key of Object.keys(value)) walked[key] = walk(value[key]);
+                        return walked;
+                    }
+                    return value;
                 };
-                const values = {};
-                for (const [token, value] of Object.entries(candidates)) {
-                    if (present.has(token)) values[token] = value;
+                return { object: walk(nodeObject), unresolved: Array.from(unresolved) };
+            },
+
+            // 組み込みトークン一覧（UI 表示と衝突判定を同じ出典から取る）
+            builtinTokens() {
+                return [
+                    'prompt', 'negative_prompt', 'model', 'vae', 'text_encoder', 'sampler', 'scheduler',
+                    'steps', 'cfg', 'scale', 'denoise', 'clip_skip', 'width', 'height', 'seed',
+                    'user_avatar', 'char_avatar',
+                ];
+            },
+
+            // LLM 合成後でないと決まらないトークン
+            deferredTokens() {
+                return ['prompt', 'negative_prompt', 'user_avatar', 'char_avatar'];
+            },
+
+            // カスタム プレースホルダ名を % を除いた正規形にする。不正形や組み込み名との衝突は空文字を返す
+            normalizeCustomToken(rawName) {
+                const name = String(rawName || '').trim().replace(/^%|%$/g, '');
+                if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) return '';
+                if (this.builtinTokens().includes(name)) return '';
+                return name;
+            },
+
+            // 設定の値 → ワークフローへ差し込むトークン値。
+            // prompt / negative_prompt / アバターは合成後なのでここでは入れない。
+            buildTokenValues() {
+                const s = state.settings;
+                const seed = (typeof s.comfySeed === 'number' && s.comfySeed >= 0)
+                    ? s.comfySeed
+                    : Math.round(Math.random() * Number.MAX_SAFE_INTEGER);
+                // SillyTavern は ComfyUI へ CLIP Skip を負の値で渡す。設定には正の値を保存する
+                const clipSkip = Number.isFinite(Number(s.comfyClipSkip)) ? -Number(s.comfyClipSkip) : -1;
+                const denoise = Number.isFinite(Number(s.comfyDenoise)) ? Number(s.comfyDenoise) : 1;
+                const values = {
+                    seed: seed,
+                    width: s.comfyWidth,
+                    height: s.comfyHeight,
+                    steps: s.comfySteps,
+                    cfg: s.comfyCfg,
+                    // SillyTavern の実ワークフローとの互換: CFG は %scale% という名前だった
+                    scale: s.comfyCfg,
+                    denoise: denoise,
+                    clip_skip: clipSkip,
+                    model: s.comfyModel,
+                    vae: s.comfyVae,
+                    sampler: s.comfySampler,
+                    scheduler: s.comfyScheduler,
+                    text_encoder: s.comfyTextEncoder,
+                };
+                // 列挙系だけ「空 = 未設定」とみなす（"" を送ると ComfyUI が node_errors を返す）。
+                // 空の negative_prompt は正当な設定なので、この規則の対象にしない。
+                for (const key of ['model', 'vae', 'sampler', 'scheduler', 'text_encoder']) {
+                    if (values[key] === '' || values[key] === undefined || values[key] === null) delete values[key];
                 }
-                // SillyTavern の実ワークフローとの互換: CFG は %scale% という名前だった
-                if (present.has('scale')) values.scale = state.settings.comfyCfg;
-                return { values, seed, present };
+                // カスタム プレースホルダ（SillyTavern の comfy_placeholders 相当）。値はマクロ展開して使う
+                const rows = Array.isArray(s.comfyCustomPlaceholders) ? s.comfyCustomPlaceholders : [];
+                for (const row of rows) {
+                    const token = this.normalizeCustomToken(row && row.find);
+                    if (!token || Object.prototype.hasOwnProperty.call(values, token)) continue;
+                    values[token] = this.substituteSessionNames(row.replace || '');
+                }
+                return { values: values, seed: seed };
+            },
+
+            // LLM を呼ぶ前に通す関門。prompt / negative_prompt 以外を差し込み、
+            // 未対応のプレースホルダが残っているなら名前を挙げて中断する（トークンを無駄にしない）。
+            prepareWorkflow(nodeObject) {
+                const built = this.buildTokenValues();
+                const applied = this.substituteTokens(nodeObject, built.values);
+                const unresolved = applied.unresolved.filter(token => !this.deferredTokens().includes(token));
+                if (unresolved.length) {
+                    return {
+                        ok: false,
+                        unresolved: unresolved,
+                        error: 'ワークフローに未対応のプレースホルダがあります: '
+                            + unresolved.map(token => '%' + token + '%').join(', ')
+                            + '\n設定の「挿絵生成（ComfyUI）」で値を選ぶか、カスタムプレースホルダとして登録するか、ワークフローから削除してください。',
+                    };
+                }
+                return { ok: true, object: applied.object, seed: built.seed, unresolved: applied.unresolved };
+            },
+
+            // LLM 合成後の prompt / negative_prompt（とアバター）を差し込む
+            applyPromptTokens(nodeObject, promptValues) {
+                return this.substituteTokens(nodeObject, promptValues);
+            },
+
+            // 値そのものが %トークン% のまま残っていないか。ワークフロー由来の未差し込みだけを拾う
+            findUnresolvedTokens(nodeObject) {
+                const found = new Set();
+                const walk = (value) => {
+                    if (typeof value === 'string') {
+                        const whole = /^%([a-zA-Z_][a-zA-Z0-9_]*)%$/.exec(value);
+                        if (whole) found.add(whole[1]);
+                        return;
+                    }
+                    if (Array.isArray(value)) { value.forEach(walk); return; }
+                    if (value && typeof value === 'object') {
+                        Object.keys(value).forEach(key => walk(value[key]));
+                    }
+                };
+                walk(nodeObject);
+                return Array.from(found);
+            },
+
+            // 検証ボタン・編集画面用。ワークフロー文字列からトークンの検出と解決可否をまとめて返す
+            analyzeWorkflow(jsonText) {
+                const parsed = this.parseWorkflow(jsonText);
+                if (!parsed.ok) return parsed;
+                const values = this.buildTokenValues().values;
+                const deferred = this.deferredTokens();
+                const rows = this.findPlaceholders(jsonText).map(token => ({
+                    token: token,
+                    resolved: deferred.includes(token) || Object.prototype.hasOwnProperty.call(values, token),
+                }));
+                const prepared = this.prepareWorkflow(parsed.object);
+                return {
+                    ok: true,
+                    nodeCount: parsed.nodeCount,
+                    rows: rows,
+                    unresolved: prepared.unresolved || [],
+                    error: prepared.ok ? '' : prepared.error,
+                };
+            },
+
+            // 保存されたワークフロー一覧を自己修復する（手壊れ・id/name 重複への防御）
+            normalizeWorkflowList(rawList, activeId) {
+                const list = [];
+                const usedIds = [];
+                const usedNames = [];
+                (Array.isArray(rawList) ? rawList : []).forEach((item, index) => {
+                    if (!item || typeof item !== 'object' || typeof item.json !== 'string') return;
+                    let id = (typeof item.id === 'string' && item.id) ? item.id : ('wf-' + (index + 1));
+                    while (usedIds.includes(id)) id = id + '-2';
+                    let name = (typeof item.name === 'string' && item.name.trim())
+                        ? item.name.trim()
+                        : ('ワークフロー ' + (list.length + 1));
+                    while (usedNames.includes(name)) name = name + ' (2)';
+                    usedIds.push(id);
+                    usedNames.push(name);
+                    list.push({ id: id, name: name, json: item.json });
+                });
+                let active = (typeof activeId === 'string') ? activeId : '';
+                if (!list.some(workflow => workflow.id === active)) active = list.length ? list[0].id : '';
+                return { list: list, activeId: active };
+            },
+
+            // 送信用・編集中のワークフロー 1 件
+            activeWorkflow() {
+                const list = Array.isArray(state.settings.comfyWorkflows) ? state.settings.comfyWorkflows : [];
+                const activeId = state.settings.comfyActiveWorkflowId;
+                return list.find(workflow => workflow.id === activeId) || null;
             },
 
             // 共通 → キャラの順でカンマ区切り連結する（SillyTavern の combinePrefixes 相当）
@@ -9756,12 +10065,18 @@ const dbUtils = {
             },
 
             // POST {base}/prompt → prompt_id
-            async submitWorkflow(base, workflowText, clientId, signal) {
-                let substituted;
-                try {
-                    substituted = JSON.parse(workflowText);
-                } catch (e) {
-                    throw new Error(`プレースホルダ差し込み後のワークフローが JSON として壊れています: ${e.message}`);
+            async submitWorkflow(base, workflow, clientId, signal) {
+                // 差し込み済みオブジェクトをそのまま受け取る。文字列が渡された場合のみパースする。
+                let substituted = workflow;
+                if (typeof substituted === 'string') {
+                    try {
+                        substituted = JSON.parse(substituted);
+                    } catch (e) {
+                        throw new Error(`ワークフローが JSON として壊れています: ${e.message}`);
+                    }
+                }
+                if (!substituted || typeof substituted !== 'object' || Array.isArray(substituted)) {
+                    throw new Error('ComfyUI へ送れる形のワークフローがありません。');
                 }
                 let response;
                 try {
@@ -9903,6 +10218,25 @@ const dbUtils = {
                 });
             },
 
+            // %user_avatar% / %char_avatar% 用の base64。未設定時は 1x1 PNG（SillyTavern の PNG_PIXEL 相当）
+            PNG_PIXEL_BASE64: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+
+            async blobToBase64(blob) {
+                if (typeof Blob === 'function' && blob instanceof Blob) {
+                    const dataUrl = await this.blobToDataUrl(blob);
+                    const comma = dataUrl.indexOf(',');
+                    if (comma >= 0) return dataUrl.slice(comma + 1);
+                }
+                return this.PNG_PIXEL_BASE64;
+            },
+
+            async resolveAvatarTokens() {
+                return {
+                    user_avatar: await this.blobToBase64(state.settings.userIconBlob),
+                    char_avatar: await this.blobToBase64(state.settings.aiIconBlob),
+                };
+            },
+
             async testConnection() {
                 const base = this.normalizeBaseUrl(elements.comfyBaseUrlInput.value);
                 if (!base) throw new Error('ComfyUI base URL が空です。');
@@ -9916,6 +10250,556 @@ const dbUtils = {
                 const data = await response.json().catch(() => null);
                 const version = data && data.system && data.system.comfy_version ? ` (comfyui ${data.system.comfy_version})` : '';
                 return `接続OK${version}`;
+            },
+        };
+
+        // ═══════════════════════════════════════════════════════════
+        // 挿絵生成: ワークフロー一覧の管理と、接続先 ComfyUI からの選択肢取得
+        // illustrationUtils と違い elements / dbUtils / fetch を扱うため、自己テストの対象にしない
+        // ═══════════════════════════════════════════════════════════
+        const comfyWorkflowUtils = {
+            OBJECT_INFO_TTL_MS: 300000,
+            objectInfoCache: null, // { base, fetchedAt, data }
+            choices: null, // { models, vaes, textEncoders, samplers, schedulers, missing }
+
+            // ── ワークフロー一覧 ────────────────────────────────
+            getList() {
+                return Array.isArray(state.settings.comfyWorkflows) ? state.settings.comfyWorkflows : [];
+            },
+
+            findWorkflow(id) {
+                return this.getList().find(workflow => workflow.id === id) || null;
+            },
+
+            newWorkflowId() {
+                return 'wf-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+            },
+
+            // 既存名とぶつからない名前を作る。excludeId は自分自身の名前を除外するため（改名用）
+            uniqueName(baseName, excludeId) {
+                const root = (baseName || '').trim() || '新しいワークフロー';
+                const names = this.getList()
+                    .filter(workflow => workflow.id !== excludeId)
+                    .map(workflow => workflow.name);
+                let name = root;
+                let counter = 2;
+                while (names.includes(name)) {
+                    name = root + ' (' + counter + ')';
+                    counter++;
+                }
+                return name;
+            },
+
+            async persist() {
+                await dbUtils.saveSetting('comfyWorkflows', state.settings.comfyWorkflows);
+                await dbUtils.saveSetting('comfyActiveWorkflowId', state.settings.comfyActiveWorkflowId);
+            },
+
+            async selectWorkflow(id) {
+                if (!this.findWorkflow(id)) return;
+                state.settings.comfyActiveWorkflowId = id;
+                await dbUtils.saveSetting('comfyActiveWorkflowId', id);
+                this.renderList();
+                this.renderEditor();
+            },
+
+            async addWorkflow(jsonText, name) {
+                const check = illustrationUtils.parseWorkflow(jsonText);
+                if (!check.ok) return { ok: false, error: check.error };
+                const workflow = {
+                    id: this.newWorkflowId(),
+                    name: this.uniqueName(name),
+                    json: String(jsonText || '').trim(),
+                };
+                if (!Array.isArray(state.settings.comfyWorkflows)) state.settings.comfyWorkflows = [];
+                state.settings.comfyWorkflows.push(workflow);
+                state.settings.comfyActiveWorkflowId = workflow.id;
+                await this.persist();
+                this.renderList();
+                this.renderEditor();
+                return { ok: true, workflow: workflow };
+            },
+
+            async setWorkflowJson(id, jsonText) {
+                const workflow = this.findWorkflow(id);
+                if (!workflow) return;
+                workflow.json = jsonText;
+                await this.persist();
+            },
+
+            async renameWorkflow(id, name) {
+                const workflow = this.findWorkflow(id);
+                if (!workflow) return;
+                const trimmed = String(name || '').trim();
+                if (!trimmed) return;
+                workflow.name = this.uniqueName(trimmed, workflow.id);
+                await this.persist();
+                this.renderList();
+            },
+
+            async duplicateWorkflow(id) {
+                const workflow = this.findWorkflow(id);
+                if (!workflow) return;
+                const copy = {
+                    id: this.newWorkflowId(),
+                    name: this.uniqueName(workflow.name + ' のコピー'),
+                    json: workflow.json,
+                };
+                state.settings.comfyWorkflows.push(copy);
+                state.settings.comfyActiveWorkflowId = copy.id;
+                await this.persist();
+                this.renderList();
+                this.renderEditor();
+            },
+
+            async deleteWorkflow(id) {
+                const list = this.getList();
+                const index = list.findIndex(workflow => workflow.id === id);
+                if (index === -1) return;
+                list.splice(index, 1);
+                if (state.settings.comfyActiveWorkflowId === id) {
+                    state.settings.comfyActiveWorkflowId = list.length ? list[0].id : '';
+                }
+                await this.persist();
+                this.renderList();
+                this.renderEditor();
+            },
+
+            // ── JSON の書き出し・読み込み ───────────────────────
+            exportWorkflows(ids) {
+                const list = this.getList();
+                const targets = ids && ids.length ? list.filter(workflow => ids.includes(workflow.id)) : list;
+                if (targets.length === 0) {
+                    uiUtils.showCustomAlert('書き出すワークフローがありません。');
+                    return;
+                }
+                const payload = targets.map(workflow => ({ name: workflow.name, json: workflow.json }));
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+                a.href = url;
+                a.download = `comfyui_workflows_${timestamp}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            },
+
+            async importWorkflows(file) {
+                if (!file) return;
+                const text = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = event => resolve(event.target.result);
+                    reader.onerror = () => reject(new Error('ファイルを読み取れませんでした。'));
+                    reader.readAsText(file);
+                }).catch(error => {
+                    uiUtils.showCustomAlert(error.message);
+                    return null;
+                });
+                if (text === null) return;
+
+                let parsed = null;
+                try {
+                    parsed = JSON.parse(text);
+                } catch (error) {
+                    await uiUtils.showCustomAlert(`JSON として読み取れません: ${error.message}`);
+                    return;
+                }
+
+                const candidates = [];
+                const baseName = (file.name || 'imported').replace(/\.json$/i, '');
+                if (Array.isArray(parsed)) {
+                    parsed.forEach(item => {
+                        if (item && typeof item === 'object' && typeof item.json === 'string') {
+                            candidates.push({ name: item.name, json: item.json });
+                        }
+                    });
+                } else if (parsed && typeof parsed === 'object') {
+                    candidates.push({ name: baseName, json: JSON.stringify(parsed) });
+                }
+
+                if (candidates.length === 0) {
+                    await uiUtils.showCustomAlert('ファイルからワークフローを読み込めませんでした。API 形式の JSON、または {name, json} の配列を指定してください。');
+                    return;
+                }
+
+                let added = 0;
+                let rejected = 0;
+                for (const candidate of candidates) {
+                    const result = await this.addWorkflow(candidate.json, candidate.name || baseName);
+                    if (result.ok) added++;
+                    else rejected++;
+                }
+                await uiUtils.showCustomAlert(`ワークフローを ${added} 件追加しました${rejected ? `（${rejected} 件は形式が不正でスキップ）` : ''}`);
+            },
+
+            // ── 接続先 ComfyUI の object_info ───────────────────
+            async fetchObjectInfo(force) {
+                const base = illustrationUtils.normalizeBaseUrl(state.settings.comfyBaseUrl);
+                if (!base) throw new Error('ComfyUI base URL が設定されていません。');
+                const cache = this.objectInfoCache;
+                if (!force && cache && cache.base === base && Date.now() - cache.fetchedAt < this.OBJECT_INFO_TTL_MS) {
+                    return { data: cache.data, fetchedAt: cache.fetchedAt };
+                }
+                let response;
+                try {
+                    response = await fetch(`${base}/object_info`, { method: 'GET' });
+                } catch (error) {
+                    throw new Error(illustrationUtils.corsErrorMessage(error));
+                }
+                const bodyText = await response.text().catch(() => '');
+                if (!response.ok && illustrationUtils.isServiceWorkerNetworkError(bodyText)) {
+                    throw new Error(illustrationUtils.corsErrorMessage(new Error('Service Worker 経由でも届きませんでした')));
+                }
+                if (!response.ok) throw new Error(`ComfyUI が ${response.status} を返しました。`);
+                let data = null;
+                try { data = JSON.parse(bodyText); } catch (error) { data = null; }
+                if (!data || typeof data !== 'object' || Array.isArray(data)) {
+                    throw new Error('object_info を読み取れませんでした。');
+                }
+                this.objectInfoCache = { base: base, fetchedAt: Date.now(), data: data };
+                return { data: data, fetchedAt: Date.now() };
+            },
+
+            // ノードの input.required.<field>[0] として列挙されている選択肢を取り出す
+            nodeInputList(data, nodeType, field) {
+                const spec = data && data[nodeType] && data[nodeType].input;
+                const required = spec && (spec.required || {});
+                const entry = required && required[field];
+                return (Array.isArray(entry) && Array.isArray(entry[0])) ? entry[0] : null;
+            },
+
+            unionLists(lists) {
+                const out = [];
+                lists.forEach(list => {
+                    (list || []).forEach(item => { if (!out.includes(item)) out.push(item); });
+                });
+                return out;
+            },
+
+            // 表示名だけ読みやすくする。保存するのはサーバーの生の名前
+            displayLabel(value) {
+                return String(value).replace(/\.(safetensors|ckpt|gguf|pt|bin|onnx)$/i, '').replace(/_/g, ' ');
+            },
+
+            // 各プルダウンの選択肢を集める。ノード types が無い環境でも落ちせず、
+            // 空になった項目名だけを missing として返す（生成は止めない）
+            extractChoices(data) {
+                const models = this.unionLists([
+                    this.nodeInputList(data, 'CheckpointLoaderSimple', 'ckpt_name'),
+                    this.nodeInputList(data, 'UNETLoader', 'unet_name'),
+                    this.nodeInputList(data, 'UnetLoaderGGUF', 'unet_name'),
+                ]);
+                const samplers = this.unionLists([
+                    this.nodeInputList(data, 'KSampler', 'sampler_name'),
+                    this.nodeInputList(data, 'KSamplerAdvanced', 'sampler_name'),
+                ]);
+                const schedulers = this.unionLists([
+                    this.nodeInputList(data, 'KSampler', 'scheduler'),
+                    this.nodeInputList(data, 'KSamplerAdvanced', 'scheduler'),
+                ]);
+                const vaes = this.unionLists([this.nodeInputList(data, 'VAELoader', 'vae_name')]);
+                const textEncoders = this.unionLists([
+                    this.nodeInputList(data, 'TextEncoderLoader', 'text_name1'),
+                    this.nodeInputList(data, 'TextEncoderLoader', 'text_name'),
+                    this.nodeInputList(data, 'CLIPLoader', 'clip_name'),
+                    this.nodeInputList(data, 'DualCLIPLoader', 'clip_name1'),
+                    this.nodeInputList(data, 'TripleCLIPLoader', 'clip_name1'),
+                ]);
+                const missing = [];
+                if (models.length === 0) missing.push('モデル（CheckpointLoaderSimple 等）');
+                if (vaes.length === 0) missing.push('VAE（VAELoader）');
+                if (textEncoders.length === 0) missing.push('テキストエンコーダ（TextEncoderLoader / CLIPLoader）');
+                if (samplers.length === 0) missing.push('サンプラ（KSampler）');
+                if (schedulers.length === 0) missing.push('スケジューラ（KSampler）');
+                return {
+                    models: models,
+                    vaes: vaes,
+                    textEncoders: textEncoders,
+                    samplers: samplers,
+                    schedulers: schedulers,
+                    missing: missing,
+                };
+            },
+
+            fillSelect(select, options, currentValue, emptyLabel) {
+                if (!select) return;
+                select.innerHTML = '';
+                if (emptyLabel) {
+                    const option = document.createElement('option');
+                    option.value = '';
+                    option.textContent = emptyLabel;
+                    select.appendChild(option);
+                }
+                options.forEach(item => {
+                    const option = document.createElement('option');
+                    option.value = item.value;
+                    option.textContent = item.label;
+                    select.appendChild(option);
+                });
+                // 保存値がサーバーに存在しなくても消さない（接続先ごとに選択肢が違うため）
+                if (currentValue && !options.some(item => item.value === currentValue)) {
+                    const option = document.createElement('option');
+                    option.value = currentValue;
+                    option.textContent = `（このサーバーに無い: ${currentValue}）`;
+                    select.appendChild(option);
+                }
+                select.value = currentValue || '';
+                if (select.value !== (currentValue || '')) select.value = '';
+            },
+
+            toOptions(values) {
+                return values.map(value => ({ value: value, label: this.displayLabel(value) }));
+            },
+
+            renderTokenDropdowns() {
+                const choices = this.choices;
+                if (!choices) return;
+                this.fillSelect(elements.comfyModelSelect, this.toOptions(choices.models), state.settings.comfyModel, '（未選択）');
+                this.fillSelect(elements.comfyVaeSelect, this.toOptions(choices.vaes), state.settings.comfyVae, '自動（指定しない）');
+                this.fillSelect(elements.comfyTextEncoderSelect, this.toOptions(choices.textEncoders), state.settings.comfyTextEncoder, '（未選択）');
+                this.fillSelect(elements.comfySamplerSelect, this.toOptions(choices.samplers), state.settings.comfySampler, '（未選択）');
+                this.fillSelect(elements.comfySchedulerSelect, this.toOptions(choices.schedulers), state.settings.comfyScheduler, '（未選択）');
+            },
+
+            async refreshChoices(statusElement, force) {
+                if (statusElement) {
+                    statusElement.textContent = '一覧取得中…';
+                    statusElement.style.color = 'var(--text-secondary)';
+                }
+                try {
+                    const result = await this.fetchObjectInfo(force);
+                    this.choices = this.extractChoices(result.data);
+                    this.renderTokenDropdowns();
+                    if (statusElement) {
+                        const missingNote = this.choices.missing.length ? ` / 未取得のノード: ${this.choices.missing.join(', ')}` : '';
+                        statusElement.textContent = `取得OK（モデル ${this.choices.models.length} / VAE ${this.choices.vaes.length} / エンコーダ ${this.choices.textEncoders.length} / サンプラ ${this.choices.samplers.length} / スケジューラ ${this.choices.schedulers.length}）${missingNote}`;
+                        statusElement.style.color = 'var(--text-success, var(--text-link))';
+                    }
+                    return { ok: true };
+                } catch (error) {
+                    // 取得失敗時は選択肢を作り直さない（保存済みの値と前回の選択肢をそのまま残す）
+                    if (statusElement) {
+                        statusElement.textContent = error.message;
+                        statusElement.style.color = 'var(--text-error, var(--text-link))';
+                    }
+                    return { ok: false, error: error.message };
+                }
+            },
+
+            // ── 一覧・編集画面の描画 ────────────────────────────
+            renderList() {
+                const container = elements.comfyWorkflowList;
+                if (!container) return;
+                const list = this.getList();
+                container.innerHTML = '';
+                if (list.length === 0) {
+                    const empty = document.createElement('p');
+                    empty.textContent = 'ワークフローが登録されていません。下の「新規に追加」から貼り付けてください。';
+                    empty.style.color = 'var(--text-secondary)';
+                    empty.style.fontSize = '13px';
+                    empty.style.textAlign = 'center';
+                    empty.style.margin = '10px 0';
+                    container.appendChild(empty);
+                    return;
+                }
+                list.forEach(workflow => {
+                    const isActive = workflow.id === state.settings.comfyActiveWorkflowId;
+                    const item = document.createElement('div');
+                    item.className = `api-key-item ${isActive ? 'active' : ''}`;
+
+                    const row = document.createElement('div');
+                    row.style.display = 'flex';
+                    row.style.gap = '5px';
+                    row.style.flexWrap = 'wrap';
+
+                    const label = document.createElement('input');
+                    label.type = 'text';
+                    label.className = 'api-key-item-label';
+                    label.value = workflow.name;
+                    label.style.marginBottom = '0';
+                    label.addEventListener('change', event => this.renameWorkflow(workflow.id, event.target.value));
+                    row.appendChild(label);
+
+                    const useButton = document.createElement('button');
+                    useButton.type = 'button';
+                    useButton.className = 'settings-action-button';
+                    useButton.style.fontSize = '12px';
+                    useButton.textContent = isActive ? '使用中' : '使用する';
+                    useButton.disabled = isActive;
+                    useButton.addEventListener('click', () => this.selectWorkflow(workflow.id));
+                    row.appendChild(useButton);
+
+                    const duplicateButton = document.createElement('button');
+                    duplicateButton.type = 'button';
+                    duplicateButton.className = 'settings-action-button';
+                    duplicateButton.style.fontSize = '12px';
+                    duplicateButton.textContent = '複製';
+                    duplicateButton.addEventListener('click', () => this.duplicateWorkflow(workflow.id));
+                    row.appendChild(duplicateButton);
+
+                    const exportButton = document.createElement('button');
+                    exportButton.type = 'button';
+                    exportButton.className = 'settings-action-button';
+                    exportButton.style.fontSize = '12px';
+                    exportButton.textContent = '書き出し';
+                    exportButton.addEventListener('click', () => this.exportWorkflows([workflow.id]));
+                    row.appendChild(exportButton);
+
+                    const deleteButton = document.createElement('button');
+                    deleteButton.type = 'button';
+                    deleteButton.className = 'settings-action-button';
+                    deleteButton.style.fontSize = '12px';
+                    deleteButton.textContent = '削除';
+                    deleteButton.addEventListener('click', async () => {
+                        const ok = await uiUtils.showCustomConfirm(`「${workflow.name}」を削除しますか。`);
+                        if (ok) this.deleteWorkflow(workflow.id);
+                    });
+                    row.appendChild(deleteButton);
+
+                    item.appendChild(row);
+                    const meta = document.createElement('div');
+                    meta.style.fontSize = '11px';
+                    meta.style.color = 'var(--text-secondary)';
+                    const parsed = illustrationUtils.parseWorkflow(workflow.json);
+                    meta.textContent = parsed.ok
+                        ? `ノード ${parsed.nodeCount} 件`
+                        : `形式が不正: ${parsed.error}`;
+                    item.appendChild(meta);
+                    container.appendChild(item);
+                });
+            },
+
+            // 編集中のワークフローをテキストエリアへ反映し、トークン検出一覧を作り直す
+            renderEditor() {
+                const textarea = elements.comfyWorkflowTextarea;
+                if (!textarea) return;
+                const active = illustrationUtils.activeWorkflow();
+                textarea.value = active ? active.json : '';
+                textarea.disabled = !active;
+                this.renderTokenStatus();
+            },
+
+            renderTokenStatus() {
+                const container = elements.comfyTokenStatusList;
+                if (!container) return;
+                const textarea = elements.comfyWorkflowTextarea;
+                const text = textarea ? textarea.value : '';
+                container.innerHTML = '';
+                if (!text.trim()) {
+                    const empty = document.createElement('li');
+                    empty.textContent = '（ワークフローが空です）';
+                    container.appendChild(empty);
+                    return;
+                }
+                const analysis = illustrationUtils.analyzeWorkflow(text);
+                if (!analysis.ok) {
+                    const item = document.createElement('li');
+                    item.textContent = analysis.error;
+                    item.style.color = 'var(--text-error, var(--text-link))';
+                    container.appendChild(item);
+                    return;
+                }
+                const found = new Set(analysis.rows.map(row => row.token));
+                illustrationUtils.builtinTokens().forEach(token => {
+                    const item = document.createElement('li');
+                    const detected = found.has(token);
+                    item.textContent = `${detected ? '✅' : '❌'} %${token}%`;
+                    item.style.color = detected ? 'var(--text-success, var(--text-link))' : 'var(--text-secondary)';
+                    container.appendChild(item);
+                });
+                const extra = analysis.rows.filter(row => !illustrationUtils.builtinTokens().includes(row.token));
+                extra.forEach(row => {
+                    const item = document.createElement('li');
+                    item.textContent = `${row.resolved ? '✅' : '⚠️'} %${row.token}%（カスタム）`;
+                    item.style.color = row.resolved ? 'var(--text-success, var(--text-link))' : 'var(--text-error, var(--text-link))';
+                    container.appendChild(item);
+                });
+            },
+
+            renderCustomPlaceholders() {
+                const container = elements.comfyCustomPlaceholderList;
+                if (!container) return;
+                const rows = Array.isArray(state.settings.comfyCustomPlaceholders) ? state.settings.comfyCustomPlaceholders : [];
+                container.innerHTML = '';
+                rows.forEach((row, index) => {
+                    const line = document.createElement('div');
+                    line.style.display = 'flex';
+                    line.style.gap = '5px';
+                    line.style.marginBottom = '5px';
+                    line.style.flexWrap = 'wrap';
+
+                    const find = document.createElement('input');
+                    find.type = 'text';
+                    find.className = 'api-key-item-input';
+                    find.placeholder = 'find（例: outfit）';
+                    find.value = row.find || '';
+                    find.style.flex = '1 1 140px';
+                    find.style.marginBottom = '0';
+                    find.addEventListener('change', event => this.updateCustomPlaceholder(index, 'find', event.target.value));
+                    line.appendChild(find);
+
+                    const replace = document.createElement('input');
+                    replace.type = 'text';
+                    replace.className = 'api-key-item-input';
+                    replace.placeholder = 'replace（例: 1girl, school uniform）';
+                    replace.value = row.replace || '';
+                    replace.style.flex = '2 1 200px';
+                    replace.style.marginBottom = '0';
+                    replace.addEventListener('input', event => { row.replace = event.target.value; });
+                    replace.addEventListener('change', () => this.persistCustomPlaceholders());
+                    line.appendChild(replace);
+
+                    const remove = document.createElement('button');
+                    remove.type = 'button';
+                    remove.className = 'settings-action-button';
+                    remove.style.fontSize = '12px';
+                    remove.textContent = '⊘';
+                    remove.title = 'このカスタム プレースホルダを削除';
+                    remove.addEventListener('click', () => this.removeCustomPlaceholder(index));
+                    line.appendChild(remove);
+
+                    container.appendChild(line);
+                });
+            },
+
+            async updateCustomPlaceholder(index, field, value) {
+                const rows = state.settings.comfyCustomPlaceholders;
+                if (!Array.isArray(rows) || !rows[index]) return;
+                if (field === 'find') {
+                    const normalized = illustrationUtils.normalizeCustomToken(value);
+                    if (!normalized) {
+                        await uiUtils.showCustomAlert('find は半角英数と _ の名前（組み込みトークンを除く）にしてください。');
+                        this.renderCustomPlaceholders();
+                        return;
+                    }
+                    rows[index].find = normalized;
+                } else {
+                    rows[index][field] = value;
+                }
+                await this.persistCustomPlaceholders();
+                this.renderCustomPlaceholders();
+            },
+
+            async removeCustomPlaceholder(index) {
+                const rows = state.settings.comfyCustomPlaceholders;
+                if (!Array.isArray(rows)) return;
+                rows.splice(index, 1);
+                await this.persistCustomPlaceholders();
+                this.renderCustomPlaceholders();
+            },
+
+            async addCustomPlaceholder() {
+                if (!Array.isArray(state.settings.comfyCustomPlaceholders)) state.settings.comfyCustomPlaceholders = [];
+                state.settings.comfyCustomPlaceholders.push({ find: '', replace: '' });
+                await this.persistCustomPlaceholders();
+                this.renderCustomPlaceholders();
+            },
+
+            async persistCustomPlaceholders() {
+                await dbUtils.saveSetting('comfyCustomPlaceholders', state.settings.comfyCustomPlaceholders);
+                this.renderTokenStatus();
             },
         };
 
@@ -10727,6 +11611,13 @@ appendMessage(role, content, index, isStreamingPlaceholder = false, cascadeInfo 
                 regenerateButton.classList.add('js-illustration-regenerate-btn');
                 regenerateButton.dataset.index = index;
                 header.appendChild(regenerateButton);
+
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = '削除';
+                deleteButton.title = 'この挿絵を削除する';
+                deleteButton.classList.add('js-illustration-delete-btn');
+                deleteButton.dataset.index = index;
+                header.appendChild(deleteButton);
 
                 if (illustration.status === 'done' && illustration.seed !== undefined) {
                     const seedSpan = document.createElement('span');
@@ -12302,15 +13193,19 @@ elements.footerTapScrollToBottomToggle.checked = state.settings.footerTapScrollT
                 elements.illustrationEnabledToggle.checked = !!state.settings.illustrationEnabled;
                 elements.illustrationModeSelect.value = state.settings.illustrationMode === 'manual' ? 'manual' : 'auto';
                 elements.comfyBaseUrlInput.value = state.settings.comfyBaseUrl || '';
-                elements.comfyWorkflowTextarea.value = state.settings.comfyWorkflow || '';
                 elements.comfyPromptPrefixTextarea.value = state.settings.comfyPromptPrefix || '';
                 elements.comfyCharacterPrefixTextarea.value = state.settings.comfyCharacterPrefix || '';
+                elements.comfyUseCharacterPrefixToggle.checked = state.settings.comfyUseCharacterPrefix !== false;
                 elements.comfyNegativePromptTextarea.value = state.settings.comfyNegativePrompt || '';
                 elements.comfyImagePromptTemplateTextarea.value = state.settings.comfyImagePromptTemplate || DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE;
+                this.fillComfyResolutionPresets();
+                elements.comfyResolutionPresetSelect.value = state.settings.comfyResolutionPreset || 'custom';
                 elements.comfyWidthInput.value = state.settings.comfyWidth ?? DEFAULT_COMFY_WIDTH;
                 elements.comfyHeightInput.value = state.settings.comfyHeight ?? DEFAULT_COMFY_HEIGHT;
                 elements.comfyStepsInput.value = state.settings.comfySteps ?? DEFAULT_COMFY_STEPS;
                 elements.comfyCfgInput.value = state.settings.comfyCfg ?? DEFAULT_COMFY_CFG;
+                elements.comfyDenoiseInput.value = state.settings.comfyDenoise ?? DEFAULT_COMFY_DENOISE;
+                elements.comfyClipSkipInput.value = state.settings.comfyClipSkip ?? DEFAULT_COMFY_CLIP_SKIP;
                 elements.comfySeedInput.value = state.settings.comfySeed ?? -1;
                 elements.comfyTimeoutMsInput.value = state.settings.comfyTimeoutMs ?? DEFAULT_COMFY_TIMEOUT_MS;
                 elements.comfyPollIntervalMsInput.value = state.settings.comfyPollIntervalMs ?? DEFAULT_COMFY_POLL_INTERVAL_MS;
@@ -12318,8 +13213,31 @@ elements.footerTapScrollToBottomToggle.checked = state.settings.footerTapScrollT
                 elements.comfyMaxImageBytesInput.value = state.settings.comfyMaxImageBytes ?? DEFAULT_COMFY_MAX_IMAGE_BYTES;
                 elements.comfyShowDebugToggle.checked = !!state.settings.comfyShowDebug;
                 elements.comfyMinimalProcessingToggle.checked = !!state.settings.comfyMinimalPromptProcessing;
+                comfyWorkflowUtils.renderList();
+                comfyWorkflowUtils.renderEditor();
+                comfyWorkflowUtils.renderCustomPlaceholders();
+                if (comfyWorkflowUtils.choices) {
+                    comfyWorkflowUtils.renderTokenDropdowns();
+                } else {
+                    // 未取得でも保存値だけは選べるようにしておく（一覧取得は任意タイミング）
+                    comfyWorkflowUtils.fillSelect(elements.comfyModelSelect, [], state.settings.comfyModel || '', '（未取得）');
+                    comfyWorkflowUtils.fillSelect(elements.comfyVaeSelect, [], state.settings.comfyVae || '', '（未取得）');
+                    comfyWorkflowUtils.fillSelect(elements.comfyTextEncoderSelect, [], state.settings.comfyTextEncoder || '', '（未取得）');
+                    comfyWorkflowUtils.fillSelect(elements.comfySamplerSelect, [], state.settings.comfySampler || '', '（未取得）');
+                    comfyWorkflowUtils.fillSelect(elements.comfySchedulerSelect, [], state.settings.comfyScheduler || '', '（未取得）');
+                }
                 this.updateComfyDebugOutput();
                 this.updateIllustrationFooterButtons();
+            },
+            fillComfyResolutionPresets() {
+                const select = elements.comfyResolutionPresetSelect;
+                if (!select || select.options.length > 0) return;
+                COMFY_RESOLUTION_PRESETS.forEach(preset => {
+                    const option = document.createElement('option');
+                    option.value = preset.value;
+                    option.textContent = preset.label;
+                    select.appendChild(option);
+                });
             },
             updateComfyDebugOutput() {
                 if (!elements.comfyDebugOutput) return;
@@ -13994,17 +14912,86 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                 }
                 if (elements.comfyWorkflowValidateBtn) {
                     elements.comfyWorkflowValidateBtn.addEventListener('click', () => {
-                        const result = illustrationUtils.parseWorkflow(elements.comfyWorkflowTextarea.value);
+                        // 生成経路と同じ prepareWorkflow を使うので、検証と実生成が食い違わない
+                        const result = illustrationUtils.analyzeWorkflow(elements.comfyWorkflowTextarea.value);
                         if (!result.ok) {
                             elements.comfyWorkflowStatus.textContent = result.error;
                             elements.comfyWorkflowStatus.style.color = 'var(--text-error, var(--text-link))';
                             return;
                         }
-                        const tokens = illustrationUtils.findPlaceholders(elements.comfyWorkflowTextarea.value);
-                        const unsupported = tokens.filter(t => !['prompt', 'negative_prompt', 'seed', 'width', 'height', 'steps', 'cfg', 'scale'].includes(t));
-                        const unsupportedNote = unsupported.length ? `（未対応のためそのまま: ${unsupported.join(', ')}）` : '';
-                        elements.comfyWorkflowStatus.textContent = `API形式として読み取れました（ノード ${result.nodeCount} 件）。検出したトークン: ${tokens.join(', ') || 'なし'}${unsupportedNote}`;
-                        elements.comfyWorkflowStatus.style.color = 'var(--text-success, var(--text-link))';
+                        const detected = result.rows.map(row => `%${row.token}%`);
+                        if (result.unresolved.length) {
+                            elements.comfyWorkflowStatus.textContent = result.error;
+                            elements.comfyWorkflowStatus.style.color = 'var(--text-error, var(--text-link))';
+                        } else {
+                            elements.comfyWorkflowStatus.textContent =
+                                `API形式として読み取れました（ノード ${result.nodeCount} 件）。検出したトークン: ${detected.join(', ') || 'なし'}`;
+                            elements.comfyWorkflowStatus.style.color = 'var(--text-success, var(--text-link))';
+                        }
+                    });
+                }
+                // ワークフロー一覧の操作
+                if (elements.comfyWorkflowAddBtn) {
+                    elements.comfyWorkflowAddBtn.addEventListener('click', async () => {
+                        const json = await uiUtils.showCustomPrompt(
+                            '新しいワークフローの API 形式 JSON を貼り付けてください。<br>（ComfyUI の「Save (API Format)」で書き出したもの）',
+                            '');
+                        if (!json) return;
+                        const result = await comfyWorkflowUtils.addWorkflow(json, '新しいワークフロー');
+                        if (!result.ok) await uiUtils.showCustomAlert(result.error);
+                        comfyWorkflowUtils.renderTokenStatus();
+                    });
+                }
+                if (elements.comfyWorkflowExportAllBtn) {
+                    elements.comfyWorkflowExportAllBtn.addEventListener('click', () => comfyWorkflowUtils.exportWorkflows());
+                }
+                if (elements.comfyWorkflowImportBtn && elements.comfyWorkflowImportInput) {
+                    elements.comfyWorkflowImportBtn.addEventListener('click', () => elements.comfyWorkflowImportInput.click());
+                    elements.comfyWorkflowImportInput.addEventListener('change', async (event) => {
+                        const file = event.target.files && event.target.files[0];
+                        if (file) await comfyWorkflowUtils.importWorkflows(file);
+                        event.target.value = '';
+                    });
+                }
+                if (elements.comfyWorkflowTextarea) {
+                    const reflectEditedWorkflow = () => {
+                        const active = illustrationUtils.activeWorkflow();
+                        if (active) comfyWorkflowUtils.setWorkflowJson(active.id, elements.comfyWorkflowTextarea.value);
+                        comfyWorkflowUtils.renderTokenStatus();
+                    };
+                    elements.comfyWorkflowTextarea.addEventListener('change', reflectEditedWorkflow);
+                    elements.comfyWorkflowTextarea.addEventListener('input', () => comfyWorkflowUtils.renderTokenStatus());
+                }
+                if (elements.comfyCustomPlaceholderAddBtn) {
+                    elements.comfyCustomPlaceholderAddBtn.addEventListener('click', () => comfyWorkflowUtils.addCustomPlaceholder());
+                }
+                if (elements.comfyObjectInfoRefreshBtn) {
+                    elements.comfyObjectInfoRefreshBtn.addEventListener('click', () => {
+                        comfyWorkflowUtils.refreshChoices(elements.comfyObjectInfoStatus, true);
+                    });
+                }
+                // 設定グループを開いたときだけ、古いキャッシュなら裏で取得し直す（生成経路では取得しない）
+                const illustrationGroup = document.getElementById('settings-group-illustration');
+                if (illustrationGroup) {
+                    illustrationGroup.addEventListener('toggle', () => {
+                        if (!illustrationGroup.open) return;
+                        if (!state.settings.illustrationEnabled) return;
+                        if (comfyWorkflowUtils.objectInfoCache &&
+                            Date.now() - comfyWorkflowUtils.objectInfoCache.fetchedAt < comfyWorkflowUtils.OBJECT_INFO_TTL_MS) {
+                            return;
+                        }
+                        comfyWorkflowUtils.refreshChoices(elements.comfyObjectInfoStatus, false);
+                    });
+                }
+                if (elements.comfyResolutionPresetSelect) {
+                    elements.comfyResolutionPresetSelect.addEventListener('change', () => {
+                        const value = elements.comfyResolutionPresetSelect.value;
+                        if (value === 'custom') return;
+                        const parts = value.split('x');
+                        if (parts.length === 2) {
+                            elements.comfyWidthInput.value = parts[0];
+                            elements.comfyHeightInput.value = parts[1];
+                        }
                     });
                 }
                 if (elements.comfyTemplateResetBtn) {
@@ -14749,6 +15736,10 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                         }
                         if (button.classList.contains('js-illustration-regenerate-btn')) {
                             appLogic.generateIllustration(index);
+                            return;
+                        }
+                        if (button.classList.contains('js-illustration-delete-btn')) {
+                            appLogic.deleteIllustration(index);
                             return;
                         }
                     }
@@ -16161,7 +17152,8 @@ helpIcons.forEach(icon => {
                     throw new Error('画像プロンプトの生成に失敗しました（空の応答）。モデル名またはテンプレートを確認してください。');
                 }
 
-                const prefix = illustrationUtils.combinePrefixes(state.settings.comfyPromptPrefix, state.settings.comfyCharacterPrefix);
+                const characterPrefix = state.settings.comfyUseCharacterPrefix === false ? '' : state.settings.comfyCharacterPrefix;
+                const prefix = illustrationUtils.combinePrefixes(state.settings.comfyPromptPrefix, characterPrefix);
                 const finalPrompt = illustrationUtils.combinePrefixes(prefix, keywords);
                 const negativePrompt = illustrationUtils.combinePrefixes(state.settings.comfyNegativePrompt, '');
 
@@ -16207,18 +17199,32 @@ helpIcons.forEach(icon => {
                     // LLM を呼ぶ前に設定側で弾けるものを弾く（トークンを無駄にしないため）
                     const base = illustrationUtils.normalizeBaseUrl(state.settings.comfyBaseUrl);
                     if (!base) throw new Error('ComfyUI base URL が設定されていません。');
-                    const parsed = illustrationUtils.parseWorkflow(state.settings.comfyWorkflow);
+                    const record = illustrationUtils.activeWorkflow();
+                    if (!record) throw new Error('ワークフローが登録されていません。設定の「挿絵生成（ComfyUI）」で API 形式 JSON を登録してください。');
+                    const parsed = illustrationUtils.parseWorkflow(record.json);
                     if (!parsed.ok) throw new Error(parsed.error);
+                    // prompt / negative_prompt 以外を先に差し込み、未対応トークンはここで止める
+                    const prepared = illustrationUtils.prepareWorkflow(parsed.object);
+                    if (!prepared.ok) throw new Error(prepared.error);
 
                     const built = await this.buildIllustrationPrompt(targetIndex);
 
-                    const rawWorkflow = state.settings.comfyWorkflow.trim();
-                    const placeholders = illustrationUtils.buildPlaceholderValues(rawWorkflow);
-                    const values = Object.assign({}, placeholders.values, {
-                        prompt: built.finalPrompt,
-                        negative_prompt: built.negativePrompt,
-                    });
-                    const workflowText = illustrationUtils.substitutePlaceholders(rawWorkflow, values);
+                    const promptValues = Object.assign(
+                        { prompt: built.finalPrompt, negative_prompt: built.negativePrompt },
+                        await illustrationUtils.resolveAvatarTokens()
+                    );
+                    const applied = illustrationUtils.applyPromptTokens(prepared.object, promptValues);
+                    if (applied.unresolved.length) {
+                        throw new Error('プレースホルダを差し込めませんでした: '
+                            + applied.unresolved.map(token => '%' + token + '%').join(', '));
+                    }
+                    const finalWorkflow = applied.object;
+                    // 送信直前の最終関門。ワークフロー由来の未差し込みトークンが残っていたら送らない
+                    const leftover = illustrationUtils.findUnresolvedTokens(finalWorkflow);
+                    if (leftover.length) {
+                        throw new Error('未差し込みのプレースホルダが残っています: '
+                            + leftover.map(token => '%' + token + '%').join(', '));
+                    }
 
                     this.setIllustrationOnMessage(targetIndex, {
                         status: 'generating',
@@ -16226,11 +17232,11 @@ helpIcons.forEach(icon => {
                         prompt: built.finalPrompt,
                         keywords: built.keywords,
                         negativePrompt: built.negativePrompt,
-                        seed: placeholders.seed,
+                        seed: prepared.seed,
                         startedAt: Date.now(),
                     });
 
-                    const promptId = await this.submitWithClient(base, workflowText, state.illustrationJob.controller.signal);
+                    const promptId = await this.submitWithClient(base, finalWorkflow, state.illustrationJob.controller.signal);
                     const historyEntry = await illustrationUtils.waitForHistory(
                         base, promptId,
                         state.settings.comfyTimeoutMs, state.settings.comfyPollIntervalMs,
@@ -16244,7 +17250,7 @@ helpIcons.forEach(icon => {
                         prompt: built.finalPrompt,
                         keywords: built.keywords,
                         negativePrompt: built.negativePrompt,
-                        seed: placeholders.seed,
+                        seed: prepared.seed,
                         imageDataUrl: shrunk.dataUrl,
                         sourceFilename: image.filename,
                         bytes: shrunk.bytes,
@@ -16267,6 +17273,16 @@ helpIcons.forEach(icon => {
             },
             async submitWithClient(base, workflowText, signal) {
                 return illustrationUtils.submitWorkflow(base, workflowText, illustrationUtils.newClientId(), signal);
+            },
+            // 生成済み（または失敗表示の）挿絵をメッセージから取り除く
+            async deleteIllustration(messageIndex) {
+                const message = state.currentMessages[messageIndex];
+                if (!message || !message.illustration) return;
+                const ok = await uiUtils.showCustomConfirm('この挿絵を削除しますか。');
+                if (!ok) return;
+                message.illustration = null;
+                uiUtils.rerenderIllustration(messageIndex);
+                await dbUtils.saveChat();
             },
             // 挿絵の状態をメッセージへ書き換え、そのメッセージ直下だけを描画し直す
             setIllustrationOnMessage(messageIndex, illustration) {
@@ -18414,15 +19430,30 @@ newSettings.footerTapScrollToBottom = elements.footerTapScrollToBottomToggle.che
                 newSettings.illustrationMode = elements.illustrationModeSelect.value === 'manual' ? 'manual' : 'auto';
                 // 末尾スラッシュは正規化する
                 newSettings.comfyBaseUrl = illustrationUtils.normalizeBaseUrl(elements.comfyBaseUrlInput.value);
-                newSettings.comfyWorkflow = elements.comfyWorkflowTextarea.value.trim();
+                // ワークフロー一覧は comfyWorkflowUtils 側でその場保存するため、ここでは編集画面の内容を反映するだけ
+                const editingWorkflow = illustrationUtils.activeWorkflow();
+                if (editingWorkflow) editingWorkflow.json = elements.comfyWorkflowTextarea.value.trim();
+                newSettings.comfyWorkflows = state.settings.comfyWorkflows;
+                newSettings.comfyActiveWorkflowId = state.settings.comfyActiveWorkflowId;
+                newSettings.comfyCustomPlaceholders = Array.isArray(state.settings.comfyCustomPlaceholders)
+                    ? state.settings.comfyCustomPlaceholders : [];
                 newSettings.comfyPromptPrefix = elements.comfyPromptPrefixTextarea.value.trim();
                 newSettings.comfyCharacterPrefix = elements.comfyCharacterPrefixTextarea.value.trim();
+                newSettings.comfyUseCharacterPrefix = elements.comfyUseCharacterPrefixToggle.checked;
                 newSettings.comfyNegativePrompt = elements.comfyNegativePromptTextarea.value.trim();
                 newSettings.comfyImagePromptTemplate = elements.comfyImagePromptTemplateTextarea.value;
+                newSettings.comfyModel = elements.comfyModelSelect ? elements.comfyModelSelect.value : '';
+                newSettings.comfyVae = elements.comfyVaeSelect ? elements.comfyVaeSelect.value : '';
+                newSettings.comfyTextEncoder = elements.comfyTextEncoderSelect ? elements.comfyTextEncoderSelect.value : '';
+                newSettings.comfySampler = elements.comfySamplerSelect ? elements.comfySamplerSelect.value : '';
+                newSettings.comfyScheduler = elements.comfySchedulerSelect ? elements.comfySchedulerSelect.value : '';
+                newSettings.comfyResolutionPreset = elements.comfyResolutionPresetSelect.value || 'custom';
                 newSettings.comfyWidth = Math.round(getComfyNumber(elements.comfyWidthInput, DEFAULT_COMFY_WIDTH, 64, 4096));
                 newSettings.comfyHeight = Math.round(getComfyNumber(elements.comfyHeightInput, DEFAULT_COMFY_HEIGHT, 64, 4096));
                 newSettings.comfySteps = Math.round(getComfyNumber(elements.comfyStepsInput, DEFAULT_COMFY_STEPS, 1, 200));
                 newSettings.comfyCfg = getComfyNumber(elements.comfyCfgInput, DEFAULT_COMFY_CFG, 0, 30);
+                newSettings.comfyDenoise = getComfyNumber(elements.comfyDenoiseInput, DEFAULT_COMFY_DENOISE, 0, 1);
+                newSettings.comfyClipSkip = Math.round(getComfyNumber(elements.comfyClipSkipInput, DEFAULT_COMFY_CLIP_SKIP, 1, 12));
                 newSettings.comfySeed = Math.round(getComfyNumber(elements.comfySeedInput, -1, -1, Number.MAX_SAFE_INTEGER));
                 newSettings.comfyTimeoutMs = Math.round(getComfyNumber(elements.comfyTimeoutMsInput, DEFAULT_COMFY_TIMEOUT_MS, 5000, 1800000));
                 newSettings.comfyPollIntervalMs = Math.round(getComfyNumber(elements.comfyPollIntervalMsInput, DEFAULT_COMFY_POLL_INTERVAL_MS, 200, 30000));

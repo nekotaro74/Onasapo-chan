@@ -26,6 +26,7 @@ const PNG_1PX = Buffer.from(
 let lastPromptBody = null;
 let historyPolls = 0;
 let promptPosts = 0;
+let objectInfoRequests = 0;
 
 function createServer() {
     return http.createServer((req, res) => {
@@ -67,6 +68,28 @@ function createServer() {
                 res.end(PNG_1PX);
                 return;
             }
+            if (endpoint === 'object_info') {
+                objectInfoRequests++;
+                // UnetLoaderGGUF は意図的に返さない（無い環境での劣化確認用）
+                res.end(JSON.stringify({
+                    KSampler: {
+                        input: {
+                            required: {
+                                sampler_name: [['euler_a', 'dpmpp_2m'], {}],
+                                scheduler: [['karras', 'normal'], {}],
+                            },
+                        },
+                    },
+                    KSamplerAdvanced: {
+                        input: { required: { sampler_name: [['dpmpp_2m_sde'], {}], scheduler: [['sgm_uniform'], {}] } },
+                    },
+                    CheckpointLoaderSimple: { input: { required: { ckpt_name: [['illustrious_xl.safetensors', 'v1.5.safetensors'], {}] } } },
+                    UNETLoader: { input: { required: { unet_name: [['flux_unet.safetensors'], {}] } } },
+                    VAELoader: { input: { required: { vae_name: [['ae.safetensors'], {}] } } },
+                    TextEncoderLoader: { input: { required: { text_name1: [['clip_l.safetensors'], {}] } } },
+                }));
+                return;
+            }
             res.statusCode = 404;
             res.end(JSON.stringify({ error: 'unknown mock endpoint ' + endpoint }));
             return;
@@ -97,12 +120,37 @@ const PAGE_SCRIPT = `(async () => {
     state.settings.illustrationEnabled = true;
     state.settings.illustrationMode = 'manual';
     state.settings.comfyBaseUrl = location.origin + '/mock-comfy';
-    state.settings.comfyWorkflow = JSON.stringify({
-        '3': { class_type: 'CLIPTextEncode', inputs: { text: '%prompt%' } },
-        '4': { class_type: 'CLIPTextEncode', inputs: { text: '%negative_prompt%' } },
-        '5': { class_type: 'KSampler', inputs: { seed: '%seed%', width: '%width%', height: '%height%', steps: '%steps%', cfg: '%cfg%' } },
-        '9': { class_type: 'SaveImage', inputs: { images: null } },
-    });
+    // SillyTavern の既定ワークフローと同じトークン群＋文中埋め込み＋カスタム プレースホルダ
+    state.settings.comfyWorkflows = [{
+        id: 'wf-main',
+        name: 'メイン',
+        json: JSON.stringify({
+            '2': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: '%model%' } },
+            '12': { class_type: 'VAELoader', inputs: { vae_name: '%vae%' } },
+            '13': { class_type: 'TextEncoderLoader', inputs: { text_name1: '%text_encoder%' } },
+            '3': { class_type: 'CLIPTextEncode', inputs: { text: 'masterpiece, %prompt%' } },
+            '4': { class_type: 'CLIPTextEncode', inputs: { text: '%negative_prompt%' } },
+            '14': { class_type: 'CLIPSetLastLayer', inputs: { clip_skip: '%clip_skip%' } },
+            '5': {
+                class_type: 'KSampler',
+                inputs: {
+                    seed: '%seed%', width: '%width%', height: '%height%', steps: '%steps%', cfg: '%cfg%',
+                    sampler_name: '%sampler%', scheduler: '%scheduler%', denoise: '%denoise%',
+                },
+            },
+            '15': { class_type: 'Note', inputs: { text: '%outfit%' } },
+            '9': { class_type: 'SaveImage', inputs: { images: null } },
+        }),
+    }];
+    state.settings.comfyActiveWorkflowId = 'wf-main';
+    state.settings.comfyCustomPlaceholders = [{ find: 'outfit', replace: '1girl, school uniform' }];
+    state.settings.comfyModel = 'illustrious_xl.safetensors';
+    state.settings.comfyVae = 'ae.safetensors';
+    state.settings.comfyTextEncoder = 'clip_l.safetensors';
+    state.settings.comfySampler = 'euler_a';
+    state.settings.comfyScheduler = 'karras';
+    state.settings.comfyDenoise = 0.85;
+    state.settings.comfyClipSkip = 2;
     state.settings.comfyPromptPrefix = 'best quality';
     state.settings.comfyCharacterPrefix = '1girl, silver hair';
     state.settings.comfyNegativePrompt = 'lowres';
@@ -209,7 +257,7 @@ const scenarioScript = (mode) => `(async () => {
 // 失敗系: ComfyUI が落ちていても本編は使える / 不正ワークフロー / 連打 / Service Worker
 const FAILURE_SCRIPT = `(async () => {
     const unreachableBase = 'http://127.0.0.1:1';
-    const validWorkflow = state.settings.comfyWorkflow;
+    const validWorkflows = JSON.parse(JSON.stringify(state.settings.comfyWorkflows));
 
     // 1) ComfyUI に届かない: 本編は残り、挿絵だけ失敗する
     state.settings.illustrationMode = 'auto';
@@ -239,21 +287,55 @@ const FAILURE_SCRIPT = `(async () => {
     const originalHandleSendForWorkflow = appLogic.handleSend.bind(appLogic);
     let workflowCaseLlmCalls = 0;
     appLogic.handleSend = async () => { workflowCaseLlmCalls++; return { content: 'a bench, 1 man 1 woman' }; };
-    state.settings.comfyWorkflow = JSON.stringify({ nodes: [{ id: 1 }], links: [] });
+    state.settings.comfyWorkflows = [{ id: 'wf-bad', name: 'UI形式', json: JSON.stringify({ nodes: [{ id: 1 }], links: [] }) }];
+    state.settings.comfyActiveWorkflowId = 'wf-bad';
     state.currentMessages = [
         { role: 'user', content: 'x', timestamp: Date.now() },
         { role: 'model', content: 'y', timestamp: Date.now() },
     ];
     uiUtils.renderChatMessages();
+    // ページ内で ComfyUI への投入回数を見る
+    const originalSubmitWithClient = appLogic.submitWithClient.bind(appLogic);
+    let postsDuringCases = 0;
+    appLogic.submitWithClient = (...args) => { postsDuringCases++; return originalSubmitWithClient(...args); };
     await appLogic.generateIllustration();
     const badWorkflowResult = {
         status: state.currentMessages[1].illustration ? state.currentMessages[1].illustration.status : null,
         mentionsUiFormat: /UI形式/.test(state.currentMessages[1].illustration.error || ''),
         error: state.currentMessages[1].illustration.error,
         spentLlmCall: workflowCaseLlmCalls > 0,
+        posted: postsDuringCases > 0,
     };
+
+    // 2b) 未対応のプレースホルダ: ComfyUI へ送らず、LLM も消費せず、トークン名を表示する
+    state.settings.comfyBaseUrl = location.origin + '/mock-comfy';
+    state.settings.comfyWorkflows = [{
+        id: 'wf-unknown', name: '未知トークン',
+        json: JSON.stringify({
+            '3': { class_type: 'CLIPTextEncode', inputs: { text: '%nonexistent_token%' } },
+            '9': { class_type: 'SaveImage', inputs: { images: null } },
+        }),
+    }];
+    state.settings.comfyActiveWorkflowId = 'wf-unknown';
+    state.currentMessages = [
+        { role: 'user', content: 'x', timestamp: Date.now() },
+        { role: 'model', content: 'y', timestamp: Date.now() },
+    ];
+    uiUtils.renderChatMessages();
+    const llmCallsBeforeUnknown = workflowCaseLlmCalls;
+    const postsBeforeUnknown = postsDuringCases;
+    await appLogic.generateIllustration();
+    const unknownTokenResult = {
+        status: state.currentMessages[1].illustration ? state.currentMessages[1].illustration.status : null,
+        error: state.currentMessages[1].illustration ? state.currentMessages[1].illustration.error : null,
+        namesToken: /nonexistent_token/.test(state.currentMessages[1].illustration.error || ''),
+        posted: postsDuringCases > postsBeforeUnknown,
+        spentLlmCall: workflowCaseLlmCalls > llmCallsBeforeUnknown,
+    };
+    appLogic.submitWithClient = originalSubmitWithClient;
     appLogic.handleSend = originalHandleSendForWorkflow;
-    state.settings.comfyWorkflow = validWorkflow;
+    state.settings.comfyWorkflows = validWorkflows;
+    state.settings.comfyActiveWorkflowId = validWorkflows[0].id;
 
     // 3) 連打: 実行中の再要求は断られ、ComfyUI への投入は1件のまま
     state.settings.comfyBaseUrl = location.origin + '/mock-comfy';
@@ -285,7 +367,7 @@ const FAILURE_SCRIPT = `(async () => {
     } catch (e) { /* SW 不可の環境 */ }
 
     return {
-        unreachableResult, badWorkflowResult, rapidTapResult,
+        unreachableResult, badWorkflowResult, unknownTokenResult, rapidTapResult,
         swRegistered, swVersion,
     };
 })()`;
@@ -297,11 +379,15 @@ const RELOAD_SETUP = `(async () => {
     state.settings.illustrationEnabled = true;
     state.settings.illustrationMode = 'manual';
     state.settings.comfyBaseUrl = location.origin + '/mock-comfy';
-    state.settings.comfyWorkflow = JSON.stringify({
-        '3': { class_type: 'CLIPTextEncode', inputs: { text: '%prompt%' } },
-        '5': { class_type: 'KSampler', inputs: { seed: '%seed%', width: '%width%', height: '%height%' } },
-        '9': { class_type: 'SaveImage', inputs: { images: null } },
-    });
+    state.settings.comfyWorkflows = [{
+        id: 'wf-reload', name: 'リロード確認',
+        json: JSON.stringify({
+            '3': { class_type: 'CLIPTextEncode', inputs: { text: '%prompt%' } },
+            '5': { class_type: 'KSampler', inputs: { seed: '%seed%', width: '%width%', height: '%height%' } },
+            '9': { class_type: 'SaveImage', inputs: { images: null } },
+        }),
+    }];
+    state.settings.comfyActiveWorkflowId = 'wf-reload';
     state.settings.comfyImagePromptTemplate = 'keywords please {{char}} {{user}}';
     state.settings.aiName = '詩織';
     state.settings.userName = 'あなた';
@@ -324,7 +410,7 @@ const RELOAD_SETUP = `(async () => {
     await appLogic.generateIllustration();
     appLogic.handleSend = originalHandleSend;
     await dbUtils.saveChat();
-    return { chatId: state.currentChatId, status: state.currentMessages[1].illustration ? state.currentMessages[1].illustration.status : null, error: state.currentMessages[1].illustration ? state.currentMessages[1].illustration.error : null, workflow: state.settings.comfyWorkflow, base: state.settings.comfyBaseUrl };
+    return { chatId: state.currentChatId, status: state.currentMessages[1].illustration ? state.currentMessages[1].illustration.status : null, error: state.currentMessages[1].illustration ? state.currentMessages[1].illustration.error : null, workflow: JSON.stringify(state.settings.comfyWorkflows), activeId: state.settings.comfyActiveWorkflowId, base: state.settings.comfyBaseUrl };
 })()`;
 
 const RELOAD_VERIFY = `(async () => {
@@ -339,6 +425,74 @@ const RELOAD_VERIFY = `(async () => {
             ? state.currentMessages[1].illustration.status : null,
         imageRendered: !!image,
         imageSrcIsDataUrl: !!(image && String(image.src).startsWith('data:image/')),
+    };
+})()`;
+
+// 一覧取得 → プルダウン反映、ワークフロー CRUD、挿絵削除ボタン
+const CHOICES_SCRIPT = `(async () => {
+    uiUtils.applyIllustrationSettingsToUI();
+    const before = document.querySelectorAll('#comfy-model-select option').length;
+    const result = await comfyWorkflowUtils.refreshChoices(elements.comfyObjectInfoStatus, true);
+    const optionText = (select) => Array.from(select.options).map(o => o.value);
+    const labelOf = (select) => {
+        const opt = Array.from(select.options).find(o => o.value === select.value);
+        return opt ? opt.textContent : null;
+    };
+    // 一覧に無い値は消さずに表示する
+    state.settings.comfyModel = 'removed_model.safetensors';
+    comfyWorkflowUtils.renderTokenDropdowns();
+    const staleKept = Array.from(elements.comfyModelSelect.options).some(o => o.value === 'removed_model.safetensors');
+    state.settings.comfyModel = 'illustrious_xl.safetensors';
+    comfyWorkflowUtils.renderTokenDropdowns();
+
+    // ワークフロー CRUD
+    const added = await comfyWorkflowUtils.addWorkflow('{"9":{"class_type":"SaveImage","inputs":{}}}', 'テスト');
+    const renamed = added.ok;
+    await comfyWorkflowUtils.renameWorkflow(added.workflow.id, 'テスト');
+    const sameNameKept = comfyWorkflowUtils.findWorkflow(added.workflow.id).name === 'テスト';
+    await comfyWorkflowUtils.duplicateWorkflow(added.workflow.id);
+    const duplicated = comfyWorkflowUtils.getList().length === 3;
+    await comfyWorkflowUtils.deleteWorkflow(added.workflow.id);
+    const afterDelete = comfyWorkflowUtils.getList().length === 2
+        && !!illustrationUtils.activeWorkflow();
+    const uiRejected = (await comfyWorkflowUtils.addWorkflow('{"nodes":[],"links":[]}', 'bad')).ok === false;
+
+    // 編集画面のトークン検出
+    comfyWorkflowUtils.renderEditor();
+    const tokenListText = document.getElementById('comfy-token-status-list').textContent;
+
+    return {
+        refreshOk: result.ok,
+        optionsBefore: before,
+        models: optionText(elements.comfyModelSelect),
+        vaes: optionText(elements.comfyVaeSelect),
+        textEncoders: optionText(elements.comfyTextEncoderSelect),
+        samplers: optionText(elements.comfySamplerSelect),
+        schedulers: optionText(elements.comfySchedulerSelect),
+        ggufAbsent: !optionText(elements.comfyModelSelect).some(v => /gguf/i.test(v)),
+        modelLabelReadable: labelOf(elements.comfyModelSelect),
+        staleValueKept: staleKept,
+        crudOk: renamed && sameNameKept && duplicated && afterDelete && uiRejected,
+        tokenDetected: /model/.test(tokenListText) && /clip_skip/.test(tokenListText),
+    };
+})()`;
+
+const DELETE_BUTTON_SCRIPT = `(async () => {
+    state.currentMessages = [
+        { role: 'user', content: 'x', timestamp: Date.now() },
+        { role: 'model', content: '削除確認', timestamp: Date.now() },
+    ];
+    state.currentMessages[1].illustration = { status: 'done', imageDataUrl: 'data:image/png;base64,AAA', seed: 1 };
+    uiUtils.renderChatMessages();
+    const before = !!document.querySelector('.message-illustration-image');
+    const button = document.querySelector('.js-illustration-delete-btn');
+    if (button) button.click();
+    await new Promise(r => setTimeout(r, 300));
+    return {
+        buttonExists: !!button,
+        hadImage: before,
+        imageGone: !document.querySelector('.message-illustration-image'),
+        clearedInState: state.currentMessages[1].illustration === null,
     };
 })()`;
 
@@ -442,8 +596,12 @@ async function main() {
         lastPromptBody = null;
         historyPolls = 0;
         promptPosts = 0;
+        objectInfoRequests = 0;
         const failureResult = await evaluate(FAILURE_SCRIPT);
         const promptPostsAfterFailure = promptPosts;
+
+        const choicesResult = await evaluate(CHOICES_SCRIPT);
+        const deleteResult = await evaluate(DELETE_BUTTON_SCRIPT);
 
         // ページを開き直して、保存済み挿絵が履歴に表示されるか
         const savedChat = await evaluate(RELOAD_SETUP);
@@ -464,6 +622,13 @@ async function main() {
             seed: sent && sent.prompt ? sent.prompt['5'].inputs.seed : null,
             steps: sent && sent.prompt ? sent.prompt['5'].inputs.steps : null,
             cfg: sent && sent.prompt ? sent.prompt['5'].inputs.cfg : null,
+            model: sent && sent.prompt ? sent.prompt['2'].inputs.ckpt_name : null,
+            vae: sent && sent.prompt ? sent.prompt['12'].inputs.vae_name : null,
+            sampler: sent && sent.prompt ? sent.prompt['5'].inputs.sampler_name : null,
+            scheduler: sent && sent.prompt ? sent.prompt['5'].inputs.scheduler : null,
+            denoise: sent && sent.prompt ? sent.prompt['5'].inputs.denoise : null,
+            clip_skip: sent && sent.prompt ? sent.prompt['14'].inputs.clip_skip : null,
+            custom: sent && sent.prompt ? sent.prompt['15'].inputs.text : null,
         }, null, 2));
 
         console.log('\n── 開き直しの結果 ──');
@@ -484,9 +649,19 @@ async function main() {
             ['保存済み挿絵が履歴から復元できる', pageResult.restoredFromDb],
             ['本編テキストはそのまま', pageResult.mainTextIntact],
             ['client_id を送っている', !!(sent && sent.client_id)],
+            ['文中へ埋め込んだ prompt も差し替わる', !!sent && sent.prompt['3'].inputs.text.startsWith('masterpiece, ') && /a park at dusk/.test(sent.prompt['3'].inputs.text)],
             ['合成後の prompt が ComfyUI に届く', !!sent && /best quality/.test(sent.prompt['3'].inputs.text) && /a park at dusk/.test(sent.prompt['3'].inputs.text)],
             ['ネガティブプロンプトが届く', !!sent && sent.prompt['4'].inputs.text === 'lowres'],
             ['寸法・steps・cfg・seed が数値で届く', !!sent && sent.prompt['5'].inputs.width === 640 && sent.prompt['5'].inputs.height === 480 && typeof sent.prompt['5'].inputs.steps === 'number' && sent.prompt['5'].inputs.seed === 12345],
+            // 報告された不具合: SillyTavern 系のトークンが未差し込みのまま送られていた
+            ['%model% が差し替わる', !!sent && sent.prompt['2'].inputs.ckpt_name === 'illustrious_xl.safetensors'],
+            ['%vae% が差し替わる', !!sent && sent.prompt['12'].inputs.vae_name === 'ae.safetensors'],
+            ['%text_encoder% が差し替わる', !!sent && sent.prompt['13'].inputs.text_name1 === 'clip_l.safetensors'],
+            ['%sampler% / %scheduler% が差し替わる', !!sent && sent.prompt['5'].inputs.sampler_name === 'euler_a' && sent.prompt['5'].inputs.scheduler === 'karras'],
+            ['%denoise% が数値で届く', !!sent && sent.prompt['5'].inputs.denoise === 0.85],
+            ['%clip_skip% は負の値で届く', !!sent && sent.prompt['14'].inputs.clip_skip === -2],
+            ['カスタム プレースホルダが差し替わる', !!sent && sent.prompt['15'].inputs.text === '1girl, school uniform'],
+            ['未差し込みのプレースホルダを ComfyUI に送っていない', !!sent && !/%[a-z_]+%/.test(JSON.stringify(sent.prompt))],
 
             ['自動: 応答完了直後に本編+quietの2回だけLLMを呼ぶ', autoResult.apiCallCount === 2],
             ['自動: quiet生成は設定されたテンプレートを使う', autoResult.quietUsedTemplate],
@@ -504,6 +679,24 @@ async function main() {
             ['Service Worker が登録される', failureResult.swRegistered],
             ['Service Worker のキャッシュ版が上がっている', failureResult.swVersion === 'gemini-pwa-cache-v3'],
             ['不正ワークフローでは LLM を消費しない', failureResult.badWorkflowResult.spentLlmCall === false],
+            ['UI形式ワークフローは ComfyUI へ送らない', failureResult.badWorkflowResult.posted === false],
+            ['未知のプレースホルダは ComfyUI へ送らない', failureResult.unknownTokenResult.posted === false],
+            ['未知のプレースホルダでは LLM を消費しない', failureResult.unknownTokenResult.spentLlmCall === false],
+            ['未知のプレースホルダはトークン名を表示する', failureResult.unknownTokenResult.status === 'error' && failureResult.unknownTokenResult.namesToken],
+
+            ['object_info を1回だけ取得する', objectInfoRequests >= 1],
+            ['モデルの選択肢が揃う', choicesResult.refreshOk && choicesResult.models.includes('illustrious_xl.safetensors') && choicesResult.models.includes('flux_unet.safetensors')],
+            ['GGUF ローダーが無い環境でも落ちない', choicesResult.ggufAbsent],
+            ['VAE / テキストエンコーダ / サンプラ / スケジューラが揃う',
+                choicesResult.vaes.includes('ae.safetensors')
+                && choicesResult.textEncoders.includes('clip_l.safetensors')
+                && choicesResult.samplers.includes('euler_a') && choicesResult.samplers.includes('dpmpp_2m_sde')
+                && choicesResult.schedulers.includes('karras') && choicesResult.schedulers.includes('sgm_uniform')],
+            ['モデル名は読みやすく表示する', !!choicesResult.modelLabelReadable && !/\.safetensors$/.test(choicesResult.modelLabelReadable)],
+            ['サーバーに無い保存値は消さない', choicesResult.staleValueKept],
+            ['ワークフローの追加・改名・複製・削除・UI形式拒否', choicesResult.crudOk],
+            ['編集画面にプレースホルダ検出が出る', choicesResult.tokenDetected],
+            ['挿絵の削除ボタンで画像が消える', deleteResult.buttonExists && deleteResult.hadImage && deleteResult.imageGone && deleteResult.clearedInState],
 
             ['開き直後に設定が復元される', reloadResult.settingsRestored && reloadResult.templateRestored],
             ['開き直後に保存済み挿絵が履歴へ表示される',

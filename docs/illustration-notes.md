@@ -66,11 +66,15 @@ API キー・モデル名は呼び出し側で渡す（`state.settings.apiProvid
    placeholders.forEach(ph => workflow.replaceAll(`"%${ph}%"`, JSON.stringify(extension_settings.sd[ph])));
    ```
    **`"%xxx%"` のように「JSON 文字列リテラル全体」として一致した場合だけ** `JSON.stringify` で置換する。
-   部分一致で本文を壊さないためのこの形をそのまま踏襲する。
+   部分一致で本文を壊さないためのこの形を ST は採っている。
    seed は `seed >= 0 ? seed : Math.round(Math.random() * Number.MAX_SAFE_INTEGER)`。
    実際の ST が持つトークンは `prompt / negative_prompt / seed / denoise / clip_skip / model / vae /
-   sampler / scheduler / steps / scale / width / height`。**CFG は `%scale%` という名前**で、`%cfg%` ではない。
+   sampler / scheduler / steps / scale / width / height` に加えて `user_avatar / char_avatar`。
+   **CFG は `%scale%` という名前**で、`%cfg%` ではない。
    仕様側は `%cfg%` を指定しているので、`%cfg%` を正としつつ既存 ST ワークフローとの互換のため `%scale%` も同じ値で差し込む。
+   **clip_skip は ST では負値で送られる**（`-extension_settings.sd.clip_skip`、NaN なら `-1`）。
+   ST にテキストエンコーダのトークンは無い（本アプリが `%text_encoder%` を追加している）。
+   ST のカスタム プレースホルダは `{find, replace}` の任意文字列 `replaceAll` で、replace 値は `substituteParams` を通る。
 6. SillyTavern は ComfyUI を自前サーバー経由（`/api/sd/comfy/generate`）で叩く。
    **本 PWA はサーバーを持たないので、ブラウザから直接 `POST /prompt` → `GET /history/{id}` → `GET /view` を行う**
    （ここが唯一 SillyTavern と形が変わる箇所。仕様通り）。
@@ -99,9 +103,42 @@ API キー・モデル名は呼び出し側で渡す（`state.settings.apiProvid
 - 本 PWA はサーバーを持たないので、SillyTavern がサーバー側でやっていた
   `/history` ポーリングと `/view` 取得をブラウザで行う。ここが唯一の構造的な違い。
 
+## 4b. 初版の実不具合と、その再発防止（差し込み方式の改訂）
+
+初版は ST と同じ「生テキストへの `replaceAll('"%token%"', …)`」を踏襲していたが、次の理由で失敗した。
+**プレースホルダが未差し込みのまま ComfyUI へ送られ、ComfyUI がエラーを返した。**
+
+- 差し込み対象が `prompt / negative_prompt / seed / width / height / steps / cfg / scale` の 8 個だけで、
+  ST が実際に持つ `%model% %vae% %sampler% %scheduler% %denoise% %clip_skip%` とカスタム トークンを一度も置換しなかった。
+  検証 UI 自体が「未対応のためそのまま」と表示していた。
+- 生テキスト置換なので、`"text": "masterpiece, %prompt%"` のような文中のトークンも残った。
+
+改訂後の方式:
+
+- ワークフローを **パースしてから再帰走査**し、文字列値の中身だけを `substituteInString` で処理する。
+  値そのものが `%token%` なら値をそのまま（数値は quotes なしで）返し、文中なら `String(value)` を補間する。
+  テキストを継ぎ接ぎして再パースしないため、「差し込み後に JSON が壊れる」というエラー級が構造的に消えた。
+- 未対応トークンは `unresolved` に集約し、**2 相で止める**。
+  第 1 相 `prepareWorkflow` は LLM を呼ぶ前に走り（トークンを消費しない）、
+  `prompt / negative_prompt / user_avatar / char_avatar` 以外で差し込み、残ったものを名指しで中断する。
+  第 2 相 `applyPromptTokens` の後、POST 直前に `findUnresolvedTokens` で値そのものが `%token%` のまま残っていないか確認する。
+- 検証ボタンと編集画面のトークン検出は、生成経路と同じ `prepareWorkflow` を使う。
+  検証と実生成が食い違わない。
+- ST との意図的な差異: カスタム プレースホルダは JSON Aware で、ST のような「任意文字列の `replaceAll`」は表現できない
+  （find は `%[a-zA-Z_][a-zA-Z0-9_]*%` の形に限る）。文中埋め込みが効く分、ST より寛容になっている。
+- 補足: `illustrationUtils` は `tools/selftest.js` が**波括弧を数えて**抜き出す。
+  このオブジェクト内に不均衡な波括弧（文字列・正規表現・コメント・テンプレートリテラル内を含む）や
+  数量指定 `{1,40}`、`dbUtils` / `uiUtils` / モジュール定数への参照を入れると抜き出し・eval に失敗する。
+  副作用のある処理（fetch・DOM・IndexedDB）は `comfyWorkflowUtils` 側へ置いた。
+
 ## 5. 検証
 
-- `node tools/selftest.js` — 抜き出した純ロジック（39件）
-- `node tools/e2e.js` — モック ComfyUI に対して headless Chrome で実際に走らせる（29件）。
+- `node tools/selftest.js` — 抜き出した純ロジック（64件）。
+  文中埋め込みの置換、`%model%` 等の解決、CLIP Skip の負値、未対応トークンの中断、
+  カスタム プレースホルダ、ワークフロー一覧の自己修復まで。
+- `node tools/e2e.js` — モック ComfyUI に対して headless Chrome で実際に走らせる（53件）。
   手動生成・自動生成・手動で勝手に走らない・履歴復元・本編保持・CORS 判別・
-  不正ワークフロー・連打・SW 登録まで確認する。
+  不正ワークフロー・連打・SW 登録に加えて、
+  **SillyTavern 系トークンが全て差し替わること**、`!/%[a-z_]+%/` で**未差し込みを送っていないこと**、
+  未知トークンでは **POST も LLM も走らないこと**、`object_info` からのプルダウン反映と
+  ノード types 欠損時の劣化、ワークフロー CRUD、挿絵削除ボタンまで確認する。

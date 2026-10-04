@@ -74,40 +74,116 @@ checkTrue('SaveImage無しは拒否', !illustrationUtils.parseWorkflow(JSON.stri
 // ── トークン検出 ─────────────────────────────────────────────
 check('トークン検出', illustrationUtils.findPlaceholders(apiWorkflow).sort(),
     ['cfg', 'height', 'negative_prompt', 'prompt', 'seed', 'steps', 'width']);
+check('文中へ埋め込まれたトークンも検出',
+    illustrationUtils.findPlaceholders(JSON.stringify({ a: { inputs: { text: 'x %prompt% y %foo%' } } })).sort(),
+    ['foo', 'prompt']);
 
-// ── プレースホルダ差し込み（JSON を壊さない）─────────────────
+// ── プレースホルダ差し込み（JSON 解析方式）───────────────────
 state.settings = {
     comfyNegativePrompt: 'bad anatomy', comfyWidth: 512, comfyHeight: 768,
-    comfySteps: 20, comfyCfg: 7, comfySeed: 42,
+    comfySteps: 20, comfyCfg: 7, comfySeed: 42, comfyClipSkip: 2, comfyDenoise: 0.85,
+    comfyModel: 'illust.safetensors', comfyVae: 'ae.safetensors',
+    comfySampler: 'euler_a', comfyScheduler: 'karras', comfyTextEncoder: 'clip.safetensors',
 };
-const built = illustrationUtils.buildPlaceholderValues(apiWorkflow);
+const built = illustrationUtils.buildTokenValues();
 check('寸法・steps・cfg が渡る', [built.values.width, built.values.height, built.values.steps, built.values.cfg], [512, 768, 20, 7]);
 check('seed 固定', built.values.seed, 42);
+check('CLIP Skip は負の値で差し込む', built.values.clip_skip, -2);
+check('Denoise が渡る', built.values.denoise, 0.85);
+check('モデル・VAE・サンプラ・スケジューラ・エンコーダが渡る',
+    [built.values.model, built.values.vae, built.values.sampler, built.values.scheduler, built.values.text_encoder],
+    ['illust.safetensors', 'ae.safetensors', 'euler_a', 'karras', 'clip.safetensors']);
 
 const tricky = '1girl, "quoted", a, b';
-const substituted = illustrationUtils.substitutePlaceholders(apiWorkflow, Object.assign({}, built.values, { prompt: tricky }));
-let reparsed = null;
-let parseError = '';
-try { reparsed = JSON.parse(substituted); } catch (e) { parseError = e.message; }
-checkTrue('差し込み後も JSON が壊れない', reparsed !== null, parseError);
-check('引用符は JSON としてエスケープされる', reparsed && reparsed['3'].inputs.text, tricky);
-check('数値は quotes なしで入る', reparsed && reparsed['5'].inputs.width, 512);
+const substituted = illustrationUtils.substituteTokens(
+    JSON.parse(apiWorkflow), Object.assign({}, built.values, { prompt: tricky, negative_prompt: 'bad anatomy' }));
+checkTrue('差し込み後も JSON が壊れない', substituted.object !== null && substituted.unresolved.length === 0,
+    JSON.stringify(substituted.unresolved));
+check('引用符を含む本文がそのまま残る', substituted.object['3'].inputs.text, tricky);
+check('数値は quotes なしで入る', substituted.object['5'].inputs.width, 512);
 
-// 本文に %prompt% が部分一致しても壊さない
-const partial = JSON.stringify({ '1': { class_type: 'X', inputs: { note: 'prefix %prompt% suffix' } } });
-check('文字列内の部分一致は置換しない', illustrationUtils.substitutePlaceholders(partial, { prompt: 'NOPE' }), partial);
+// 文中へ埋め込まれたトークンも置換される（旧実装は未置換で残していた）
+const partial = { '1': { class_type: 'X', inputs: { note: 'prefix %prompt% suffix' } } };
+const partialResult = illustrationUtils.substituteTokens(partial, { prompt: 'NOPE' });
+check('文字列内の部分一致も置換する', partialResult.object['1'].inputs.note, 'prefix NOPE suffix');
+check('部分一致で unresolved は空', partialResult.unresolved, []);
+check('文中の seed は文字列として補間される',
+    illustrationUtils.substituteTokens({ '1': { inputs: { note: 'seed-%seed%' } } }, built.values).object['1'].inputs.note,
+    'seed-42');
 
 // %scale% 互換
 state.settings.comfyCfg = 9;
-const scaleWf = JSON.stringify({ '1': { class_type: 'X', inputs: { scale: '%scale%' } } });
+const scaleWf = { '1': { class_type: 'X', inputs: { scale: '%scale%' } } };
 check('%scale% には cfg の値が入る',
-    illustrationUtils.substitutePlaceholders(scaleWf, illustrationUtils.buildPlaceholderValues(scaleWf).values),
-    JSON.stringify({ '1': { class_type: 'X', inputs: { scale: 9 } } }));
+    illustrationUtils.substituteTokens(scaleWf, illustrationUtils.buildTokenValues().values).object['1'].inputs.scale, 9);
+
+// 未対応トークンは unresolved に集まる
+const unknown = illustrationUtils.substituteTokens({ '1': { inputs: { x: '%foo%' } } }, illustrationUtils.buildTokenValues().values);
+check('未知のトークンは unresolved', unknown.unresolved, ['foo']);
+check('未差し込みの値は原文のまま残る', unknown.object['1'].inputs.x, '%foo%');
+
+// prepareWorkflow は prompt / negative_prompt 以外を先に差し込み、未対応を名指しで止める
+const stStyle = {
+    '7': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: '%model%' } },
+    '8': { class_type: 'VAELoader', inputs: { vae_name: '%vae%' } },
+    '5': { class_type: 'KSampler', inputs: { sampler_name: '%sampler%', scheduler: '%scheduler%', denoise: '%denoise%' } },
+    '6': { class_type: 'CLIPSetLastLayer', inputs: { clip_skip: '%clip_skip%' } },
+    '3': { class_type: 'CLIPTextEncode', inputs: { text: 'masterpiece, %prompt%' } },
+};
+const prepared = illustrationUtils.prepareWorkflow(stStyle);
+checkTrue('SillyTavern 形式のトークンは全て解決', prepared.ok, prepared.error);
+check('CLIPSetLastLayer へ負の CLIP Skip が入る', prepared.object && prepared.object['6'].inputs.clip_skip, -2);
+check('文中の %prompt% は後段に残る', prepared.unresolved, ['prompt']);
+const preparedPrompt = illustrationUtils.applyPromptTokens(prepared.object, { prompt: 'a park' });
+check('本文が文中差し込みされる', preparedPrompt.object['3'].inputs.text, 'masterpiece, a park');
+check('文中差し込みで unresolved は空', preparedPrompt.unresolved, []);
+
+state.settings.comfyModel = '';
+const blocked = illustrationUtils.prepareWorkflow(stStyle);
+checkTrue('未設定の列挙値は生成を止める', !blocked.ok, 'ok が true のまま');
+checkTrue('止めた理由にトークン名が出る', /%model%/.test(blocked.error || ''), blocked.error);
+state.settings.comfyModel = 'illust.safetensors';
+
+// 空の negative_prompt は正当なので差し込む
+check('空の negative_prompt は空文字で差し込む',
+    illustrationUtils.applyPromptTokens({ '1': { inputs: { t: '%negative_prompt%' } } }, { negative_prompt: '' }).object['1'].inputs.t,
+    '');
+
+// POST 直前の最終関門
+check('findUnresolvedTokens は未差し込みだけ拾う',
+    illustrationUtils.findUnresolvedTokens({ '1': { inputs: { a: '%model%', b: 'masterpiece, a park' } } }), ['model']);
+
+// カスタム プレースホルダ
+state.settings.comfyCustomPlaceholders = [{ find: 'outfit', replace: '1girl, {{char}} in uniform' }];
+state.settings.aiName = '詩織';
+state.settings.userName = 'あなた';
+const customValues = illustrationUtils.buildTokenValues().values;
+check('カスタム プレースホルダが展開される', customValues.outfit, '1girl, 詩織 in uniform');
+check('カスタム名は % を除いて正規化する', illustrationUtils.normalizeCustomToken('%outfit%'), 'outfit');
+check('組み込みトークン名はカスタムに使えない', illustrationUtils.normalizeCustomToken('seed'), '');
+check('不正なカスタム名は空文字', illustrationUtils.normalizeCustomToken('bad name!'), '');
+state.settings.comfyCustomPlaceholders = [];
 
 // seed = -1 で毎回ランダム
 state.settings.comfySeed = -1;
-const randomSeed = illustrationUtils.buildPlaceholderValues(apiWorkflow).seed;
+const randomSeed = illustrationUtils.buildTokenValues().seed;
 checkTrue('seed=-1 でランダム', typeof randomSeed === 'number' && randomSeed >= 0, String(randomSeed));
+
+// ── ワークフロー一覧 ─────────────────────────────────────────
+const normalized = illustrationUtils.normalizeWorkflowList([
+    { id: 'a', name: 'A', json: '{}' },
+    { id: 'a', name: 'A', json: '{}' },
+    { id: '', name: '', json: '{}' },
+    { id: 'x', name: 'Y' },
+], 'missing-id');
+check('一覧の自己修復（重複 id・空 id・json 無し）', normalized.list.map(w => [w.id, w.name]),
+    [['a', 'A'], ['a-2', 'A (2)'], ['wf-3', 'ワークフロー 3']]);
+check('存在しない activeId は先頭へ', normalized.activeId, 'a');
+state.settings.comfyWorkflows = [{ id: 'a', name: 'A', json: '{"1":{"class_type":"SaveImage","inputs":{}}}' }];
+state.settings.comfyActiveWorkflowId = 'a';
+check('activeWorkflow が 1 件返す', illustrationUtils.activeWorkflow().name, 'A');
+state.settings.comfyActiveWorkflowId = 'nope';
+check('active が無ければ null', illustrationUtils.activeWorkflow(), null);
 
 // ── プレフィックス合成 ───────────────────────────────────────
 check('共通→キャラ→本文の連結',
