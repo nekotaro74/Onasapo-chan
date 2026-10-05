@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GeminiPWA</title>
+    <title>Onasapo-chan</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" id="theme-color-meta" content="#4a90e2">
     <style>
@@ -7933,86 +7933,61 @@ font-size: 1.142em !important;
                                 </p>
                                 <button id="comfy-template-reset-btn" class="settings-action-button" style="font-size: 12px;">既定に戻す</button>
                                 <hr style="margin: 12px 0; border-top: 1px dashed var(--border-secondary);">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="comfy-edit-prompt-toggle">
-                                    画像プロンプトを送信前に編集する
-                                </label>
-                                <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 8px;">
-                                    ※ オンにしたときだけ、初回の quiet 生成後に ComfyUI へ送る前へ文章を編集できます。キャンセルした場合は送しません。<br>
-                                    ※ 再生成は保存済みの文章をそのまま使うため、この編集は走りません（再生成時の文章は画像下の「▶画像プロンプト」で直せます）。
-                                </p>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="comfy-minimal-processing-toggle">
-                                    返文の整形を最小限にする（日本語のまま ComfyUI へ渡す）
-                                </label>
-                                <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 0;">
-                                    ※ オフ（既定）は SillyTavern と同じ厳格な整形で、英数字と記号以外は除去します。<br>
-                                    ※ 厳格な整形で空になった場合は、自動的に最小限の整形へ切り替えます。
-                                </p>
-                            </div>
-                        </details>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="comfy-edit-prompt-toggle">
+                                画像プロンプトを送信前に編集する
+                            </label>
+                            <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 8px;">
+                                ※ オンにしたときだけ、初回の quiet 生成後に ComfyUI へ送る前へ文章を編集できます。キャンセルした場合は送しません。<br>
+                                ※ 再生成は保存済みの文章をそのまま使うため、この編集は走りません（再生成時の文章は画像下の「▶画像プロンプト」で直せます）。
+                            </p>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="comfy-minimal-processing-toggle">
+                                返文の整形を最小限にする（日本語のまま ComfyUI へ渡す）
+                            </label>
+                            <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 0;">
+                                ※ オフ（既定）は SillyTavern と同じ厳格な整形で、英数字と記号以外は除去します。<br>
+                                ※ 厳格な整形で空になった場合は、自動的に最小限の整形へ切り替えます。
+                            </p>
+                        </div>
+                    </details>
 
-                        <details open style="margin-top: 10px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
-                            <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
-                                接続先 ComfyUI の環境（モデル / VAE / テキストエンコーダ / サンプラ / スケジューラ）
-                            </summary>
-                            <div style="padding: 10px; padding-top: 5px;">
-                                <button id="comfy-object-info-refresh-btn" class="settings-action-button" style="font-size: 12px;">一覧取得</button>
-                                <span id="comfy-object-info-status" style="font-size: 12px; margin-left: 8px; color: var(--text-secondary);"></span>
-                                <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
-                                    <div style="flex: 1 1 220px;">
-                                        <label for="comfy-model-select">モデル:</label>
-                                        <select id="comfy-model-select" aria-label="モデル"></select>
-                                    </div>
-                                    <div style="flex: 1 1 220px;">
-                                        <label for="comfy-vae-select">VAE:</label>
-                                        <select id="comfy-vae-select" aria-label="VAE"></select>
-                                    </div>
-                                    <div style="flex: 1 1 220px;">
-                                        <label for="comfy-text-encoder-select">テキストエンコーダ:</label>
-                                        <select id="comfy-text-encoder-select" aria-label="テキストエンコーダ"></select>
-                                    </div>
-                                    <div style="flex: 1 1 160px;">
-                                        <label for="comfy-sampler-select">Sampling method:</label>
-                                        <select id="comfy-sampler-select" aria-label="Sampling method"></select>
-                                    </div>
-                                    <div style="flex: 1 1 160px;">
-                                        <label for="comfy-scheduler-select">Scheduler:</label>
-                                        <select id="comfy-scheduler-select" aria-label="Scheduler"></select>
-                                    </div>
+                    <details open style="margin-top: 10px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
+                        <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
+                            モデル選択と生成パラメータ
+                        </summary>
+                        <div style="padding: 10px; padding-top: 5px;">
+                            <button id="comfy-object-info-refresh-btn" class="settings-action-button" style="font-size: 12px;">一覧取得</button>
+                            <span id="comfy-object-info-status" style="font-size: 12px; margin-left: 8px; color: var(--text-secondary);"></span>
+                            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
+                                <div style="flex: 1 1 220px;">
+                                    <label for="comfy-model-select">モデル:</label>
+                                    <select id="comfy-model-select" aria-label="モデル"></select>
                                 </div>
-                                <p style="font-size: 11px; color: var(--text-secondary); margin-top: 8px; margin-bottom: 0;">
-                                    ※ 接続先の <code>/object_info</code> から取得します。モデルは <code>%model%</code>、VAE は <code>%vae%</code>、テキストエンコーダは <code>%text_encoder%</code>、Sampling method は <code>%sampler%</code>、Scheduler は <code>%scheduler%</code> として差し込まれます。<br>
-                                    ※ 取得に失敗しても、すでに保存している値はそのまま残ります（生成は接続先の ComfyUI が値を検証します）。<br>
-                                    ※ テキストエンコーダは SillyTavern に無い本アプリ独自の項目です。
-                                </p>
+                                <div style="flex: 1 1 220px;">
+                                    <label for="comfy-vae-select">VAE:</label>
+                                    <select id="comfy-vae-select" aria-label="VAE"></select>
+                                </div>
+                                <div style="flex: 1 1 220px;">
+                                    <label for="comfy-text-encoder-select">テキストエンコーダ:</label>
+                                    <select id="comfy-text-encoder-select" aria-label="テキストエンコーダ"></select>
+                                </div>
+                                <div style="flex: 1 1 160px;">
+                                    <label for="comfy-sampler-select">Sampling method:</label>
+                                    <select id="comfy-sampler-select" aria-label="Sampling method"></select>
+                                </div>
+                                <div style="flex: 1 1 160px;">
+                                    <label for="comfy-scheduler-select">Scheduler:</label>
+                                    <select id="comfy-scheduler-select" aria-label="Scheduler"></select>
+                                </div>
                             </div>
-                        </details>
+                            <p style="font-size: 11px; color: var(--text-secondary); margin-top: 8px; margin-bottom: 0;">
+                                ※ 接続先の <code>/object_info</code> から取得します。モデルは <code>%model%</code>、VAE は <code>%vae%</code>、テキストエンコーダは <code>%text_encoder%</code>、Sampling method は <code>%sampler%</code>、Scheduler は <code>%scheduler%</code> として差し込まれます。<br>
+                                ※ 取得に失敗しても、すでに保存している値はそのまま残ります（生成は接続先の ComfyUI が値を検証します）。<br>
+                                ※ テキストエンコーダは SillyTavern に無い本アプリ独自の項目です。
+                            </p>
+                            <hr style="margin: 12px 0; border-top: 1px dashed var(--border-secondary);">
 
-                        <details style="margin-top: 10px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
-                            <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
-                                LoRA（最大4個）
-                            </summary>
-                            <div style="padding: 10px; padding-top: 5px;">
-                                <button type="button" id="comfy-lora-refresh-btn" class="settings-action-button" style="font-size: 12px;">LoRA一覧取得</button>
-                                <span id="comfy-lora-status" style="font-size: 12px; margin-left: 8px; color: var(--text-secondary);"></span>
-                                <div id="comfy-lora-rows" style="margin-top: 10px;"></div>
-                                <p style="font-size: 11px; color: var(--text-secondary); margin-top: 10px; margin-bottom: 0;">
-                                    ※ 一覧は <code>GET {base}/models/loras</code> から取得します。既定はすべて「使わない」です。<br>
-                                    ※ <b>同梱の規定ワークフローには LoRA ノードを入れていません</b>。loras フォルダが空でも従来どおり生成できます。<br>
-                                    ※ <code>%lora1%</code>〜<code>%lora4%</code> と <code>%lora_str1%</code>〜<code>%lora_str4%</code> は、ワークフローに書かれている場合だけ使います。<code>%lora_strN%</code> は <code>strength_model</code> と <code>strength_clip</code> の両方に同じ値を入れます。<br>
-                                    ※ <b>使うスロット</b>は、選んだファイル名と入力した強度をそのまま入れます。フォルダが空のときは送らず「LoRAを使うには ComfyUI の loras フォルダにファイルが必要です」と表示します。<br>
-                                    ※ <b>使わないスロット</b>で一覧にファイルがあるときは、ノードの形は変えず、一覧の先頭の実在ファイル名と強度 0 を入れます。標準 LoraLoader は両方の強度が 0 ならファイルを読まず素通しし、LoraLoaderModelOnly は <code>strength_model</code> が 0 なら同じです。<br>
-                                    ※ <b>使わないスロット</b>で loras フォルダが空のときは空文字を送りません。その LoraLoader ノードだけを外して <code>model</code> と <code>clip</code>を受け先へ直結し、ワークフロー全体は書き換えません。
-                                </p>
-                            </div>
-                        </details>
-
-                        <details style="margin-top: 10px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
-                            <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
-                                生成パラメータ
-                            </summary>
-                            <div style="padding: 10px; padding-top: 5px;">
                                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                                     <div style="flex: 1 1 120px;">
                                         <label for="comfy-width">幅:</label>
@@ -8071,6 +8046,25 @@ font-size: 1.142em !important;
                                         <input type="number" id="comfy-max-image-bytes" min="32768" max="8388608" step="16384">
                                     </div>
                                 </div>
+                            </div>
+                        </details>
+
+                        <details style="margin-top: 10px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
+                            <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
+                                LoRA（最大4個）
+                            </summary>
+                            <div style="padding: 10px; padding-top: 5px;">
+                                <button type="button" id="comfy-lora-refresh-btn" class="settings-action-button" style="font-size: 12px;">LoRA一覧取得</button>
+                                <span id="comfy-lora-status" style="font-size: 12px; margin-left: 8px; color: var(--text-secondary);"></span>
+                                <div id="comfy-lora-rows" style="margin-top: 10px;"></div>
+                                <p style="font-size: 11px; color: var(--text-secondary); margin-top: 10px; margin-bottom: 0;">
+                                    ※ 一覧は <code>GET {base}/models/loras</code> から取得します。既定はすべて「使わない」です。<br>
+                                    ※ <b>同梱の規定ワークフローには LoRA ノードを入れていません</b>。loras フォルダが空でも従来どおり生成できます。<br>
+                                    ※ <code>%lora1%</code>〜<code>%lora4%</code> と <code>%lora_str1%</code>〜<code>%lora_str4%</code> は、ワークフローに書かれている場合だけ使います。<code>%lora_strN%</code> は <code>strength_model</code> と <code>strength_clip</code> の両方に同じ値を入れます。<br>
+                                    ※ <b>使うスロット</b>は、選んだファイル名と入力した強度をそのまま入れます。フォルダが空のときは送らず「LoRAを使うには ComfyUI の loras フォルダにファイルが必要です」と表示します。<br>
+                                    ※ <b>使わないスロット</b>で一覧にファイルがあるときは、ノードの形は変えず、一覧の先頭の実在ファイル名と強度 0 を入れます。標準 LoraLoader は両方の強度が 0 ならファイルを読まず素通しし、LoraLoaderModelOnly は <code>strength_model</code> が 0 なら同じです。<br>
+                                    ※ <b>使わないスロット</b>で loras フォルダが空のときは空文字を送りません。その LoraLoader ノードだけを外して <code>model</code> と <code>clip</code>を受け先へ直結し、ワークフロー全体は書き換えません。
+                                </p>
                             </div>
                         </details>
 
@@ -8210,7 +8204,7 @@ font-size: 1.142em !important;
                         バージョン: <span id="app-version"></span>
                     </p>
                     <p style="text-align: center; color: var(--text-secondary); font-size: 12px; margin-top: -5px; margin-bottom: 10px;">
-                        <a href="https://github.com/titan823/geminipwa" target="_blank" rel="noopener noreferrer" style="color: var(--text-link); text-decoration: none;">GitHub Repository (Readme)</a>
+                        <a href="https://github.com/nekotaro74/Onasapo-chan" target="_blank" rel="noopener noreferrer" style="color: var(--text-link); text-decoration: none;">GitHub Repository (Readme)</a>
                     </p>
                     <button id="update-app-btn">アプリを更新 (キャッシュクリア)</button>
                     <p
@@ -8266,7 +8260,7 @@ font-size: 1.142em !important;
                         <button id="force-recovery-btn" class="orange-button">🔄 強制復旧 (キャッシュクリア&リロード)</button>
                         <p style="font-size: 11px; color: var(--text-secondary); margin-top:5px; margin-bottom: 10px;">
                             ※
-                            アプリが不安定な場合に使用。全キャッシュをクリアして強制的に再起動します。「アプリを更新」の処理に加えて、ブラウザが保持しているこの「GeminiPWA」アプリに関連する他の種類のキャッシュも可能な限り削除します。<br>
+                            アプリが不安定な場合に使用。全キャッシュをクリアして強制的に再起動します。「アプリを更新」の処理に加えて、ブラウザが保持しているこのアプリに関連する他の種類のキャッシュも可能な限り削除します。<br>
                             ※ ユーザーデータ（チャット履歴・設定）は保持されます。
                         </p>
                         <button id="clear-history-btn" class="orange-button">全履歴削除</button>
@@ -8617,7 +8611,7 @@ const PASTEL_RAINBOW_THEME_COLOR = '#ffadad';
         const LIGHT_MODE_HEADER_COLOR = '#4a90e2';
         const LIGHT_MODE_PRIMARY_COLOR = '#ffffff';
 
-        const APP_VERSION = "0.26ti (627b3)";
+        const APP_VERSION = "0.27on (Onasapo-chan)";
         const SWIPE_THRESHOLD = 50;
         const ZOOM_THRESHOLD = 1.01;
         const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -13795,7 +13789,7 @@ const getCurrentMermaidTheme = () => {
 
                 const displayTitle = isNewChat ? titleText : `: ${titleText}`;
                 elements.chatTitle.textContent = displayTitle;
-                document.title = `GeminiPWA - ${titleText}`;
+                document.title = `Onasapo-chan - ${titleText}`;
             },
             formatDate(timestamp) {
                 if (!timestamp) return '';
@@ -16531,7 +16525,7 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                             <div>
                                 <button id="recovery-force-reload-btn" style="width: 100%; padding: 10px; background-color: var(--bg-button-edit); color: var(--text-light); border: none; border-radius: 5px; cursor: pointer; font-size: 14px;">🔄 強制復旧 (キャッシュクリア&リロード)</button>
                                 <p style="font-size: 12px; color: var(--text-secondary); margin-top: 5px;">
-                                    ※ アプリが不安定な場合に使用。全キャッシュをクリアして強制的に再起動します。「アプリを更新」の処理に加えて、ブラウザが保持しているこの「GeminiPWA」アプリに関連する他の種類のキャッシュも可能な限り削除します。<br>※ ユーザーデータ（チャット履歴・設定）は保持されます。
+                                    ※ アプリが不安定な場合に使用。全キャッシュをクリアして強制的に再起動します。「アプリを更新」の処理に加えて、ブラウザが保持しているこのアプリに関連する他の種類のキャッシュも可能な限り削除します。<br>※ ユーザーデータ（チャット履歴・設定）は保持されます。
                                 </p>
                             </div>
 
@@ -23765,8 +23759,8 @@ async callDeepSeekApi(apiKey, model, messagesForApi, generationConfig, systemIns
                     }
                     const activeBackend = multiBackendUtils.getActiveBackend();
                     if(activeBackend && activeBackend.url.includes('openrouter.ai')) {
-                        dsRequestBody.http_referer = "https://geminipwa.pages.dev/";
-                        dsRequestBody.site_url = "https://github.com/titan823/geminipwa";
+                        dsRequestBody.http_referer = "https://nekotaro74.github.io/Onasapo-chan/";
+                        dsRequestBody.site_url = "https://github.com/nekotaro74/Onasapo-chan";
                     }
                 }
 

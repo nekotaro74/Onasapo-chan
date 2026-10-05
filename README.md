@@ -12,7 +12,7 @@
 
 本 PWA はブラウザから以下の URL にてご利用いただけます。
 
-<https://titan823.github.io/geminipwa/#chat>
+<https://nekotaro74.github.io/Onasapo-chan/#chat>
 
 使い方や不明点については、本リポジトリの `index.html` の内容を Google AI Studio 等で AI に提示のうえ、お尋ねください。
 
@@ -315,6 +315,10 @@ kinkan04 氏の PWA（<https://github.com/kinkan04/Gemini-PWA-Mk-II>）の校正
 - ※ DeepSeek が提供する API はすべて有料です。
 - ※「DeepSeek API エンドポイント機能」は形式的な実装であり、デバッグしておりません（デバッグ環境がないため）。
 ## ■ 更新履歴
+### 2026-10-06（バージョン 0.27on (Onasapo-chan)）
+- 設定画面の「接続先 ComfyUI の環境」を「モデル選択と生成パラメータ」へ改名し、従来の「生成パラメータ」折りたたみをその中へ統合しました（LoRA の上に表示されます。保存処理は変更していません）。
+- 画面・README・Service Worker・マニフェストに残っていた上流リポジトリ（geminipwa）の名前と URL を、本リポジトリ <https://github.com/nekotaro74/Onasapo-chan> / <https://nekotaro74.github.io/Onasapo-chan/> のものへ変更しました。アプリ表示名を「Onasapo-chan」に変更し、Service Worker のキャッシュ名を `onasapo-chan-cache-v4` へ更新（「アプリを更新 (キャッシュクリア)」でこのリポジトリの Service Worker が再取得されます）。バージョン表記を `0.26ti (627b3)` → `0.27on (Onasapo-chan)` へ進めました。
+
 ### 2026/08/04
 -  モデルカード更新、微調整
 ### 2026/02/20
@@ -596,7 +600,7 @@ PWAとは実体がhtmlなだけの簡易アプリです。ブラウザがあれ�
 
 Github Pagesで公開されたこのページにアクセスするだけです。  
 
-[index.htmlへのリンク(Github Pages)](https://ona-oni.github.io/geminipwa/)
+[index.htmlへのリンク(Github Pages)](https://nekotaro74.github.io/Onasapo-chan/)
 ※このリポジトリの内容が静的にアクセスできる
 
 1. GeminiのAPIキーを準備。

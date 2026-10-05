@@ -158,7 +158,7 @@ async function checkMode(mode, results) {
         } else {
             check('案内モーダルは表示されない', state.exists && state.open === false, 'open=' + state.open);
             check('marked.js が読めている', state.markedLoaded === true);
-            check('アプリが初期化されている', /GeminiPWA/.test(state.title), 'title=' + state.title);
+            check('アプリが初期化されている', /Onasapo-chan/.test(state.title), 'title=' + state.title);
         }
     } finally {
         chrome.kill();
