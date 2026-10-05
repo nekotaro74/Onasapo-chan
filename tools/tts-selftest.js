@@ -203,6 +203,13 @@ check('短い本文は 1 chunk', ttsUtils.chunkText('短い文'), ['短い文'])
 // ── ボイス一覧（カンマ区切り）───────────────────────────
 state.settings.ttsVoices = 'alloy, echo ,,';
 check('カンマ区切り一覧を整形', ttsUtils.voiceChoices(), ['alloy', 'echo']);
+// 保存時と接続確認の成功時に末尾カンマを自動で付ける。空の項目は選択肢へ入れない
+check('末尾カンマの無い入力へカンマを付ける', ttsUtils.normalizeVoicesInput('alloy, echo'), 'alloy, echo,');
+check('末尾カンマ付きはそのまま', ttsUtils.normalizeVoicesInput('alloy, echo,'), 'alloy, echo,');
+check('末尾の空白を詰めてカンマ', ttsUtils.normalizeVoicesInput('alloy, echo  '), 'alloy, echo,');
+check('空欄にはカンマを付けない', ttsUtils.normalizeVoicesInput('   '), '');
+check('末尾カンマで空の選択肢は増えない',
+    ttsUtils.voiceChoicesFrom(ttsUtils.normalizeVoicesInput('alloy, echo')), ['alloy', 'echo']);
 
 // ── 読み上げ本文は message.content から作る（挿絵プロンプト欄は読まない）──
 resetSettings();

@@ -814,6 +814,72 @@ const TTS_UI_SCRIPT = `(() => {
     };
 })()`;
 
+// 有効な参照ボイス一覧: 接続確認が成功したときだけ話者選択へ反映し、失敗時は変えない
+const TTS_VOICES_SCRIPT = `(async () => {
+    const settingsSnapshot = JSON.parse(JSON.stringify(state.settings));
+    const waitStatus = async () => {
+        let waited = 0;
+        while (elements.ttsStatus.textContent === '確認中…' && waited < 8000) {
+            await new Promise(r => setTimeout(r, 100));
+            waited += 100;
+        }
+        await new Promise(r => setTimeout(r, 150));
+    };
+    const options = () => Array.from(elements.ttsDefaultVoiceSelect.options).map(o => o.value);
+    const speakerOptions = () => Array.from(
+        elements.ttsSpeakerRows.querySelector('select.js-tts-speaker-voice').options).map(o => o.value);
+
+    state.settings.ttsEnabled = true;
+    state.settings.ttsEndpoint = location.origin + '/mock-tts/v1';
+    state.settings.ttsApiKey = '';
+    state.settings.ttsModel = 'mock-tts-model';
+    state.settings.ttsVoices = 'alloy, echo,';
+    state.settings.ttsDefaultVoice = 'alloy';
+    state.settings.ttsGenericVoice = '';
+    state.settings.ttsSpeakers = [{ name: 'まゆみ', voice: 'echo' }];
+    uiUtils.applyTtsSettingsToUI();
+    const before = options();
+
+    // 編集しただけ（change）では話者選択は作り直さない
+    elements.ttsVoicesInput.value = 'momo, rima, tsukasa';
+    elements.ttsVoicesInput.dispatchEvent(new Event('change'));
+    const afterEdit = options();
+
+    // 接続確認の成功で、入力欄の最新内容へ更新し末尾カンマを付ける
+    elements.ttsTestBtn.click();
+    await waitStatus();
+    const afterSuccess = options();
+    const afterSuccessSpeakerOptions = speakerOptions();
+    const inputAfterSuccess = elements.ttsVoicesInput.value;
+    const statusAfterSuccess = elements.ttsStatus.textContent;
+
+    // 接続確認の失敗ではプルダウンを変えず、エラー表示を残す
+    state.settings.ttsEndpoint = 'http://127.0.0.1:1/v1';
+    elements.ttsVoicesInput.value = 'nope1, nope2';
+    elements.ttsTestBtn.click();
+    await waitStatus();
+    const afterFailure = options();
+    const statusAfterFailure = elements.ttsStatus.textContent;
+    const inputAfterFailure = elements.ttsVoicesInput.value;
+
+    // 保存時にも末尾カンマを付ける。空の項目は選択肢へ足さない
+    elements.ttsVoicesInput.value = 'alloy, echo';
+    await appLogic.saveSettings(false);
+    const savedVoices = state.settings.ttsVoices;
+    const savedChoices = ttsUtils.voiceChoices();
+
+    state.settings = settingsSnapshot;
+    ttsUtils.stopAll();
+    return {
+        before: before, afterEdit: afterEdit,
+        afterSuccess: afterSuccess, afterSuccessSpeakerOptions: afterSuccessSpeakerOptions,
+        inputAfterSuccess: inputAfterSuccess, statusAfterSuccess: statusAfterSuccess,
+        afterFailure: afterFailure, statusAfterFailure: statusAfterFailure,
+        inputAfterFailure: inputAfterFailure,
+        savedVoices: savedVoices, savedChoices: savedChoices,
+    };
+})()`;
+
 // 読み上げ: モック OpenAI Compatible サーバーへ実際に送り、キュー再生・停止・本文抽出を確認する
 const TTS_PLAY_SCRIPT = `(async () => {
     // 再生を重ねないことを数えるため Audio を包む
@@ -1240,6 +1306,7 @@ async function main() {
         const footerResult = await evaluate(FOOTER_BUTTON_SCRIPT);
         const ttsUiResult = await evaluate(TTS_UI_SCRIPT);
         const ttsPlayResult = await evaluate(TTS_PLAY_SCRIPT);
+        const ttsVoicesResult = await evaluate(TTS_VOICES_SCRIPT);
         const editResult = await evaluate(EDIT_PROMPT_SCRIPT);
         const streamScrollResult = await evaluate(STREAM_SCROLL_SCRIPT);
 
@@ -1405,6 +1472,25 @@ async function main() {
                 ttsPlayResult.corsAlerts.length === 1
                 && /CORS/.test(ttsPlayResult.corsAlerts[0])
                 && /TTS サーバーに届きませんでした/.test(ttsPlayResult.corsAlerts[0])],
+
+            ['参照ボイス: 編集しただけでは話者選択は作り直さない',
+                JSON.stringify(ttsVoicesResult.afterEdit) === JSON.stringify(ttsVoicesResult.before)],
+            // 一覧から消えた保存値は「（一覧に無い保存値）」として残す既存仕様も候補に含む
+            ['参照ボイス: 接続確認の成功で話者選択が入力欄の最新内容になる',
+                JSON.stringify(ttsVoicesResult.afterSuccess) === JSON.stringify(['', 'momo', 'rima', 'tsukasa', 'alloy'])],
+            ['参照ボイス: 接続確認の成功で話者割当の候補も最新内容になる',
+                JSON.stringify(ttsVoicesResult.afterSuccessSpeakerOptions) === JSON.stringify(['', 'momo', 'rima', 'tsukasa', 'echo'])],
+            ['参照ボイス: 接続確認の成功時に末尾カンマを自動で付ける',
+                ttsVoicesResult.inputAfterSuccess === 'momo, rima, tsukasa,'],
+            ['参照ボイス: 接続確認の失敗では話者選択は以前のまま',
+                JSON.stringify(ttsVoicesResult.afterFailure) === JSON.stringify(ttsVoicesResult.afterSuccess)
+                && ttsVoicesResult.inputAfterFailure === 'nope1, nope2'],
+            ['参照ボイス: 接続確認の失敗時はエラー表示を残す',
+                /TTS サーバーに届きませんでした/.test(ttsVoicesResult.statusAfterFailure)],
+            ['参照ボイス: 保存時に末尾カンマを付ける',
+                ttsVoicesResult.savedVoices === 'alloy, echo,'],
+            ['参照ボイス: 末尾カンマで空の選択肢は増えない',
+                JSON.stringify(ttsVoicesResult.savedChoices) === JSON.stringify(['alloy', 'echo'])],
 
             ['送信前編集オフなら編集ダイアログを開かない',
                 editResult.editOff.dialogOpened === false && !/使われない文章/.test(editResult.editOff.sent || '')],

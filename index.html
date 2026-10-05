@@ -8124,11 +8124,11 @@ font-size: 1.142em !important;
                         </p>
                         <label for="tts-model" style="margin-top: 15px;">モデル名:</label>
                         <input type="text" id="tts-model" placeholder="例：irodori-tts" aria-label="TTS モデル名">
-                        <label for="tts-voices" style="margin-top: 15px;">ボイス一覧（カンマ区切り）:</label>
+                        <label for="tts-voices" style="margin-top: 15px;">有効な参照ボイス一覧（カンマ区切り）:</label>
                         <input type="text" id="tts-voices" placeholder="例: alloy, echo, fable, onyx, nova, shimmer"
-                            aria-label="カンマ区切りのボイス一覧">
+                            aria-label="カンマ区切りの有効な参照ボイス一覧">
                         <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
-                            ※ ここに書いた一覧を下の選択欄から選びます。話者割当は SillyTavern と同じく手入力です。
+                            ※ Irodori TTS Serverフォルダ直下のVoicesフォルダに保存した参照ボイスファイルから、有効にしたいファイル名をカンマ+半角スペースで区切って入力（拡張子不要）。編集後、接続確認ボタンで話者選択に反映されます。
                         </p>
 
                         <button id="tts-connection-test-btn" class="settings-action-button" style="font-size: 12px;">接続確認</button>
@@ -12082,8 +12082,11 @@ const dbUtils = {
 
             // 設定の「接続確認」。短い文を 1 回だけ合成して再生する
             async testConnection() {
+                // デフォルトボイスが未設定のときは、まだ反映前の編集でも試せるよう入力欄の最新内容から選ぶ
+                const typedChoices = this.voiceChoicesFrom(
+                    elements.ttsVoicesInput ? elements.ttsVoicesInput.value : state.settings.ttsVoices);
                 const objectUrl = await this.synthesize('接続確認のテストです。', String(state.settings.ttsDefaultVoice || '').trim()
-                    || (this.voiceChoices()[0] || ''));
+                    || (typedChoices[0] || ''));
                 try {
                     const audio = new Audio(objectUrl);
                     audio.onended = () => URL.revokeObjectURL(objectUrl);
@@ -12095,12 +12098,22 @@ const dbUtils = {
                 return '音声を受け取りました';
             },
 
-            // カンマ区切りのボイス一覧
+            // カンマ区切りのボイス一覧。空の項目は含めない（末尾カンマで選択肢が増えない）
             voiceChoices() {
-                return String(state.settings.ttsVoices || '')
+                return this.voiceChoicesFrom(state.settings.ttsVoices);
+            },
+            voiceChoicesFrom(value) {
+                return String(value || '')
                     .split(',')
                     .map(v => v.trim())
                     .filter(v => v.length > 0);
+            },
+
+            // 末尾にカンマの無い入力へカンマを足す。空欄には付けない
+            normalizeVoicesInput(value) {
+                const trimmed = String(value || '').trim();
+                if (!trimmed) return '';
+                return trimmed.endsWith(',') ? trimmed : `${trimmed},`;
             },
         };
 
@@ -14741,6 +14754,26 @@ elements.footerTapScrollToBottomToggle.checked = state.settings.footerTapScrollT
                 this.renderTtsSpeakerRows();
                 this.updateTtsFooterButton();
             },
+            // 接続確認が成功したときだけ呼ぶ。入力欄の最新内容で話者選択プルダウンを作り直す。
+            // 未保存の選択値は state へ写してから残す（一覧から消えても「一覧に無い保存値」で残る）
+            applyVoicesInputToLists() {
+                if (!elements.ttsVoicesInput) return;
+                if (elements.ttsDefaultVoiceSelect) state.settings.ttsDefaultVoice = elements.ttsDefaultVoiceSelect.value;
+                if (elements.ttsGenericVoiceSelect) state.settings.ttsGenericVoice = elements.ttsGenericVoiceSelect.value;
+                if (elements.ttsSpeakerRows) {
+                    const names = elements.ttsSpeakerRows.querySelectorAll('input.js-tts-speaker-name');
+                    const voices = elements.ttsSpeakerRows.querySelectorAll('select.js-tts-speaker-voice');
+                    state.settings.ttsSpeakers = Array.from(names).map((input, i) => ({
+                        name: input.value,
+                        voice: voices[i] ? voices[i].value : '',
+                    }));
+                }
+                const normalized = ttsUtils.normalizeVoicesInput(elements.ttsVoicesInput.value);
+                elements.ttsVoicesInput.value = normalized;
+                state.settings.ttsVoices = normalized;
+                this.renderTtsVoiceSelects();
+                this.renderTtsSpeakerRows();
+            },
             // ボイス一覧（カンマ区切り）から選択欄を作り、保存値が残るように再構築する
             renderTtsVoiceSelects() {
                 const choices = ttsUtils.voiceChoices();
@@ -16589,10 +16622,13 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                     elements.ttsStopBtn.addEventListener('click', () => this.stopTts());
                 }
                 if (elements.ttsTestBtn) {
+                    // 一覧の編集は接続確認が成功したときだけ話者選択へ反映する。
+                    // 失敗時はプルダウンを変えず、エラー表示を残す（入力欄の change では作り直さない）
                     elements.ttsTestBtn.addEventListener('click', async () => {
                         ttsUtils.updateStatus('確認中…');
                         try {
                             const message = await ttsUtils.testConnection();
+                            uiUtils.applyVoicesInputToLists();
                             ttsUtils.updateStatus(message);
                         } catch (error) {
                             ttsUtils.updateStatus(error.message, true);
@@ -16602,23 +16638,6 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                 if (elements.ttsSpeedInput && elements.ttsSpeedValue) {
                     elements.ttsSpeedInput.addEventListener('input', () => {
                         elements.ttsSpeedValue.textContent = Number(elements.ttsSpeedInput.value).toFixed(2);
-                    });
-                }
-                if (elements.ttsVoicesInput) {
-                    // 一覧を変えたら選択欄を作り直す。未保存の選択は state へ写してから残す
-                    elements.ttsVoicesInput.addEventListener('change', () => {
-                        if (elements.ttsDefaultVoiceSelect) state.settings.ttsDefaultVoice = elements.ttsDefaultVoiceSelect.value;
-                        if (elements.ttsGenericVoiceSelect) state.settings.ttsGenericVoice = elements.ttsGenericVoiceSelect.value;
-                        if (elements.ttsSpeakerRows) {
-                            const names = elements.ttsSpeakerRows.querySelectorAll('input.js-tts-speaker-name');
-                            const voices = elements.ttsSpeakerRows.querySelectorAll('select.js-tts-speaker-voice');
-                            state.settings.ttsSpeakers = Array.from(names).map((input, i) => ({
-                                name: input.value,
-                                voice: voices[i] ? voices[i].value : '',
-                            }));
-                        }
-                        uiUtils.renderTtsVoiceSelects();
-                        uiUtils.renderTtsSpeakerRows();
                     });
                 }
                 if (elements.comfyConnectionTestBtn) {
@@ -21468,7 +21487,9 @@ newSettings.footerTapScrollToBottom = elements.footerTapScrollToBottomToggle.che
                 newSettings.ttsEndpoint = ttsUtils.normalizeEndpoint(elements.ttsEndpointInput.value);
                 newSettings.ttsApiKey = elements.ttsApiKeyInput.value.trim();
                 newSettings.ttsModel = elements.ttsModelInput.value.trim();
-                newSettings.ttsVoices = elements.ttsVoicesInput.value;
+                // 末尾にカンマの無い入力は保存時に自動で付ける（空欄には付けない。空の項目は選択肢にならない）
+                newSettings.ttsVoices = ttsUtils.normalizeVoicesInput(elements.ttsVoicesInput.value);
+                elements.ttsVoicesInput.value = newSettings.ttsVoices;
                 const ttsSpeedValue = parseFloat(elements.ttsSpeedInput.value);
                 newSettings.ttsSpeed = isFinite(ttsSpeedValue) ? Math.min(4, Math.max(0.25, ttsSpeedValue)) : 1;
                 newSettings.ttsDefaultVoice = elements.ttsDefaultVoiceSelect ? (elements.ttsDefaultVoiceSelect.value || '') : '';
