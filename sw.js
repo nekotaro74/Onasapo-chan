@@ -46,11 +46,14 @@ self.addEventListener('fetch', (event) => {
     return; // このリクエストに対するService Workerの処理はここで終了
   }
 
-  // ローカル・LAN・Tailscale の ComfyUI などプライベートアドレスへの要求も常にネットワークへ。
-  // キャッシュ優先の処理に通すと接続失敗がここで合成される 503 に化け、
-  // 「ComfyUI に届かない」原因（--enable-cors-header 未設定など）を判別できなくなる。
+  // ローカル・LAN・Tailscale の ComfyUI などプライベートアドレスへの要求はインターセプトしない。
+  // Chrome 142 以降の Local Network Access は「公開オリジン → ローカル」の接続をユーザー許可で門番するが、
+  // Service Worker からのリクエストは許可ダイアログを出せず、事前に許可された origin でないと失敗する。
+  // ここで respondWith すると要求が SW 経由になり、ダイアログ自体が表示されないまま失敗する。
+  // 応答を返さなければブラウザ本体がページ文脈で処理し、許可ダイアログが正常に出る。
+  // （以前の問題だった「キャッシュ優先戦略が接続失敗を合成 503 に化けさせて CORS 判別を壊す」も、
+  //   いずれにせよこの分岐を通らないので同時に解消される。）
   if (isPrivateHost(requestUrl.hostname)) {
-    event.respondWith(fetch(event.request));
     return;
   }
 

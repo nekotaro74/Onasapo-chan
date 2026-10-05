@@ -5482,12 +5482,12 @@ font-size: 1.142em !important;
                   id="deepseek-user-defined-models-group"
                 ></optgroup>
                             <optgroup label="現行">
-  <option value="deepseek-v4-flash">DeepSeek V4 Flash</option>
+  <option value="deepseek-flash">DeepSeek Flash (V4.1)</option>
   <option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
 </optgroup>
-<optgroup label="旧">
+<optgroup label="廃止済み（2026-07-24 以降 使用不可）">
+                                <option value="deepseek-v4-flash">deepseek-v4-flash</option>
                                 <option value="deepseek-chat">deepseek-chat</option>
-                                <option value="deepseek-coder">deepseek-coder</option>
                                 <option value="deepseek-reasoner">deepseek-reasoner</option>
                             </optgroup>
               </select>
@@ -5498,8 +5498,8 @@ font-size: 1.142em !important;
 <label for="deepseek-api-endpoint" style="margin-top: 10px;">API エンドポイントURL (任意):</label>
 <input type="text" id="deepseek-api-endpoint" placeholder="例: https://api.deepseek.com (空欄でデフォルト)" aria-label="DeepSeek API エンドポイント">
 <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 15px;">
-    ※ 通常は変更不要です。プロキシや互換APIを使用する場合のみ変更してください。<br>
-    ※ 入力がない場合はデフォルト（簡易の中継サーバー）が使用されます。（現在DeepSeek APIはブラウザからの直接アクセスを認めておらず、形式的にでもサーバーを中継する必要があります。）
+    ※ 通常は変更不要です。空欄なら <code>https://api.deepseek.com</code> へ直接接続します。<br>
+    ※ DeepSeek API はブラウザからの直接アクセス（CORS）に対応しています。中継サーバーや互換APIを使う場合のみ入力してください。
 </p>
                     </div>
                 </details>
@@ -5941,6 +5941,18 @@ font-size: 1.142em !important;
                                 思考プロセス</summary>
                             <div id="deepseek-thoughts-param" style="padding-left: 15px;">
                                 <label class="checkbox-label">
+                                    <input type="checkbox" id="deepseek-thinking-toggle">
+                                    Thinking Mode（思考を有効にする）
+                                </label>
+                                <div style="margin-top: 10px;">
+                                    <label for="deepseek-reasoning-effort">Reasoning Effort:</label>
+                                    <select id="deepseek-reasoning-effort" style="width: auto; margin-bottom: 0;">
+                                        <option value="low">low</option>
+                                        <option value="high">high</option>
+                                        <option value="max">max</option>
+                                    </select>
+                                </div>
+                                <label class="checkbox-label" style="margin-top: 10px;">
                                     <input type="checkbox" id="deepseek-include-thoughts-toggle">
                                     Include Thoughts
                                 </label>
@@ -5950,7 +5962,8 @@ font-size: 1.142em !important;
                                 </label>
                                 <p
                                     style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
-                                    ※ deepseek-reasoner モデル等で利用可能。<br>
+                                    ※ 公式の既定は Thinking 有効・effort high です。Thinking をオフにすると effort は送らず、<code>top_p</code> は 1.0 に固定されます（Thinking 有効時は 0.95 未満に clamped）。<br>
+                                    ※ 思考内容は <code>reasoning_content</code> で返り、Include Thoughts をオンにすると表示します。<br>
                                 </p>
                             </div>
                         </details>
@@ -8404,7 +8417,7 @@ font-size: 1.142em !important;
             { value: 'dummy', text: 'Dummy AI' }
         ];
 const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
-const DEFAULT_DEEPSEEK_MODEL = 'deepseek-v4-flash';
+        const DEFAULT_DEEPSEEK_MODEL = 'deepseek-flash';
         const DEFAULT_CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
         const DEFAULT_OPENAI_MODEL = 'gpt-3.5-turbo';
         const DEFAULT_XAI_MODEL = 'grok-4-1-fast-non-reasoning';
@@ -8548,7 +8561,7 @@ A correctly formatted example response would be:
         const CHAT_TITLE_LENGTH = 15;
         const TEXTAREA_MAX_HEIGHT = 120;
         const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/';
-        const DEEPSEEK_API_DEFAULT_BASE_URL = 'https://wild-star-4b72.chi87767.workers.dev/';
+        const DEEPSEEK_API_DEFAULT_BASE_URL = 'https://api.deepseek.com/';
         const CLAUDE_API_BASE_URL = 'https://api.anthropic.com/v1/messages';
         const OPENAI_API_BASE_URL = 'https://api.openai.com/v1/chat/completions';
         const XAI_API_BASE_URL = 'https://api.x.ai/v1/chat/completions';
@@ -8759,6 +8772,8 @@ deepSeekModelNameSelect: document.getElementById('deepseek-model-name'),
             deepSeekTopPInput: document.getElementById('deepseek-top-p'),
             deepSeekPresencePenaltyInput: document.getElementById('deepseek-presence-penalty'),
             deepSeekFrequencyPenaltyInput: document.getElementById('deepseek-frequency-penalty'),
+            deepSeekThinkingToggle: document.getElementById('deepseek-thinking-toggle'),
+            deepSeekReasoningEffortSelect: document.getElementById('deepseek-reasoning-effort'),
             deepSeekIncludeThoughtsToggle: document.getElementById('deepseek-include-thoughts-toggle'),
             deepSeekExpandThoughtsByDefaultToggle: document.getElementById('deepseek-expand-thoughts-by-default-toggle'),
             deepSeekStreamingOutputCheckbox: document.getElementById('deepseek-streaming-output'),
@@ -9311,6 +9326,8 @@ deepSeekModelName: DEFAULT_DEEPSEEK_MODEL,
                 deepSeekTopP: null,
                 deepSeekPresencePenalty: null,
                 deepSeekFrequencyPenalty: null,
+                deepSeekThinkingEnabled: true,
+                deepSeekReasoningEffort: 'high',
                 deepSeekIncludeDeepSeekThoughts: false,
                 deepSeekExpandThoughtsByDefault: false,
                 deepSeekStreamingOutput: false,
@@ -14402,6 +14419,8 @@ elements.deepSeekModelNameSelect.value = state.settings.deepSeekModelName || DEF
                 setupParamUI('deepseek-top-p');
                 setupParamUI('deepseek-presence-penalty');
                 setupParamUI('deepseek-frequency-penalty');
+                elements.deepSeekThinkingToggle.checked = state.settings.deepSeekThinkingEnabled !== false;
+                elements.deepSeekReasoningEffortSelect.value = state.settings.deepSeekReasoningEffort || 'high';
                 elements.deepSeekIncludeThoughtsToggle.checked = state.settings.deepSeekIncludeDeepSeekThoughts;
                 elements.deepSeekExpandThoughtsByDefaultToggle.checked = state.settings.deepSeekExpandThoughtsByDefault;
                 elements.deepSeekStreamingOutputCheckbox.checked = state.settings.deepSeekStreamingOutput;
@@ -21148,6 +21167,8 @@ newSettings.deepSeekModelName = elements.deepSeekModelNameSelect.value;
                 newSettings.deepSeekTopP = getParamValue('deepseek-top-p', false, 0, 1);
                 newSettings.deepSeekPresencePenalty = getParamValue('deepseek-presence-penalty', false, -2.0, 2.0);
                 newSettings.deepSeekFrequencyPenalty = getParamValue('deepseek-frequency-penalty', false, -2.0, 2.0);
+                newSettings.deepSeekThinkingEnabled = elements.deepSeekThinkingToggle.checked;
+                newSettings.deepSeekReasoningEffort = elements.deepSeekReasoningEffortSelect.value;
                 newSettings.deepSeekIncludeDeepSeekThoughts = elements.deepSeekIncludeThoughtsToggle.checked;
                 newSettings.deepSeekExpandThoughtsByDefault = elements.deepSeekExpandThoughtsByDefaultToggle.checked;
                 newSettings.deepSeekStreamingOutput = elements.deepSeekStreamingOutputCheckbox.checked;
@@ -23752,6 +23773,16 @@ async callDeepSeekApi(apiKey, model, messagesForApi, generationConfig, systemIns
                     ...(generationConfig.presencePenalty !== undefined && { presence_penalty: generationConfig.presencePenalty }),
                     ...(generationConfig.frequencyPenalty !== undefined && { frequency_penalty: generationConfig.frequencyPenalty }),
                 };
+
+                // DeepSeek V4 系は thinking / reasoning_effort で思考モードを切り替える（公式の既定は enabled・high）。
+                // LLM Aggregator 経由のモデルはこの形を受け付けないため、直接接続のときだけ送る。
+                if (provider === 'deepseek') {
+                    const thinkingOn = state.settings.deepSeekThinkingEnabled !== false;
+                    dsRequestBody.thinking = { type: thinkingOn ? 'enabled' : 'disabled' };
+                    if (thinkingOn) {
+                        dsRequestBody.reasoning_effort = state.settings.deepSeekReasoningEffort || 'high';
+                    }
+                }
 
                 if (provider === 'llmaggregator' && generationConfig.topK !== null) {
                     if (generationConfig.topK !== null) {

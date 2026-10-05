@@ -20,6 +20,31 @@
 
 ---
 
+## GitHub Pages で使うためのセットアップ（挿絵生成・読み上げ）
+
+挿絵生成（ComfyUI）と読み上げ（TTS サーバー）は、**利用者自身のマシンでサーバーを起動していること**が前提です。GitHub Pages 上のこのアプリ（https オリジン）から、利用者のローカル・LAN・Tailscale にあるサーバーへブラウザが直接接続します。中継サーバーは使いません。
+
+必要な設定は次の 2 つだけです。
+
+1. **サーバー側で CORS を開く**
+   - ComfyUI：`--enable-cors-header` を付けて起動（Portable 版は Settings → Server-Config → Enable CORS header に `*`）。
+   - TTS サーバー：OpenAI 互換の `/v1/audio/speech` を返すサーバーで、ブラウザからのクロスオリジン要求が通ること。届かない場合はサーバー側で CORS を許可してください。
+2. **ブラウザの「ローカルネットワークへの許可」を認める**
+   - Chrome 142 以降（Edge・Brave など Chromium 系も同様）では、公開サイトが `127.0.0.1` や LAN アドレスへ接続する際に「**このサイトはローカルネットワーク上のデバイスを検索・接続しようとしています**」というダイアログが出ます。**許可**を押すと以降つながります。
+   - 取り消し・再設定は `chrome://settings/content/localNetworkAccess` から行えます。Firefox にも同種の許可プロンプトがあります。
+   - 拒否すると要求は単に失敗します（このアプリでは接続確認の結果として表示されます）。
+
+https のページから `http://127.0.0.1:8188` への要求は mixed content としてブロックされません（ループバックおよびプライベートアドレスは例外扱い）。`sw.js` はローカル宛の要求を横取りしません。許可ダイアログの表示を妨げないためです。
+
+### LAN が使えない環境向け
+
+- **Tailscale**：別マシンやスマホからも同じ設定で使えます（`http://100.x.x.x:8188`）。`100.64.0.0/10` は「ローカル」扱いなので許可ダイアログは出ます。
+- **Cloudflare Tunnel**（`cloudflared tunnel --url http://localhost:8188`）：ComfyUI が https の公開 URL になるため、ローカルネットワークの許可も mixed content も関係なくなります。ただし **ComfyUI 自体には認証がありません**。Cloudflare Access やワンタイム PIN などで必ずアクセスを制限してください。
+
+⚠️⚠️⚠️⚠️⚠️ `--enable-cors-header` を付けた ComfyUI は、CORS の観点では**誰でも叩ける状態**になります。ComfyUI には認証がなく、ワークフローの実行とファイル書き出しが可能です。`--listen` で LAN 公開する場合は特に、信頼できるネットワークに限定してください。
+
+---
+
 ## 変更点・仕様・連絡事項
 
 ⚠️ の数は重要度を表します。
@@ -62,8 +87,7 @@ history 完了の各時刻（起動からのミリ秒）を出すので、待ち
 - ⚠️⚠️⚠️⚠️⚠️ ComfyUI はブラウザから直接叩くため、**`--enable-cors-header` を付けて起動する必要があります**。
   Portable 版は Settings → Server-Config → Enable CORS header に `*` を入れて再起動してください。
 - ComfyUI base URL は末尾スラッシュを正規化します。Tailscale 経由（例: `http://100.x.x.x:8188`）も同じ欄で使えます。
-  GitHub Pages 上の公開オリジンからは、利用者自身のローカルや Tailscale の ComfyUI へは届かない場合があります。
-  ローカル起動（`__winlocal.bat`）での動作確認を推奨します。
+  GitHub Pages の公開オリジンから利用者自身のローカル・LAN・Tailscale の ComfyUI へ接続するには、**ブラウザのローカルネットワークへの許可**が必要です（下記「GitHub Pages で使うためのセットアップ」）。許可を出さない場合はローカル起動（`__winlocal.bat`）での動作確認を推奨します。
 - 貼り付けるのは **API 形式**のワークフロー JSON です。UI 形式（`nodes` / `links` を持つ形式）は理由付きで拒否します。
 - ワークフローは**複数登録**できます。一覧で「使用中」を切り替え、追加・改名・複製・削除、JSON の書き出し・読み込みができます。
   旧バージョンで 1 件だけ保存していたワークフローは、起動時に「移行されたワークフロー」として自動登録されます。
@@ -310,12 +334,16 @@ kinkan04 氏の PWA（<https://github.com/kinkan04/Gemini-PWA-Mk-II>）の校正
 ## DeepSeek について
 
 - ⚠️ PWA で DeepSeek の API を利用できるようアップデートいたしました。本機能は試験的な実装です。デバッグは便宜的な水準にとどまっており、完璧な動作を保証するものではありません。不具合が生じた場合、予告なく当該機能全体を除去する可能性もございます。
-- ⚠️ DeepSeek API は 2025 年 5 月現在、インターネットから情報を取得する機能を提供していません。API 経由での画像やファイルの直接解析も非対応です。
-- サポートされていないパラメータ：`temperature`、`top_p`、`presence_penalty`、`frequency_penalty`、`logprobs`、`top_logprobs`。前者 4 つは設定してもエラーにはなりませんが効果はありません。`logprobs` を設定すると `top_logprobs` に関するエラーとなります。文字送りの速度を制御する専用のパラメータは提供されていません。
+- ⚠️ DeepSeek API はインターネットから情報を取得する機能を提供していません。API 経由での画像やファイルの直接解析も非対応です。
+- 現在のモデル名は `deepseek-flash`（DeepSeek-V4.1-Flash）と `deepseek-v4-pro` です。旧 `deepseek-chat` / `deepseek-reasoner` は 2026-07-24 に廃止され、現在は使用できません（設定のモデル一覧では「廃止済み」欄に分けてあります）。
+- **API エンドポイントの既定は `https://api.deepseek.com` への直接接続です。** DeepSeek API はブラウザからのクロスオリジン要求（CORS）に対応しているため、中継サーバーは不要になりました（従来既定だった独自中継 URL は削除しています）。プロキシや互換 API を使う場合のみ「API エンドポイントURL」を入力してください。
+- **Thinking Mode と Reasoning Effort を設定画面に追加しました。**「思考プロセス」で Thinking を切り替え、effort は `low` / `high` / `max` から選びます（公式の既定は Thinking 有効・`high`）。Thinking をオフにした場合は `reasoning_effort` を送らず `thinking: {"type": "disabled"}` のみを送ります。思考内容は `reasoning_content` で返り、Include Thoughts をオンにすると表示します。
+- サポートされていないパラメータ：`temperature`、`presence_penalty`、`frequency_penalty`、`logprobs`、`top_logprobs`。`temperature` ほか 3 つは設定してもエラーにはなりませんが効果はありません。`top_p` は Thinking 有効時 0.95〜1.0 の範囲に clamped、Thinking オフ時は 1.0 に固定され値は無視されます。`logprobs` を設定すると `top_logprobs` に関するエラーとなります。文字送りの速度を制御する専用のパラメータは提供されていません。
 - ※ DeepSeek が提供する API はすべて有料です。
-- ※「DeepSeek API エンドポイント機能」は形式的な実装であり、デバッグしておりません（デバッグ環境がないため）。
 ## ■ 更新履歴
 ### 2026-10-06（バージョン 0.27on (Onasapo-chan)）
+- **DeepSeek を刷新しました。** 既定エンドポイントを独自の中継サーバーから `https://api.deepseek.com` への直接接続へ変更しました（DeepSeek API 側のブラウザ CORS 対応を実測で確認済み。中継サーバーは不要になっています）。モデル一覧を現行の `deepseek-flash` / `deepseek-v4-pro` へ更新し、廃止済みの `deepseek-chat` / `deepseek-reasoner` / `deepseek-v4-flash` は「廃止済み」欄へまとめました。設定の「思考プロセス」に **Thinking Mode** と **Reasoning Effort**（`low` / `high` / `max`）を追加し、`thinking` と `reasoning_effort` を送信するようにしました。
+- **Service Worker がローカル・LAN・Tailscale 宛の要求を横取りしないよう変更しました**（`sw.js`）。Chrome 142 以降の Local Network Access 許可ダイアログは Service Worker 経由のリクエストでは表示されないため、ブラウザ本体にページ文脈で処理させます。これに伴い、GitHub Pages から挿絵生成・読み上げを使うための手順を README に新設しました。
 - 設定画面の「接続先 ComfyUI の環境」を「モデル選択と生成パラメータ」へ改名し、従来の「生成パラメータ」折りたたみをその中へ統合しました（LoRA の上に表示されます。保存処理は変更していません）。
 - 画面・README・Service Worker・マニフェストに残っていた上流リポジトリ（geminipwa）の名前と URL を、本リポジトリ <https://github.com/nekotaro74/Onasapo-chan> / <https://nekotaro74.github.io/Onasapo-chan/> のものへ変更しました。アプリ表示名を「Onasapo-chan」に変更し、Service Worker のキャッシュ名を `onasapo-chan-cache-v4` へ更新（「アプリを更新 (キャッシュクリア)」でこのリポジトリの Service Worker が再取得されます）。バージョン表記を `0.26ti (627b3)` → `0.27on (Onasapo-chan)` へ進めました。
 
