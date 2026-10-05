@@ -7923,12 +7923,12 @@ font-size: 1.142em !important;
 
                         <details style="margin-top: 10px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
                             <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
-                                Last message 用 quiet 指示テンプレート
+                                挿絵生成用プロンプト
                             </summary>
                             <div style="padding: 10px; padding-top: 5px;">
                                 <textarea id="comfy-image-prompt-template" rows="12" aria-label="quiet 指示テンプレート"></textarea>
                                 <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px;">
-                                    ※ 本編のチャット履歴を文脈にしたうえで、この指示文だけを quiet に送信します。返ってきた本文はチャット履歴に残しません。<br>
+                                    ※ 本編のチャット履歴を文脈にしたうえで、この指示文でクラウドLLMに挿絵用の文を書かせます。その文はチャットには残さず、画像生成だけに使います。<br>
                                     ※ <code>{{char}}</code> / <code>{{user}}</code> は表示名（未設定なら assistant / user）で置換します。
                                 </p>
                                 <button id="comfy-template-reset-btn" class="settings-action-button" style="font-size: 12px;">既定に戻す</button>
