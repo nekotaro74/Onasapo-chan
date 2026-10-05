@@ -7926,7 +7926,7 @@ font-size: 1.142em !important;
                                 挿絵生成用プロンプト
                             </summary>
                             <div style="padding: 10px; padding-top: 5px;">
-                                <textarea id="comfy-image-prompt-template" rows="12" aria-label="quiet 指示テンプレート"></textarea>
+                                <textarea id="comfy-image-prompt-template" rows="12" aria-label="挿絵生成用プロンプト"></textarea>
                                 <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px;">
                                     ※ 本編のチャット履歴を文脈にしたうえで、この指示文でクラウドLLMに挿絵用の文を書かせます。その文はチャットには残さず、画像生成だけに使います。<br>
                                     ※ <code>{{char}}</code> / <code>{{user}}</code> は表示名（未設定なら assistant / user）で置換します。
@@ -7938,7 +7938,7 @@ font-size: 1.142em !important;
                                 画像プロンプトを送信前に編集する
                             </label>
                             <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 8px;">
-                                ※ オンにしたときだけ、初回の quiet 生成後に ComfyUI へ送る前へ文章を編集できます。キャンセルした場合は送しません。<br>
+                                ※ オンにしたときだけ、初回の挿絵プロンプト生成後に ComfyUI へ送る前へ文章を編集できます。キャンセルした場合は送しません。<br>
                                 ※ 再生成は保存済みの文章をそのまま使うため、この編集は走りません（再生成時の文章は画像下の「▶画像プロンプト」で直せます）。
                             </p>
                             <label class="checkbox-label">
@@ -8070,12 +8070,12 @@ font-size: 1.142em !important;
 
                         <details style="margin-top: 10px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
                             <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
-                                デバッグ（quiet プロンプト）
+                                デバッグ（挿絵生成用プロンプト）
                             </summary>
                             <div style="padding: 10px; padding-top: 5px;">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="comfy-show-debug-toggle">
-                                    生成に使った quiet プロンプトと返文をこの折りたたみ内に表示する
+                                    生成に使った挿絵生成用プロンプトと返文をこの折りたたみ内に表示する
                                 </label>
                                 <pre id="comfy-debug-output"
                                     style="white-space: pre-wrap; word-break: break-word; font-size: 11px; background-color: var(--bg-secondary); padding: 8px; border-radius: 4px; max-height: 300px; overflow-y: auto;">（まだ生成していません）</pre>
@@ -18941,7 +18941,7 @@ helpIcons.forEach(icon => {
                     case 'dummy': break;
                     default: throw new Error(`未対応のAPIプロバイダーです: ${provider}`);
                 }
-                if (provider !== 'dummy' && !apiKey) throw new Error('挿絵のquiet生成に使うAPIキーが設定されていません。');
+                if (provider !== 'dummy' && !apiKey) throw new Error('挿絵生成用プロンプトの生成に使うAPIキーが設定されていません。');
                 return { provider, apiKey, modelName };
             },
             // 対象メッセージを決める。未指定なら直近の完了済みアシスタント応答。
@@ -18960,7 +18960,7 @@ helpIcons.forEach(icon => {
             // 直近のシーンだけをカンマ区切りキーワードにする quiet 生成（SillyTavern の Last message 相当）
             async buildIllustrationPrompt(messageIndex) {
                 const template = (state.settings.comfyImagePromptTemplate || DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE).trim();
-                if (!template) throw new Error('quiet 指示テンプレートが空です。設定の「Last message 用 quiet 指示テンプレート」を確認してください。');
+                if (!template) throw new Error('挿絵生成用プロンプトが空です。設定の「挿絵生成用プロンプト」に指示文を記入してください。');
 
                 const targetIndex = this.getIllustrationTargetIndex(messageIndex);
                 const quietTemplate = illustrationUtils.substituteSessionNames(template);
