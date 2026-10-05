@@ -70,8 +70,8 @@ API キー・モデル名は呼び出し側で渡す（`state.settings.apiProvid
    seed は `seed >= 0 ? seed : Math.round(Math.random() * Number.MAX_SAFE_INTEGER)`。
    実際の ST が持つトークンは `prompt / negative_prompt / seed / denoise / clip_skip / model / vae /
    sampler / scheduler / steps / scale / width / height` に加えて `user_avatar / char_avatar`。
-   **CFG は `%scale%` という名前**で、`%cfg%` ではない。
-   本アプリも `%scale%` だけを使い、`%cfg%` は検出も置換もしない（未対応トークンとして止める）。
+   **SillyTavern の CFG トークンは `%scale%`**で、`%cfg%` は存在しない。
+   本アプリは ComfyUI 本体の表記に合わせて **`%cfg%` だけ**を検出・置換する（`%scale%` は廃止した）。
    **clip_skip は ST では負値で送られる**（`-extension_settings.sd.clip_skip`、NaN なら `-1`）。
    ST にテキストエンコーダのトークンは無い（本アプリが `%text_encoder%` を追加している）。
    ST のカスタム プレースホルダは `{find, replace}` の任意文字列 `replaceAll` で、replace 値は `substituteParams` を通る。
@@ -94,7 +94,7 @@ API キー・モデル名は呼び出し側で渡す（`state.settings.apiProvid
   ページ側は `TypeError: Failed to fetch` ではなく HTTP 503 を受け、CORS の案内が出せなかった
   （実測で確認）。sw.js でプライベートアドレス（127./10./192.168./172.16-31./100./localhost/.local）
   への要求をキャッシュ戦略から外して常にネットワークへ通し、客户端でも合成応答を検知する。
-- **SillyTavern の CFG トークンは `%scale%`**。`%cfg%` は存在しない。本アプリも `%scale%` のみ。
+- **SillyTavern の CFG トークンは `%scale%`**。`%cfg%` は存在しない。本アプリは ComfyUI 本体のキー名に寄せて `%cfg%` のみ（`%scale%` は廃止）。
 - **`processReply` の厳格な整形は日本語を全消しにする**（許容文字が英数字と記号のみ）。
   日本語の応答では必ず空になるため、空になった場合だけ最小限の整形へフォールバックする。
   設定で明示選択もできるようにした。

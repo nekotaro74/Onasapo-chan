@@ -5234,8 +5234,8 @@ font-size: 1.142em !important;
                 <button id="footer-resummarize-btn" title="現在のチャット履歴を要約" class="footer-action-button hidden">♻️</button>
                 <button id="paste-to-input-btn" title="入力欄に貼り付け" class="footer-action-button">貼</button>
                 <button id="illustration-mode-toggle-btn" title="挿絵生成: 自動 / 手動 の切替"
-                    class="footer-action-button mode-toggle-button hidden">挿:自動</button>
-                <button id="illustration-generate-last-btn" title="直前の応答から挿絵を生成" class="footer-action-button hidden">画</button>
+                    class="footer-action-button mode-toggle-button hidden">絵:自動</button>
+                <button id="illustration-generate-last-btn" title="直前の応答から挿絵を生成" class="footer-action-button hidden">絵</button>
                 <button id="tts-mode-toggle-btn" title="読み上げ: 自動 / 手動 の切替"
                     class="footer-action-button mode-toggle-button hidden" aria-label="読み上げ: 自動 / 手動 の切替">
                     <svg class="tts-megaphone-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -7033,7 +7033,7 @@ font-size: 1.142em !important;
                                             </label>
                                             <label class="checkbox-label">
                                                 <input type="checkbox" id="auto-scroll-on-new-message">
-                                                メッセージ送受信時に自動スクロールする
+                                                メッセージ送信時に自動スクロールする（応答の受信中はスクロールしません）
                                             </label>
                                             <label class="checkbox-label">
                                                 <input type="checkbox" id="header-tap-scroll-to-top-toggle">
@@ -7044,8 +7044,8 @@ font-size: 1.142em !important;
                                                 フッタータップで最下部へスクロール
                                             </label>
                                             <label class="checkbox-label">
-                                                <input type="checkbox" id="auto-scroll-on-thought">
-                                                思考プロセス受信時に自動スクロールする
+                                                <input type="checkbox" id="auto-scroll-on-thought" disabled>
+                                                思考プロセス受信時に自動スクロールする（廃止: 受信中はスクロールしません）
                                             </label>
                                             <hr style="margin: 10px 0; border-top: 1px solid var(--border-tertiary);">
                                             <label class="checkbox-label">
@@ -8048,7 +8048,7 @@ font-size: 1.142em !important;
                                 <label for="comfy-seed" style="margin-top: 10px;">seed (-1 で毎回ランダム):</label>
                                 <input type="number" id="comfy-seed" min="-1" step="1">
                                 <p style="font-size: 11px; color: var(--text-secondary); margin-top: 5px; margin-bottom: 0;">
-                                    ※ 幅・高さ・steps・CFG scale・Denoise・CLIP Skip・seed は、ワークフロー内の <code>%width%</code> <code>%height%</code> <code>%steps%</code> <code>%scale%</code>（CFG scale のこと）<code>%denoise%</code> <code>%clip_skip%</code> <code>%seed%</code> に差し込まれます。CLIP Skip は ComfyUI 側では負の値として渡されます。<code>%cfg%</code> は使いません。<br>
+                                    ※ 幅・高さ・steps・CFG scale・Denoise・CLIP Skip・seed は、ワークフロー内の <code>%width%</code> <code>%height%</code> <code>%steps%</code> <code>%cfg%</code>（CFG scale のこと）<code>%denoise%</code> <code>%clip_skip%</code> <code>%seed%</code> に差し込まれます。CLIP Skip は ComfyUI 側では負の値として渡されます。<code>%scale%</code> は廃止しました。<br>
                                     ※ 幅・高さの直接入力は「カスタム」のときだけ使われます。
                                 </p>
                                 <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
@@ -8104,21 +8104,26 @@ font-size: 1.142em !important;
                         </label>
                         <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 15px;">
                             ※ プロバイダは <b>OpenAI Compatible のみ</b>です。<code>POST {{endpoint}}/audio/speech</code> に <code>{ model, voice, input }</code> を送ります。<br>
-                            ※ 再生はキューで順に鳴らし、重ねません。<b>停止</b>はキューを破棄します。<br>
+                            ※ 応答全文の受信完了を待たず、<b>確定した段落</b>から順に TTS へ送ります（段落は空行区切り。空行が無い応答では改行区切り）。<br>
+                            ※ 再生はキューで順に鳴らし、重ねません。<b>停止</b>は未送信分も含めて破棄します。<br>
                             ※ 読み上げはブラウザから直接叩くため、サーバー側で CORS が許可されている必要があります。<br>
                             ※ APIキーはこのアプリの IndexedDB にだけ保存し、ファイル書き出しやコミットには出しません。
                         </p>
                         <label for="tts-endpoint" style="margin-top: 15px;">OpenAI Compatible エンドポイント:</label>
-                        <input type="text" id="tts-endpoint" placeholder="例: https://api.example.com/v1"
+                        <input type="text" id="tts-endpoint"
+                            placeholder="例：http://127.0.0.1:8088/v1/audio/speech または http://{TailscaleのURL}:8088/v1/audio/speech"
                             aria-label="OpenAI Compatible エンドポイント">
                         <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
                             ※ 末尾に <code>/audio/speech</code> が無ければ自動で足します。末尾スラッシュは除去します。
                         </p>
                         <label for="tts-api-key">APIキー:</label>
-                        <input type="password" id="tts-api-key" placeholder="空なら Authorization ヘッダーを送りません"
+                        <input type="password" id="tts-api-key" placeholder="通常、Irodori TTS ServerではAPIキーは必要ありません"
                             aria-label="TTS APIキー">
+                        <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
+                            ※ 空ならAuthorizationヘッダーを送りません
+                        </p>
                         <label for="tts-model" style="margin-top: 15px;">モデル名:</label>
-                        <input type="text" id="tts-model" placeholder="例: gpt-4o-mini-tts" aria-label="TTS モデル名">
+                        <input type="text" id="tts-model" placeholder="例：irodori-tts" aria-label="TTS モデル名">
                         <label for="tts-voices" style="margin-top: 15px;">ボイス一覧（カンマ区切り）:</label>
                         <input type="text" id="tts-voices" placeholder="例: alloy, echo, fable, onyx, nova, shimmer"
                             aria-label="カンマ区切りのボイス一覧">
@@ -8515,7 +8520,7 @@ A correctly formatted example response would be:
                     latent_image: ["5", 0],
                     seed: "%seed%",
                     steps: "%steps%",
-                    cfg: "%scale%",
+                    cfg: "%cfg%",
                     sampler_name: "%sampler%",
                     scheduler: "%scheduler%",
                     denoise: "%denoise%"
@@ -10325,7 +10330,7 @@ const dbUtils = {
             builtinTokens() {
                 return [
                     'prompt', 'negative_prompt', 'model', 'vae', 'text_encoder', 'sampler', 'scheduler',
-                    'steps', 'scale', 'denoise', 'clip_skip', 'width', 'height', 'seed',
+                    'steps', 'cfg', 'denoise', 'clip_skip', 'width', 'height', 'seed',
                     'user_avatar', 'char_avatar',
                     'lora1', 'lora2', 'lora3', 'lora4',
                     'lora_str1', 'lora_str2', 'lora_str3', 'lora_str4',
@@ -10360,8 +10365,8 @@ const dbUtils = {
                     width: s.comfyWidth,
                     height: s.comfyHeight,
                     steps: s.comfySteps,
-                    // CFG は %scale% のみ。%cfg% は検出も置換もしない（SillyTavern 系ワークフローの表記に合わせる）
-                    scale: s.comfyCfg,
+                    // CFG は %cfg% のみ（%scale% は廃止した）
+                    cfg: s.comfyCfg,
                     denoise: denoise,
                     clip_skip: clipSkip,
                     model: s.comfyModel,
@@ -11785,9 +11790,66 @@ const dbUtils = {
                 return null;
             },
 
-            // 応答本文 → 再生キューへ入れる断片（voice 付き）
+            // ── 段落 ────────────────────────────────────────
+            // 段落は空行区切り。空行が無い応答では改行区切り。
+            // コードブロックの中は段落の区切りとして数えない（閉じていないフェンスは末尾まで続く）。
+            // 原文上の位置も返す。ストリーミング中に「どこまで送ったか」を覚えるため。
+            fenceSpans(text) {
+                const source = String(text || '');
+                const spans = [];
+                const re = /```|~~~/g;
+                let match;
+                let openStart = -1;
+                let openToken = '';
+                while ((match = re.exec(source)) !== null) {
+                    if (openStart === -1) {
+                        openStart = match.index;
+                        openToken = match[0];
+                    } else if (match[0] === openToken) {
+                        spans.push({ start: openStart, end: match.index + match[0].length });
+                        openStart = -1;
+                    }
+                }
+                return { spans: spans, openStart: openStart };
+            },
+
+            paragraphRanges(text) {
+                const source = String(text || '');
+                if (!source) return { ranges: [], openFenceStart: -1 };
+                const fences = this.fenceSpans(source);
+                // フェンスの中を区切り文字で見えなくする（長さは同じに保つので位置はズレない）
+                let masked = source;
+                for (const span of fences.spans) {
+                    // 埋め文字は空白にしない（空白だと空行と誤解される）。長さは同じなので位置はズレない
+                    masked = masked.slice(0, span.start) + 'X'.repeat(span.end - span.start) + masked.slice(span.end);
+                }
+                const useBlankLines = /\n[ \t]*\n/.test(masked);
+                const delimiter = useBlankLines ? /\n[ \t]*\n/ : /\n/;
+                const ranges = [];
+                const re = new RegExp(delimiter.source, 'g');
+                let match;
+                let start = 0;
+                while ((match = re.exec(masked)) !== null) {
+                    ranges.push({ start: start, end: match.index });
+                    start = match.index + match[0].length;
+                }
+                ranges.push({ start: start, end: source.length });
+                return { ranges: ranges, openFenceStart: fences.openStart };
+            },
+
+            // 応答本文 → 再生キューへ入れる断片（voice 付き）。段落ごとに作る
             buildSegments(rawContent) {
-                const cleaned = this.cleanForSpeech(rawContent);
+                const segments = [];
+                for (const range of this.paragraphRanges(rawContent).ranges) {
+                    segments.push(...this.buildParagraphSegments(rawContent.slice(range.start, range.end)));
+                }
+                return segments;
+            },
+
+            // 1 段落ぶんだけ断片へ分解する。
+            // 話者検出・地の文を読まない設定・コードブロックの除外は段落ごとに適用する
+            buildParagraphSegments(rawParagraph) {
+                const cleaned = this.cleanForSpeech(rawParagraph);
                 if (!cleaned) return [];
                 const speakers = this.speakerTable();
                 const dialogueOnly = !!state.settings.ttsNarrateDialogueOnly;
@@ -11888,10 +11950,15 @@ const dbUtils = {
 
             // manual = ボタン発。失敗時に設定欄だけでなくダイアログでも案内する
             enqueueMessage(index, manual) {
-                this.lastManual = !!manual;
                 const message = state.currentMessages[index];
                 if (!message || message.role !== 'model') return 0;
-                const segments = this.buildSegments(message.content);
+                return this.enqueueText(message.content, manual);
+            },
+
+            // 渡された文章を段落順に分解してキューへ足す。追加した chunk 数を返す
+            enqueueText(rawText, manual) {
+                this.lastManual = !!manual;
+                const segments = this.buildSegments(rawText);
                 if (!segments.length) return 0;
                 let added = 0;
                 for (const segment of segments) {
@@ -11902,6 +11969,51 @@ const dbUtils = {
                 }
                 this.pump();
                 return added;
+            },
+
+            // ── 受信しながらの段落送り ──────────────────────
+            // fed = 送信済みの原文（先頭から）。suppressed = 停止で以後送らない
+            stream: null,
+
+            beginStream() {
+                this.stream = { fed: '', suppressed: false };
+            },
+
+            // 受信済みの本文から、確定した段落だけをキューへ送る。
+            // 末尾の未完了段落は次の区切りか受信完了まで、閉じていないコードブロックの中は送らない。
+            feedStream(rawText, manual) {
+                if (!this.stream) this.beginStream();
+                if (this.stream.suppressed) return 0;
+                const source = String(rawText || '');
+                if (!source.startsWith(this.stream.fed)) return 0;   // 本文が書き換わったときは完了時に送る
+                const split = this.paragraphRanges(source);
+                let endOffset = 0;
+                for (let i = 0; i < split.ranges.length - 1; i++) {
+                    endOffset = Math.max(endOffset, split.ranges[i].end);
+                }
+                if (split.openFenceStart !== -1) endOffset = Math.min(endOffset, split.openFenceStart);
+                if (endOffset <= this.stream.fed.length) return 0;
+                const piece = source.slice(this.stream.fed.length, endOffset);
+                this.stream.fed = source.slice(0, endOffset);
+                return this.enqueueText(piece, manual);
+            },
+
+            // 受信完了。末尾の未完了段落も含めて残りを送る（停止済みなら送らない）
+            finishStream(rawText, manual) {
+                if (!this.stream) this.beginStream();
+                if (this.stream.suppressed) return 0;
+                const source = String(rawText || '');
+                let from = this.stream.fed.length;
+                if (!source.startsWith(this.stream.fed)) {
+                    // 校正などで本文が書き換わっていた。共通部分の後から送り直す
+                    from = 0;
+                    while (from < source.length && from < this.stream.fed.length
+                        && source[from] === this.stream.fed[from]) from++;
+                }
+                if (from >= source.length) return 0;
+                const piece = source.slice(from);
+                this.stream.fed = source;
+                return this.enqueueText(piece, manual);
             },
 
             // 再生はキューで順に鳴らし、重ねない
@@ -11944,10 +12056,11 @@ const dbUtils = {
                 }
             },
 
-            // 停止はキューを破棄する
+            // 停止はキューを破棄し、まだ TTS へ送っていない段落も破棄する
             stopAll() {
                 this.generation++;
                 this.queue.length = 0;
+                if (this.stream) this.stream.suppressed = true;
                 if (this.currentAudio) {
                     try {
                         this.currentAudio.onended = null;
@@ -12836,7 +12949,7 @@ appendMessage(role, content, index, isStreamingPlaceholder = false, cascadeInfo 
                 const current = illustrationUtils.currentImage(illustration);
                 if (current && current.seed !== undefined) {
                     const seedSpan = document.createElement('span');
-                    seedSpan.classList.add('message-illustration-meta');
+                    seedSpan.classList.add('message-illustration-meta', 'message-illustration-seed');
                     seedSpan.textContent = `seed ${current.seed}${current.resized ? ' (縮小)' : ''}`;
                     header.appendChild(seedSpan);
                 }
@@ -13038,16 +13151,62 @@ appendMessage(role, content, index, isStreamingPlaceholder = false, cascadeInfo 
                 img.addEventListener('pointercancel', releasePointer);
                 apply();
             },
-            // メッセージ全体を再描画せず、挿絵ブロックだけ差し替える
+            // メッセージ全体を再描画せず、挿絵ブロックだけ差し替える。
+            // 新しい画像は復号できるまで高さ 0 なので、そのまま差し替えると文書が一瞬縮んで
+            // スクロール位置が飛ぶ（画像の上端だけが見える位置へジャンプする）。
+            // 旧ブロックの実測高さを差し置いてから入れ替え、スクロール位置は動かさない。
             rerenderIllustration(index) {
                 const messageElement = elements.messageContainer.querySelector(`.message[data-index="${index}"]`);
                 if (!messageElement) {
                     uiUtils.renderChatMessages(true);
                     return;
                 }
+                const mainContent = elements.chatScreen.querySelector('.main-content');
+                const scrollTop = mainContent ? mainContent.scrollTop : 0;
                 const existing = messageElement.querySelector('.message-illustration');
+                const reservedHeight = existing ? existing.getBoundingClientRect().height : 0;
                 if (existing) existing.remove();
                 this.appendIllustrationBlock(messageElement, index);
+
+                const block = messageElement.querySelector('.message-illustration');
+                const image = block ? block.querySelector('.message-illustration-image') : null;
+                if (image && reservedHeight > 0 && !(image.complete && image.naturalWidth)) {
+                    const gallery = image.closest('.message-illustration-gallery') || block;
+                    gallery.style.minHeight = `${reservedHeight}px`;
+                    const release = () => { gallery.style.minHeight = ''; };
+                    image.addEventListener('load', release, { once: true });
+                    image.addEventListener('error', release, { once: true });
+                }
+                if (mainContent && mainContent.scrollTop !== scrollTop) {
+                    mainContent.scrollTop = scrollTop;
+                }
+            },
+            // 表示中の 1 枚だけを差し替える。ブロック全体を描画しないためスクロール位置はそのまま。
+            // できたなら true、該当要素が見つからなければ false（呼び出し側は再描画へ進む）
+            updateIllustrationInView(index) {
+                const messageElement = elements.messageContainer.querySelector(`.message[data-index="${index}"]`);
+                if (!messageElement) return false;
+                const image = messageElement.querySelector(`img.message-illustration-image[data-index="${index}"]`);
+                if (!image) return false;
+                const message = state.currentMessages[index];
+                if (!message) return false;
+                const current = illustrationUtils.currentImage(message.illustration);
+                if (!current) return false;
+
+                image.src = current.dataUrl;
+                image.title = 'クリック（タップ）で全画面。左右スワイプで切替';
+
+                const counter = messageElement.querySelector('.message-illustration-counter');
+                if (counter) {
+                    const illustration = message.illustration;
+                    counter.textContent = `${illustration.viewIndex + 1} / ${illustration.images.length}`;
+                }
+                const seedSpan = messageElement.querySelector('.message-illustration-seed');
+                if (seedSpan) {
+                    if (current.seed === undefined) seedSpan.remove();
+                    else seedSpan.textContent = `seed ${current.seed}${current.resized ? ' (縮小)' : ''}`;
+                }
+                return true;
             },
             updateMemoStackHeightSettingsVisibility() {
                 const showMemoBtn = elements.showMemoButtonToggle.checked;
@@ -13477,13 +13636,8 @@ const getCurrentMermaidTheme = () => {
                     }
                 }
 
-                const autoScrollEnabledForThisContentType = isThoughtSummary
-                    ? state.settings.autoScrollOnThought
-                    : state.settings.autoScrollOnNewMessage;
-
-                if (autoScrollEnabledForThisContentType) {
-                    this.scrollToBottom();
-                }
+                // ストリーミング中は表示を追従させない。
+                // ユーザーが自分で動かしたスクロール位置を、受信が終わるまでそのまま保つ。
             },
             finalizeStreamingMessage(index) {
                 const messageDiv = document.getElementById(`streaming-message-${index}`);
@@ -13543,13 +13697,12 @@ const getCurrentMermaidTheme = () => {
                     if (msgData && msgData.role === 'model' && msgData.isCascaded) {
                         const siblings = appLogic.getCascadedSiblings(index);
                         if (siblings.length > 1) {
-                            this.renderChatMessages();
+                            // 受信完了でもスクロールは動かさない。再描画で位置が飛ばないよう維持する
+                            this.renderChatMessages(true);
                         }
                     }
                 }
-                if (state.settings.autoScrollOnNewMessage) {
-                    this.scrollToBottom();
-                }
+                // 受信完了時にも自動スクロールしない（ユーザーの位置を保つ）
             },
             updateFinalizedMessageContent(index, newContent) {
                 const messageDiv = elements.messageContainer.querySelector(`.message[data-index="${index}"]`);
@@ -14773,7 +14926,7 @@ elements.footerTapScrollToBottomToggle.checked = state.settings.footerTapScrollT
                 elements.illustrationModeToggleBtn.classList.toggle('hidden', !enabled);
                 elements.illustrationGenerateLastBtn.classList.toggle('hidden', !enabled);
                 const isAuto = state.settings.illustrationMode !== 'manual';
-                elements.illustrationModeToggleBtn.textContent = isAuto ? '挿:自動' : '挿:手動';
+                elements.illustrationModeToggleBtn.textContent = isAuto ? '絵:自動' : '絵:手動';
                 elements.illustrationModeToggleBtn.title = `挿絵生成: ${isAuto ? '自動' : '手動'}（クリックで切替）`;
                 elements.illustrationModeToggleBtn.classList.toggle('mode-auto', isAuto);
                 elements.illustrationModeToggleBtn.classList.toggle('mode-manual', !isAuto);
@@ -18743,6 +18896,13 @@ helpIcons.forEach(icon => {
                     await uiUtils.showCustomAlert('読み上げる本文が見つかりませんでした。ボイスが未設定の可能性もあります。');
                 }
             },
+            // 受信完了時の自動読み上げ。ストリーミング中に送った段落は再送せず、残りだけ送る
+            finishAutoTtsOnReceive(index) {
+                if (!state.settings.ttsEnabled) return;
+                const message = state.currentMessages[index];
+                if (!message || message.role !== 'model') return;
+                ttsUtils.finishStream(message.content, false);
+            },
             stopTts() {
                 ttsUtils.stopAll();
             },
@@ -19043,7 +19203,10 @@ helpIcons.forEach(icon => {
                 const illustration = illustrationUtils.normalizeIllustration(message.illustration);
                 const count = illustration.images.length;
                 illustration.viewIndex = (illustration.viewIndex + delta + count) % count;
-                uiUtils.rerenderIllustration(messageIndex);
+                // 表示中の 1 枚だけ差し替える。ブロック全体を描画し直すとスクロール位置が飛ぶ
+                if (!uiUtils.updateIllustrationInView(messageIndex)) {
+                    uiUtils.rerenderIllustration(messageIndex);
+                }
             },
             // 展開した欄で編集した文章を保存する（再生成はこの文字列を使う）
             async saveIllustrationPrompt(messageIndex, text) {
@@ -19555,6 +19718,8 @@ helpIcons.forEach(icon => {
                 }
                 state.partialStreamContent = '';
                 state.partialThoughtStreamContent = '';
+                // 読み上げは受信した段落から送るため、この応答の段落送り状態を新しくする
+                if (!isBackgroundProcess) ttsUtils.beginStream();
 
                 let userMessageIndex = isRetry ? retryUserMessageIndex : -1;
                 let existingSiblingGroupId = null;
@@ -19951,6 +20116,10 @@ helpIcons.forEach(icon => {
                                             uiUtils.updateStreamingMessage(messageIndexForDisplay, char, false);
                                             if (currentContextStreamSpeed > 0) await sleep(currentContextStreamSpeed);
                                         }
+                                        // 自動読み上げは受信完了を待たず、確定した段落から送る
+                                        if (state.settings.ttsEnabled && state.settings.ttsMode === 'auto') {
+                                            ttsUtils.feedStream(state.partialStreamContent, false);
+                                        }
                                     }
                                 }
                                 if (state.abortController?.signal.aborted) {
@@ -20288,8 +20457,8 @@ helpIcons.forEach(icon => {
                             if (useStreamingForThisCall) {
                                 uiUtils.finalizeStreamingMessage(finalModelMessageIndex);
                             } else {
-                                const shouldMaintainScroll = !isBackgroundProcess && !state.settings.autoScrollOnNewMessage;
-uiUtils.renderChatMessages(shouldMaintainScroll);
+                                // 受信完了で自動スクロールしないので、再描画でもスクロール位置を維持する
+                                uiUtils.renderChatMessages(!isBackgroundProcess);
                             }
                             await dbUtils.saveChat();
 
@@ -20326,11 +20495,12 @@ uiUtils.renderChatMessages(shouldMaintainScroll);
 
                         // 自動読み上げは、応答の受信が完了した場合だけ起動する。
                         // 中断・エラー完了では起動しない。本編の送信はブロックしない。
+                        // ストリーミング中に送った段落は再送せず、末尾の未完了段落だけを送る。
                         if (state.settings.ttsEnabled && state.settings.ttsMode === 'auto'
                             && !abortedForIllustration && !unsuccessfulForIllustration) {
                             const lastTtsIndex = state.currentMessages.length - 1;
                             if (state.currentMessages[lastTtsIndex] && state.currentMessages[lastTtsIndex].role === 'model') {
-                                setTimeout(() => this.speakMessage(lastTtsIndex, true), 0);
+                                setTimeout(() => this.finishAutoTtsOnReceive(lastTtsIndex), 0);
                             }
                         }
                     }
@@ -20403,9 +20573,7 @@ uiUtils.renderChatMessages(shouldMaintainScroll);
                         state.abortController = null;
                         state.partialStreamContent = '';
                         state.partialThoughtStreamContent = '';
-                        if (state.settings.autoScrollOnNewMessage) {
-                            uiUtils.scrollToBottom();
-                        }
+                        // 応答の受信完了で自動スクロールしない。ユーザーが動かした位置を保つ
                         uiUtils.updateAttachmentBadgeVisibility();
                     }
                 }

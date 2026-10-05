@@ -68,18 +68,34 @@ APIキーは `ttsApiKey` として IndexedDB の `settings` にだけ保存す�
 
 ボイスが未設定の断片は読まない（デフォルトボイス未設定なら地の文だけ落ちる）。
 
-## 5. 再生キュー
+## 5. 段落ごとの読み上げ（受信しながら送る）
+
+応答全文の受信完了を待たず、確定した段落から順に TTS へ送る。段落は `paragraphRanges()` が決める。
+**空行で区切る。空行が無い応答では改行で区切る。**原文上の位置も返す（送信済み位置を覚えるため）。
+
+- コードブロックの中は段落の区切りとして数えない。`fenceSpans()` が閉じたフェンスを 1 単位にし、
+  閉じていないフェンスの開始位置を返す。`feedStream()` はその位置までしか送らない（未完了のコードを読まない）。
+- `feedStream()` は「末尾の未完了段落を除いた範囲」までを送り、`stream.fed` に送った本文を覚えておく。
+  同じ本文を渡しても再送しない。
+- `finishStream()` は受信完了時に残り（末尾の未完了段落）を送る。校正で本文が書き換わっていた場合は、
+  共通プレフィックスの後から送り直す。
+- `stopAll()` は `stream.suppressed` を立てるので、停止後にまだ送っていない段落は送られない。
+- 手動（メガホン）は `enqueueMessage()` から `enqueueText()` で全文を同じ段落順に送る。
+
+`buildSegments()` は段落ごとに `buildParagraphSegments()` を呼ぶ。話者検出・地の文除外・コードブロック除去は段落ごとに適用される。
+
+## 6. 再生キュー
 
 `ttsUtils.queue` と `playing` フラグで直列化する。`pump()` は `playing` の間に再入しない。合成 → 再生 → `ended`/`error` → 次、の順で進むので再生が重ならない。
 
 `stopAll()` は `generation` を増やして実行中の合成結果を捨て、キューを空にし、現在の音声を stop して objectURL を revoke する。`generation` を見ていないと、停止後に届いた音が後から鳴ってしまう。
 
-## 6. テスト
+## 7. テスト
 
 ```
-node tools/tts-selftest.js   # 話者検出・整形・chunk をブラウザなしで（41 件）
-node tools/selftest.js       # 挿絵生成（96 件）
-node tools/e2e.js            # 実ブラウザ + モックサーバー（98 件）
+node tools/tts-selftest.js   # 話者検出・整形・chunk・段落送りをブラウザなしで（56 件）
+node tools/selftest.js       # 挿絵生成（97 件）
+node tools/e2e.js            # 実ブラウザ + モックサーバー（102 件）
 ```
 
 `tools/e2e.js` には OpenAI Compatible な `audio/speech` もどきを `/mock-tts/v1/audio/speech` に立ててある。送られた body のキー集合、`Authorization`、話者ごとの `voice`、`input` の中身をサーバー側で記録して検証する。再生の重複は `window.Audio` を包んで同時再生数を数え、最大 1 であることを確認している。Chrome には `--autoplay-policy=no-user-gesture-required --mute-audio` を渡す。

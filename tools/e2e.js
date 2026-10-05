@@ -201,7 +201,7 @@ const PAGE_SCRIPT = `(async () => {
             '5': {
                 class_type: 'KSampler',
                 inputs: {
-                    seed: '%seed%', width: '%width%', height: '%height%', steps: '%steps%', cfg: '%scale%',
+                    seed: '%seed%', width: '%width%', height: '%height%', steps: '%steps%', cfg: '%cfg%',
                     sampler_name: '%sampler%', scheduler: '%scheduler%', denoise: '%denoise%',
                 },
             },
@@ -561,7 +561,7 @@ const GALLERY_SCRIPT = `(async () => {
     state.illustrationJob = null;
     state.currentMessages = [
         { role: 'user', content: 'x', timestamp: Date.now() },
-        { role: 'model', content: '画像を複数枚持つ応答', timestamp: Date.now() },
+        { role: 'model', content: '画像を複数枚持つ応答 ' + '本文。'.repeat(300), timestamp: Date.now() },
     ];
     state.currentMessages[1].illustration = {
         status: 'done', prompt: '保存済みのプロンプト', negativePrompt: 'lowres', seed: 1,
@@ -587,6 +587,36 @@ const GALLERY_SCRIPT = `(async () => {
     document.querySelector('.js-illustration-next-btn').click();
     const backToNewestSrc = imageEl().src;
     const counterAfterNext = counter();
+
+    // スクロール位置の維持。同じ寸法の画像へ差し替えても、ブロックを一瞬潰すと
+    // 文書が縮んでビューが飛ぶ（画像の上端だけが見える位置へジャンプする）
+    const square = (color) => 'data:image/svg+xml;utf8,' + encodeURIComponent(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="600">'
+        + '<rect width="300" height="600" fill="' + color + '"/></svg>');
+    const galleryIllustration = state.currentMessages[1].illustration;
+    galleryIllustration.images[0].dataUrl = square('#666');
+    galleryIllustration.images[1].dataUrl = square('#888');
+    galleryIllustration.viewIndex = 1;
+    uiUtils.rerenderIllustration(1);
+    await new Promise(r => setTimeout(r, 400));
+    const mainContent = elements.chatScreen.querySelector('.main-content');
+    const scrollable = mainContent.scrollHeight > mainContent.clientHeight + 200;
+
+    mainContent.scrollTop = mainContent.scrollHeight;
+    await new Promise(r => setTimeout(r, 150));
+    const scrollBeforeCycle = mainContent.scrollTop;
+    document.querySelector('.js-illustration-prev-btn').click();
+    await new Promise(r => setTimeout(r, 400));
+    const scrollAfterCycle = mainContent.scrollTop;
+
+    mainContent.scrollTop = mainContent.scrollHeight;
+    await new Promise(r => setTimeout(r, 150));
+    const scrollBeforeReceive = mainContent.scrollTop;
+    illustrationUtils.pushImage(galleryIllustration,
+        { dataUrl: square('#aaa'), seed: 3, prompt: 'p3', createdAt: Date.now() });
+    uiUtils.rerenderIllustration(1);
+    await new Promise(r => setTimeout(r, 500));
+    const scrollAfterReceive = mainContent.scrollTop;
 
     // クリックで全画面。画像をタップしても閉じず、✕ ボタンと画像外のタップで閉じる
     imageEl().click();
@@ -633,6 +663,9 @@ const GALLERY_SCRIPT = `(async () => {
         backToNewestSrc: backToNewestSrc,
         counterAfterPrev: counterAfterPrev,
         counterAfterNext: counterAfterNext,
+        scrollable: scrollable,
+        scrollBeforeCycle: scrollBeforeCycle, scrollAfterCycle: scrollAfterCycle,
+        scrollBeforeReceive: scrollBeforeReceive, scrollAfterReceive: scrollAfterReceive,
         lightboxOpened: lightboxOpened,
         staysOpenOnImageTap: staysOpenOnImageTap,
         closedByCloseButton: closedByCloseButton,
@@ -702,6 +735,39 @@ const FOOTER_BUTTON_SCRIPT = `(async () => {
         ttsVisibleWhenEnabled: ttsVisibleWhenEnabled,
         ttsAutoClasses: ttsAutoClasses, ttsAutoColors: ttsAutoColors,
         ttsManualClasses: ttsManualClasses, ttsManualColors: ttsManualColors,
+    };
+})()`;
+
+// LLM 応答のストリーミング表示に追従してスクロールしない（ユーザーが動かした位置を保つ）
+const STREAM_SCROLL_SCRIPT = `(async () => {
+    state.settings.autoScrollOnNewMessage = true;
+    state.currentMessages = [{ role: 'user', content: '長く返して', timestamp: Date.now() }];
+    uiUtils.renderChatMessages();
+    const index = state.currentMessages.length;
+    state.currentMessages.push({ role: 'model', content: '', timestamp: Date.now() });
+    uiUtils.appendMessage('model', '', index, true);
+    const mainContent = elements.chatScreen.querySelector('.main-content');
+    const chunk = 'いちにさんしごろくしちはちじゅう。';
+    state.partialStreamContent = '';
+    for (let i = 0; i < 150; i++) state.partialStreamContent += chunk;
+    await uiUtils.updateStreamingMessage(index, chunk, false);
+    await new Promise(r => setTimeout(r, 200));
+    const scrollable = mainContent.scrollHeight > mainContent.clientHeight + 200;
+    mainContent.scrollTop = 400;
+    await new Promise(r => setTimeout(r, 150));
+    const before = mainContent.scrollTop;
+    for (let i = 0; i < 40; i++) {
+        state.partialStreamContent += chunk;
+        await uiUtils.updateStreamingMessage(index, chunk, false);
+    }
+    await new Promise(r => setTimeout(r, 250));
+    const during = mainContent.scrollTop;
+    state.currentMessages[index].content = state.partialStreamContent;
+    uiUtils.finalizeStreamingMessage(index);
+    await new Promise(r => setTimeout(r, 250));
+    const afterFinalize = mainContent.scrollTop;
+    return {
+        scrollable: scrollable, before: before, during: during, afterFinalize: afterFinalize,
     };
 })()`;
 
@@ -1175,6 +1241,7 @@ async function main() {
         const ttsUiResult = await evaluate(TTS_UI_SCRIPT);
         const ttsPlayResult = await evaluate(TTS_PLAY_SCRIPT);
         const editResult = await evaluate(EDIT_PROMPT_SCRIPT);
+        const streamScrollResult = await evaluate(STREAM_SCROLL_SCRIPT);
 
         // ページを開き直して、保存済み挿絵が履歴に表示されるか
         const savedChat = await evaluate(RELOAD_SETUP);
@@ -1276,12 +1343,18 @@ async function main() {
                 galleryResult.olderSrc !== galleryResult.newestSrc
                 && galleryResult.backToNewestSrc === galleryResult.newestSrc
                 && galleryResult.counterAfterPrev === '1 / 2' && galleryResult.counterAfterNext === '2 / 2'],
+            ['挿絵の ◀▶ 切替でスクロール位置が飛ばない',
+                galleryResult.scrollable === true && galleryResult.scrollAfterCycle === galleryResult.scrollBeforeCycle],
+            ['挿絵の画像を受信した瞬間にスクロール位置が飛ばない',
+                galleryResult.scrollAfterReceive === galleryResult.scrollBeforeReceive],
             ['挿絵のクリックで全画面が開く', galleryResult.lightboxOpened === true],
             ['全画面で画像をタップしても閉じない', galleryResult.staysOpenOnImageTap === true],
             ['全画面は ✕ ボタンで閉じる', galleryResult.closedByCloseButton === true],
             ['全画面は画像外のタップで閉じる', galleryResult.closedByOutsideTap === true],
             ['この画像を削除は 1 枚だけ消し、専用の確認文を出す',
-                galleryResult.confirmTexts[0] === 'この画像を本当に削除しますか？' && galleryResult.imagesAfterOneDelete === 1],
+                // スクロール確認で 3 枚目に増やしているので、1 枚削除後は 2 枚
+                galleryResult.confirmTexts[0] === 'この画像を本当に削除しますか？' 
+                && galleryResult.imagesAfterOneDelete === 2],
             ['すべて削除は別の確認文で全枚消す',
                 galleryResult.confirmTexts[1] === 'この応答に対して生成された画像を全て削除しますか？'
                 && galleryResult.illustrationAfterAllDelete === null],
@@ -1290,8 +1363,8 @@ async function main() {
             ['書き出し名はワークフロー名 + 日付 + 時刻', /^my flow_v1-\d{8}-\d{6}\.json$/.test(galleryResult.exportName)],
 
             ['挿絵ボタンは挿絵生成オフで隠れる', footerResult.hiddenWhenDisabled === true],
-            ['挿絵の自動/手動ボタンは文字がはみ出さない',
-                footerResult.autoLabel === '挿:自動' && footerResult.manualLabel === '挿:手動' && footerResult.noOverflow === true],
+            ['挿絵の自動/手動ボタンは「絵:自動」「絵:手動」で文字がはみ出さない',
+                footerResult.autoLabel === '絵:自動' && footerResult.manualLabel === '絵:手動' && footerResult.noOverflow === true],
             ['挿絵の自動は赤地に白文字', footerResult.autoClasses === true && footerResult.autoColors === true],
             ['挿絵の手動はグレー地に白文字', footerResult.manualClasses === true && footerResult.manualColors === true],
             ['読み上げのメガホンボタンは入力欄付近にあり、アイコンは SVG',
@@ -1303,6 +1376,10 @@ async function main() {
             ['読み上げの手動はグレー地に白のメガホン',
                 footerResult.ttsManualClasses === true && footerResult.ttsManualColors === true],
 
+            ['ストリーミング表示に追従してスクロールしない',
+                streamScrollResult.scrollable === true && streamScrollResult.during === streamScrollResult.before],
+            ['応答の受信完了でもスクロール位置を維持する',
+                streamScrollResult.afterFinalize === streamScrollResult.before],
             ['読み上げの設定欄がある', ttsUiResult.groupExists === true && ttsUiResult.missingIds.length === 0],
             ['話者割当は登場人物 1〜5 の 5 行', ttsUiResult.speakerRows === 5],
             ['ボイス一覧はカンマ区切りから作る',

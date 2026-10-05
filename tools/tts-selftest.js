@@ -222,5 +222,50 @@ check('content だけをキューに入れる',
 ttsUtils.queue.length = 0;
 check('model 以外読み上げない', ttsUtils.enqueueMessage(999), 0);
 
+
+// ── 段落（空行区切り。空行が無い応答では改行区切り）──────
+function paragraphs(text) {
+    return ttsUtils.paragraphRanges(text).ranges.map(r => text.slice(r.start, r.end));
+}
+resetSettings();
+check('空行で段落を区切る', paragraphs('一\n二\n\n三'), ['一\n二', '三']);
+check('空行が無ければ改行で区切る', paragraphs('一\n二\n三'), ['一', '二', '三']);
+check('コードブロックは 1 段落として扱う',
+    paragraphs('本文\n```\nconst x = 1;\n```\n続き'),
+    ['本文', '```\nconst x = 1;\n```', '続き']);
+check('閉じていないコードブロックの開始位置を返す',
+    ttsUtils.paragraphRanges('本文\n```\nconst x = 1;').openFenceStart, 3);
+
+// ── 受信しながらの段落送り ──────────────────────────────
+ttsUtils.pump = () => { };
+const feedReset = () => { ttsUtils.queue.length = 0; ttsUtils.beginStream(); };
+
+feedReset();
+check('確定した段落だけを送る', ttsUtils.feedStream('まゆみ「あ」\n\nまゆみ「い」'), 1);
+check('送ったのは先頭の段落だけ', ttsUtils.queue.map(j => j.text), ['あ']);
+ttsUtils.queue.length = 0;
+check('同じ本文を再送しない', ttsUtils.feedStream('まゆみ「あ」\n\nまゆみ「い」'), 0);
+check('受信完了で末尾の段落を送る', ttsUtils.finishStream('まゆみ「あ」\n\nまゆみ「い」'), 1);
+check('段落順にキューへ積まる', ttsUtils.queue.map(j => j.text), ['い']);
+
+feedReset();
+check('閉じていないコードブロックの中は送らない', ttsUtils.feedStream('本文\n```\nconst x = 1;'), 1);
+check('コードブロックの手前までしか送らない', ttsUtils.queue.map(j => j.text), ['本文']);
+ttsUtils.queue.length = 0;
+check('コードブロックが閉じると中身は読み上げない',
+    ttsUtils.finishStream('本文\n```\nconst x = 1;\n```'), 0);
+
+feedReset();
+ttsUtils.feedStream('まゆみ「あ」\n\n');
+ttsUtils.stopAll();
+check('停止すると未送信分も破棄する', ttsUtils.finishStream('まゆみ「あ」\n\nまゆみ「い」'), 0);
+
+// ── メガホン（手動）も同じ段落順で送る ──────────────────
+feedReset();
+state.currentMessages = [{ role: 'model', content: 'まゆみ「あ」\n\nまゆみ「い」\n\nまゆみ「う」' }];
+check('手動読み上げは先頭の段落から同じ順', ttsUtils.enqueueMessage(0, true), 3);
+check('キューの中身は段落順', ttsUtils.queue.map(j => j.text), ['あ', 'い', 'う']);
+ttsUtils.queue.length = 0;
+
 console.log(`passed: ${passed}, failed: ${failed}`);
 process.exit(failed ? 1 : 0);

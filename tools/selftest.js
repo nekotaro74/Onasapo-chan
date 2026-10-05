@@ -58,7 +58,7 @@ check('空', illustrationUtils.normalizeBaseUrl(''), '');
 const apiWorkflow = JSON.stringify({
     '3': { class_type: 'CLIPTextEncode', inputs: { text: '%prompt%' }, _meta: {} },
     '4': { class_type: 'CLIPTextEncode', inputs: { text: '%negative_prompt%' }, _meta: {} },
-    '5': { class_type: 'KSampler', inputs: { seed: '%seed%', width: '%width%', height: '%height%', steps: '%steps%', cfg: '%scale%' }, _meta: {} },
+    '5': { class_type: 'KSampler', inputs: { seed: '%seed%', width: '%width%', height: '%height%', steps: '%steps%', cfg: '%cfg%' }, _meta: {} },
     '9': { class_type: 'SaveImage', inputs: { images: null }, _meta: {} },
 });
 const uiWorkflow = JSON.stringify({ nodes: [{ id: 1 }], links: [], groups: [] });
@@ -73,7 +73,7 @@ checkTrue('SaveImage無しは拒否', !illustrationUtils.parseWorkflow(JSON.stri
 
 // ── トークン検出 ─────────────────────────────────────────────
 check('トークン検出', illustrationUtils.findPlaceholders(apiWorkflow).sort(),
-    ['height', 'negative_prompt', 'prompt', 'scale', 'seed', 'steps', 'width']);
+    ['cfg', 'height', 'negative_prompt', 'prompt', 'seed', 'steps', 'width']);
 check('文中へ埋め込まれたトークンも検出',
     illustrationUtils.findPlaceholders(JSON.stringify({ a: { inputs: { text: 'x %prompt% y %foo%' } } })).sort(),
     ['foo', 'prompt']);
@@ -86,10 +86,10 @@ state.settings = {
     comfySampler: 'euler_a', comfyScheduler: 'karras', comfyTextEncoder: 'clip.safetensors',
 };
 const built = illustrationUtils.buildTokenValues();
-check('寸法・steps・scale が渡る', [built.values.width, built.values.height, built.values.steps, built.values.scale], [512, 768, 20, 7]);
-check('%cfg% は差し込まない', Object.prototype.hasOwnProperty.call(built.values, 'cfg'), false);
-checkTrue('%cfg% は未対応トークンとして止まる', /%cfg%/.test((illustrationUtils.prepareWorkflow({ '1': { class_type: 'X', inputs: { c: '%cfg%' } } }) || {}).error || ''));
-checkTrue('%cfg% は組み込みトークン一覧に無い', !illustrationUtils.builtinTokens().includes('cfg'));
+check('寸法・steps・cfg が渡る', [built.values.width, built.values.height, built.values.steps, built.values.cfg], [512, 768, 20, 7]);
+checkTrue('%scale% は未対応トークンとして止まる', /%scale%/.test((illustrationUtils.prepareWorkflow({ '1': { class_type: 'X', inputs: { c: '%scale%' } } }) || {}).error || ''));
+checkTrue('%cfg% は差し込まれる', (illustrationUtils.prepareWorkflow({ '1': { class_type: 'X', inputs: { c: '%cfg%' } } }) || {}).ok === true);
+checkTrue('%scale% は組み込みトークン一覧に無い', !illustrationUtils.builtinTokens().includes('scale'));
 check('seed 固定', built.values.seed, 42);
 check('CLIP Skip は負の値で差し込む', built.values.clip_skip, -2);
 check('Denoise が渡る', built.values.denoise, 0.85);
@@ -114,11 +114,13 @@ check('文中の seed は文字列として補間される',
     illustrationUtils.substituteTokens({ '1': { inputs: { note: 'seed-%seed%' } } }, built.values).object['1'].inputs.note,
     'seed-42');
 
-// %scale% 互換
+// %cfg%（%scale% は廃止した）
 state.settings.comfyCfg = 9;
-const scaleWf = { '1': { class_type: 'X', inputs: { scale: '%scale%' } } };
-check('%scale% には cfg の値が入る',
-    illustrationUtils.substituteTokens(scaleWf, illustrationUtils.buildTokenValues().values).object['1'].inputs.scale, 9);
+const cfgWf = { '1': { class_type: 'X', inputs: { cfg: '%cfg%' } } };
+check('%cfg% には cfg の値が入る',
+    illustrationUtils.substituteTokens(cfgWf, illustrationUtils.buildTokenValues().values).object['1'].inputs.cfg, 9);
+checkTrue('%scale% は未対応として残る',
+    illustrationUtils.substituteTokens({ '1': { inputs: { scale: '%scale%' } } }, illustrationUtils.buildTokenValues().values).unresolved.indexOf('scale') !== -1);
 
 // 未対応トークンは unresolved に集まる
 const unknown = illustrationUtils.substituteTokens({ '1': { inputs: { x: '%foo%' } } }, illustrationUtils.buildTokenValues().values);
