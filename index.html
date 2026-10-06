@@ -8008,7 +8008,7 @@ font-size: 1.142em !important;
                         <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
                             ※ 末尾スラッシュは自動的に除去します。Tailscale 経由の URL（例: <code>http://100.x.x.x:8188</code>）も同じ欄で使えます。
                         </p>
-                        <button id="comfy-connection-test-btn" class="settings-action-button" style="font-size: 12px;">接続確認</button>
+                        <button id="comfy-connection-test-btn" class="settings-action-button" style="font-size: 12px;">接続確認＆モデル一覧取得</button>
                         <span id="comfy-connection-status" style="font-size: 12px; margin-left: 8px; color: var(--text-secondary);"></span>
 
                         <label style="margin-top: 15px;">ワークフロー一覧:</label>
@@ -8111,8 +8111,7 @@ font-size: 1.142em !important;
                             モデル選択と生成パラメータ
                         </summary>
                         <div style="padding: 10px; padding-top: 5px;">
-                            <button id="comfy-object-info-refresh-btn" class="settings-action-button" style="font-size: 12px;">一覧取得</button>
-                            <span id="comfy-object-info-status" style="font-size: 12px; margin-left: 8px; color: var(--text-secondary);"></span>
+                            <span id="comfy-object-info-status" style="font-size: 12px; color: var(--text-secondary);"></span>
                             <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
                                 <div style="flex: 1 1 220px;">
                                     <label for="comfy-model-select">モデル:</label>
@@ -8136,7 +8135,7 @@ font-size: 1.142em !important;
                                 </div>
                             </div>
                             <p style="font-size: 11px; color: var(--text-secondary); margin-top: 8px; margin-bottom: 0;">
-                                ※ 接続先の <code>/object_info</code> から取得します。モデルは <code>%model%</code>、VAE は <code>%vae%</code>、テキストエンコーダは <code>%text_encoder%</code>、Sampling method は <code>%sampler%</code>、Scheduler は <code>%scheduler%</code> として差し込まれます。<br>
+                                ※ 一覧は <b>「接続確認＆モデル一覧取得」で接続先の <code>/object_info</code> からまとめて取得</b>します（この設定グループを開いたとき、キャッシュが 5 分以上古ければ裏で取り直します）。モデルは <code>%model%</code>、VAE は <code>%vae%</code>、テキストエンコーダは <code>%text_encoder%</code>、Sampling method は <code>%sampler%</code>、Scheduler は <code>%scheduler%</code> として差し込まれます。<br>
                                 ※ 取得に失敗しても、すでに保存している値はそのまま残ります（生成は接続先の ComfyUI が値を検証します）。<br>
                                 ※ テキストエンコーダは SillyTavern に無い本アプリ独自の項目です。<br>
                                 ※ 同梱の Anima 用ワークフローは <code>UNETLoader</code> / <code>CLIPLoader</code> / <code>VAELoader</code> を使うため、モデル・テキストエンコーダ・VAE を選ぶ必要があります。未選択のままだと生成前に止まります。
@@ -8209,11 +8208,10 @@ font-size: 1.142em !important;
                                 LoRA（最大4個）
                             </summary>
                             <div style="padding: 10px; padding-top: 5px;">
-                                <button type="button" id="comfy-lora-refresh-btn" class="settings-action-button" style="font-size: 12px;">LoRA一覧取得</button>
-                                <span id="comfy-lora-status" style="font-size: 12px; margin-left: 8px; color: var(--text-secondary);"></span>
+                                <span id="comfy-lora-status" style="font-size: 12px; color: var(--text-secondary);"></span>
                                 <div id="comfy-lora-rows" style="margin-top: 10px;"></div>
                                 <p style="font-size: 11px; color: var(--text-secondary); margin-top: 10px; margin-bottom: 0;">
-                                    ※ 一覧は <code>GET {base}/models/loras</code> から取得します。既定はすべて「使わない」です。<br>
+                                    ※ LoRA の一覧も <b>「接続確認＆モデル一覧取得」で一緒に取得</b>します（<code>GET {base}/object_info</code> の LoraLoader から取り、そこに一覧が無い環境では <code>GET {base}/models/loras</code> を使います）。既定はすべて「使わない」です。<br>
                                     ※ 同梱の Anima 用 ① は公式 Turbo LoRA をノードへ固定済みで、<b>アプリの LoRA 1〜4 は触りません</b>。② は rgthree の Power Lora Loader を使い、<b>選んだスロットだけ <code>on: true</code></b> にします（使わないスロットは <code>on: false</code> のまま送ります）。<br>
                                     ※ <code>%lora1%</code>〜<code>%lora4%</code> と <code>%lora_str1%</code>〜<code>%lora_str4%</code> は、ワークフローに書かれている場合だけ使います。<code>%lora_strN%</code> は <code>strength_model</code> と <code>strength_clip</code> の両方に同じ値を入れます。<br>
                                     ※ 対応 LoRA は <b>4 個まで</b>です。さらに、そのワークフローが受け取れる数（<code>%loraN%</code> を参照する LoraLoader ノードの数、または rgthree の <code>lora_1</code>〜<code>lora_4</code> の数）を超える番号のスロットは<b>選べません</b>。LoRA ノードの無いワークフローでは 4 つとも無効になります。<br>
@@ -9273,7 +9271,6 @@ elevationHoverOption: document.getElementById('elevation-hover-option'),
             comfyTokenStatusList: document.getElementById('comfy-token-status-list'),
             comfyCustomPlaceholderList: document.getElementById('comfy-custom-placeholder-list'),
             comfyCustomPlaceholderAddBtn: document.getElementById('comfy-custom-placeholder-add-btn'),
-            comfyObjectInfoRefreshBtn: document.getElementById('comfy-object-info-refresh-btn'),
             comfyObjectInfoStatus: document.getElementById('comfy-object-info-status'),
             comfyModelSelect: document.getElementById('comfy-model-select'),
             comfyVaeSelect: document.getElementById('comfy-vae-select'),
@@ -9301,7 +9298,6 @@ elevationHoverOption: document.getElementById('elevation-hover-option'),
             comfyShowDebugToggle: document.getElementById('comfy-show-debug-toggle'),
             comfyMinimalProcessingToggle: document.getElementById('comfy-minimal-processing-toggle'),
             comfyEditPromptToggle: document.getElementById('comfy-edit-prompt-toggle'),
-            comfyLoraRefreshBtn: document.getElementById('comfy-lora-refresh-btn'),
             comfyLoraStatus: document.getElementById('comfy-lora-status'),
             comfyLoraRows: document.getElementById('comfy-lora-rows'),
             comfyDebugOutput: document.getElementById('comfy-debug-output'),
@@ -11607,8 +11603,12 @@ const dbUtils = {
             },
 
             // ── 接続先 ComfyUI の object_info ───────────────────
-            async fetchObjectInfo(force) {
-                const base = illustrationUtils.normalizeBaseUrl(state.settings.comfyBaseUrl);
+            // baseOverride は接続確認ボタンが base URL 入力欄の値を渡すため（未保存の URL でも一覧が取れる）。
+            // 自動取得は渡さないので、保存済みの値を使い続ける。
+            async fetchObjectInfo(force, baseOverride) {
+                const base = baseOverride === undefined
+                    ? illustrationUtils.normalizeBaseUrl(state.settings.comfyBaseUrl)
+                    : baseOverride;
                 if (!base) throw new Error('ComfyUI base URL が設定されていません。');
                 const cache = this.objectInfoCache;
                 if (!force && cache && cache.base === base && Date.now() - cache.fetchedAt < this.OBJECT_INFO_TTL_MS) {
@@ -11679,6 +11679,12 @@ const dbUtils = {
                     this.nodeInputList(data, 'DualCLIPLoader', 'clip_name1'),
                     this.nodeInputList(data, 'TripleCLIPLoader', 'clip_name1'),
                 ]);
+                // LoRA は LoraLoader / LoraLoaderModelOnly の一覧から取る。
+                // 無い環境（古い ComfyUI など）では refreshChoices が /models/loras へフォールバックするので missing に入れない
+                const loras = this.unionLists([
+                    this.nodeInputList(data, 'LoraLoader', 'lora_name'),
+                    this.nodeInputList(data, 'LoraLoaderModelOnly', 'lora_name'),
+                ]);
                 const missing = [];
                 if (models.length === 0) missing.push('モデル（CheckpointLoaderSimple 等）');
                 if (vaes.length === 0) missing.push('VAE（VAELoader）');
@@ -11691,6 +11697,7 @@ const dbUtils = {
                     textEncoders: textEncoders,
                     samplers: samplers,
                     schedulers: schedulers,
+                    loras: loras,
                     missing: missing,
                 };
             },
@@ -11740,33 +11747,35 @@ const dbUtils = {
             // ── LoRA 一覧（最大4個）─────────────────────────────
             loraChoices: null,
 
-            async refreshLoras(statusElement) {
-                if (statusElement) {
-                    statusElement.textContent = 'LoRA 一覧取得中…';
-                    statusElement.style.color = 'var(--text-secondary)';
-                }
-                try {
-                    const base = illustrationUtils.normalizeBaseUrl(state.settings.comfyBaseUrl);
-                    if (!base) throw new Error('ComfyUI base URL が設定されていません。');
+            // object_info から取れた LoRA を反映する。object_info に一覧が無い環境では
+            // GET /models/loras（古い ComfyUI では /loras）へフォールバックする。
+            // 生成経路も illustrationUtils.loraCache を使うので、object_info 由来でもキャッシュへ入れて
+            // 生成時の再取得を省く（キャッシュは base と時刻で照合される）。
+            async applyLoraChoices(base, names, statusElement) {
+                let resolved = Array.isArray(names) ? names : null;
+                if (resolved && resolved.length > 0) {
+                    illustrationUtils.loraCache = { base: base, fetchedAt: Date.now(), names: resolved };
+                } else {
                     illustrationUtils.loraCache = null;
-                    const names = await illustrationUtils.fetchLoraNames(base, null);
-                    if (names === null) throw new Error('LoRA 一覧を取得できませんでした（/models/loras）。');
-                    this.loraChoices = names;
-                    this.renderLoraRows();
+                    resolved = await illustrationUtils.fetchLoraNames(base, null);
+                }
+                if (resolved === null) {
+                    // 一覧が取れなくても保存済みの選択と前回の選択肢は消さない
                     if (statusElement) {
-                        statusElement.textContent = names.length
-                            ? `取得OK（${names.length} 件）`
-                            : '取得OK（loras フォルダは空です）';
-                        statusElement.style.color = 'var(--text-success, var(--text-link))';
-                    }
-                    return { ok: true, names: names };
-                } catch (error) {
-                    if (statusElement) {
-                        statusElement.textContent = error.message;
+                        statusElement.textContent = 'LoRA 一覧を取得できませんでした（object_info / models-loras）';
                         statusElement.style.color = 'var(--text-error, var(--text-link))';
                     }
-                    return { ok: false, error: error.message };
+                    return { ok: false, error: 'LoRA 一覧を取得できませんでした' };
                 }
+                this.loraChoices = resolved;
+                this.renderLoraRows();
+                if (statusElement) {
+                    statusElement.textContent = resolved.length
+                        ? `LoRA 取得OK（${resolved.length} 件）`
+                        : 'LoRA 取得OK（loras フォルダは空です）';
+                    statusElement.style.color = 'var(--text-success, var(--text-link))';
+                }
+                return { ok: true, names: resolved };
             },
 
             renderLoraRows() {
@@ -11871,13 +11880,22 @@ const dbUtils = {
                 }
             },
 
+            // モデル / VAE / テキストエンコーダ / サンプラ / スケジューラ / LoRA をまとめて取りに行く。
+            // base は base URL 入力欄の値を優先する（接続確認と同じ接続先から一覧を取るため）。
             async refreshChoices(statusElement, force) {
+                const base = illustrationUtils.normalizeBaseUrl(
+                    elements.comfyBaseUrlInput ? elements.comfyBaseUrlInput.value : state.settings.comfyBaseUrl);
                 if (statusElement) {
                     statusElement.textContent = '一覧取得中…';
                     statusElement.style.color = 'var(--text-secondary)';
                 }
+                if (elements.comfyLoraStatus) {
+                    elements.comfyLoraStatus.textContent = 'LoRA 一覧取得中…';
+                    elements.comfyLoraStatus.style.color = 'var(--text-secondary)';
+                }
+                let failure = null;
                 try {
-                    const result = await this.fetchObjectInfo(force);
+                    const result = await this.fetchObjectInfo(force, base);
                     this.choices = this.extractChoices(result.data);
                     this.renderTokenDropdowns();
                     if (statusElement) {
@@ -11885,15 +11903,23 @@ const dbUtils = {
                         statusElement.textContent = `取得OK（モデル ${this.choices.models.length} / VAE ${this.choices.vaes.length} / エンコーダ ${this.choices.textEncoders.length} / サンプラ ${this.choices.samplers.length} / スケジューラ ${this.choices.schedulers.length}）${missingNote}`;
                         statusElement.style.color = 'var(--text-success, var(--text-link))';
                     }
-                    return { ok: true };
                 } catch (error) {
                     // 取得失敗時は選択肢を作り直さない（保存済みの値と前回の選択肢をそのまま残す）
+                    failure = error;
                     if (statusElement) {
                         statusElement.textContent = error.message;
                         statusElement.style.color = 'var(--text-error, var(--text-link))';
                     }
-                    return { ok: false, error: error.message };
                 }
+                if (failure) {
+                    if (elements.comfyLoraStatus) {
+                        elements.comfyLoraStatus.textContent = 'LoRA 一覧は未取得です';
+                        elements.comfyLoraStatus.style.color = 'var(--text-secondary)';
+                    }
+                    return { ok: false, error: failure.message };
+                }
+                await this.applyLoraChoices(base, this.choices.loras, elements.comfyLoraStatus);
+                return { ok: true };
             },
 
             // ── 一覧・編集画面の描画 ────────────────────────────
@@ -17266,16 +17292,21 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                 }
                 if (elements.comfyConnectionTestBtn) {
                     elements.comfyConnectionTestBtn.addEventListener('click', async () => {
-                        elements.comfyConnectionStatus.textContent = '確認中…';
+                        elements.comfyConnectionStatus.textContent = '接続確認中…';
                         elements.comfyConnectionStatus.style.color = 'var(--text-secondary)';
                         try {
+                            // system_stats は軽いので、接続OKを先に出してから重い object_info へ進む
                             const message = await illustrationUtils.testConnection();
                             elements.comfyConnectionStatus.textContent = message;
                             elements.comfyConnectionStatus.style.color = 'var(--text-success, var(--text-link))';
                         } catch (error) {
+                            // 接続できない先に一覧は無い。一覧欄は触らない
                             elements.comfyConnectionStatus.textContent = error.message;
                             elements.comfyConnectionStatus.style.color = 'var(--text-error, var(--text-link))';
+                            return;
                         }
+                        // 一覧は常に強制取得。モデルや LoRA を追加した直後に 5 分キャッシュを待たず取り直せる
+                        await comfyWorkflowUtils.refreshChoices(elements.comfyObjectInfoStatus, true);
                     });
                 }
                 if (elements.comfyWorkflowValidateBtn) {
@@ -17335,11 +17366,6 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                 if (elements.comfyCustomPlaceholderAddBtn) {
                     elements.comfyCustomPlaceholderAddBtn.addEventListener('click', () => comfyWorkflowUtils.addCustomPlaceholder());
                 }
-                if (elements.comfyObjectInfoRefreshBtn) {
-                    elements.comfyObjectInfoRefreshBtn.addEventListener('click', () => {
-                        comfyWorkflowUtils.refreshChoices(elements.comfyObjectInfoStatus, true);
-                    });
-                }
                 // 設定グループを開いたときだけ、古いキャッシュなら裏で取得し直す（生成経路では取得しない）
                 const illustrationGroup = document.getElementById('settings-group-illustration');
                 if (illustrationGroup) {
@@ -17373,11 +17399,6 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                     elements.comfyShowDebugToggle.addEventListener('change', () => {
                         state.settings.comfyShowDebug = elements.comfyShowDebugToggle.checked;
                         uiUtils.updateComfyDebugOutput();
-                    });
-                }
-                if (elements.comfyLoraRefreshBtn) {
-                    elements.comfyLoraRefreshBtn.addEventListener('click', () => {
-                        comfyWorkflowUtils.refreshLoras(elements.comfyLoraStatus);
                     });
                 }
                 // ▲ ここまで ▲

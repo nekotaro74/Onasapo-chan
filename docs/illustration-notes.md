@@ -140,7 +140,8 @@ API キー・モデル名は呼び出し側で渡す（`state.settings.apiProvid
   不正ワークフロー・連打・SW 登録に加えて、
   **SillyTavern 系トークンが全て差し替わること**、`!/%[a-z_]+%/` で**未差し込みを送っていないこと**、
   未知トークンでは **POST も LLM も走らないこと**、`object_info` からのプルダウン反映と
-  ノード types 欠損時の劣化、ワークフロー CRUD、複数枚の ◀▶・全画面・1枚/全枚の削除・
+  ノード types 欠損時の劣化、**「接続確認＆モデル一覧取得」が接続OKを先に出し model 一覧と LoRA を
+  1 回の `object_info` で一緒に取ること**、ワークフロー CRUD、複数枚の ◀▶・全画面・1枚/全枚の削除・
   送信前編集・LoRA の 3 分岐（使用 / 不使用+ファイルあり / 不使用+フォルダ空）まで確認する。
 
 ## 6. 手直しラウンド（2026-10-05）
@@ -178,7 +179,10 @@ rgthree の `lora_1`〜`lora_4` の存在数の大きい方（4 上限）。対�
 
 `%loraN%` / `%lora_strN%` は `buildTokenValues` で常に値を用意するので未対応トークンエラーにはならず、
 LoraLoader ノードには後段の `applyLoraNodes` が実際の値を上書きする。
-一覧は生成時に `GET /models/loras`（無ければ `/loras`）を取り、5分キャッシュする。
+一覧は「接続確認＆モデル一覧取得」で `object_info` の `LoraLoader` / `LoraLoaderModelOnly` から取り、
+`illustrationUtils.loraCache` にも入れる（`base` と取得時刻で照合、5分）。object_info に一覧が無い環境では
+生成経路の `fetchLoraNames` が `GET /models/loras`（無ければ `/loras`）を取り、同じ 5分キャッシュを使う。
+つまり一覧取得済みなら生成時に `/models/loras` は走らない。
 
 ### 同梱の規定ワークフロー
 `DEFAULT_COMFY_WORKFLOW_OBJECT` を設定の初期値と README に置いた。SillyTavern 既定ではなく本アプリ制作。

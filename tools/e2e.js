@@ -154,6 +154,8 @@ function createServer() {
                     UNETLoader: { input: { required: { unet_name: [['flux_unet.safetensors'], {}] } } },
                     VAELoader: { input: { required: { vae_name: [['ae.safetensors'], {}] } } },
                     TextEncoderLoader: { input: { required: { text_name1: [['clip_l.safetensors'], {}] } } },
+                    // extraFromObjectInfo は /models/loras には無い名前。LoRA 一覧が object_info 由来であることを証明する
+                    LoraLoader: { input: { required: { lora_name: [['animeDetail.safetensors', 'inkSketch.safetensors', 'extraFromObjectInfo.safetensors'], {}] } } },
                 }));
                 return;
             }
@@ -532,6 +534,14 @@ const CHOICES_SCRIPT = `(async () => {
         && !!illustrationUtils.activeWorkflow();
     const uiRejected = (await comfyWorkflowUtils.addWorkflow('{"nodes":[],"links":[]}', 'bad')).ok === false;
 
+    // LoRA も object_info から一緒に取れる（/models/loras には無い名前が入っていれば object_info 由来の証明）
+    const lorasFromObjectInfo = (comfyWorkflowUtils.loraChoices || []).includes('extraFromObjectInfo.safetensors');
+    // 生成経路も illustrationUtils.loraCache を使うので、そこに同じ一覧が入っていれば生成時の再取得は省ける
+    const loraCached = !!(illustrationUtils.loraCache && illustrationUtils.loraCache.names.includes('extraFromObjectInfo.safetensors'));
+    const loraStatusShown = /LoRA 取得OK/.test(elements.comfyLoraStatus.textContent);
+    const loraSlotHasChoices = Array.from(elements.comfyLoraRows.querySelectorAll('select'))
+        .every(select => Array.from(select.options).some(o => o.value === 'extraFromObjectInfo.safetensors'));
+
     // 編集画面のトークン検出
     comfyWorkflowUtils.renderEditor();
     const tokenListText = document.getElementById('comfy-token-status-list').textContent;
@@ -549,8 +559,40 @@ const CHOICES_SCRIPT = `(async () => {
         vaeLabelReadable: labelOf(elements.comfyVaeSelect),
         textEncoderLabelReadable: labelOf(elements.comfyTextEncoderSelect),
         staleValueKept: staleKept,
+        lorasFromObjectInfo: lorasFromObjectInfo,
+        loraCached: loraCached,
+        loraStatusShown: loraStatusShown,
+        loraSlotHasChoices: loraSlotHasChoices,
         crudOk: renamed && sameNameKept && duplicated && afterDelete && uiRejected,
         tokenDetected: /model/.test(tokenListText) && /clip_skip/.test(tokenListText),
+    };
+})()`;
+
+// 「接続確認＆モデル一覧取得」ボタン: system_stats で接続を見てから object_info を取り、LoRA も一緒に取る
+const CONNECTION_BUTTON_SCRIPT = `(async () => {
+    state.settings.comfyBaseUrl = location.origin + '/mock-comfy';
+    uiUtils.applyIllustrationSettingsToUI();
+    comfyWorkflowUtils.objectInfoCache = null;
+    comfyWorkflowUtils.choices = null;
+    comfyWorkflowUtils.loraChoices = null;
+    illustrationUtils.loraCache = null;
+    elements.comfyObjectInfoStatus.textContent = '';
+    elements.comfyLoraStatus.textContent = '';
+    const label = elements.comfyConnectionTestBtn.textContent.trim();
+    elements.comfyConnectionTestBtn.click();
+    // 接続OKを先に出し、その後に一覧とLoRAが進むので、LoRA欄が埋まるまで待つ
+    let waited = 0;
+    while (waited < 5000 && !/LoRA 取得OK/.test(elements.comfyLoraStatus.textContent)) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        waited += 50;
+    }
+    return {
+        label: label,
+        connection: elements.comfyConnectionStatus.textContent,
+        objectInfo: elements.comfyObjectInfoStatus.textContent,
+        lora: elements.comfyLoraStatus.textContent,
+        models: Array.from(elements.comfyModelSelect.options).map(o => o.value),
+        loraChoices: comfyWorkflowUtils.loraChoices || [],
     };
 })()`;
 
@@ -1342,6 +1384,9 @@ async function main() {
         const promptPostsAfterFailure = promptPosts;
 
         const choicesResult = await evaluate(CHOICES_SCRIPT);
+        objectInfoRequests = 0;
+        const connectionResult = await evaluate(CONNECTION_BUTTON_SCRIPT);
+        const objectInfoRequestsForConnection = objectInfoRequests;
         const galleryResult = await evaluate(GALLERY_SCRIPT);
         const regenerateResult = await evaluate(REGENERATE_SCRIPT);
         const loraResult = await evaluate(LORA_SCRIPT);
@@ -1446,6 +1491,19 @@ async function main() {
                 && choicesResult.vaeLabelReadable === 'ae.safetensors'
                 && choicesResult.textEncoderLabelReadable === 'clip_l.safetensors'],
             ['サーバーに無い保存値は消さない', choicesResult.staleValueKept],
+            ['一覧取得で LoRA も object_info から一緒に取る', choicesResult.lorasFromObjectInfo],
+            ['取得した LoRA は生成経路のキャッシュにも入り、生成時の再取得を省く', choicesResult.loraCached],
+            ['LoRA 欄に取得件数が出る', choicesResult.loraStatusShown],
+            ['LoRA 1〜4 のプルダウンに一覧が並ぶ', choicesResult.loraSlotHasChoices],
+            ['接続確認ボタンの名称が「接続確認＆モデル一覧取得」', connectionResult.label === '接続確認＆モデル一覧取得'],
+            ['接続確認ボタンで接続OKが先に出る', /^接続OK/.test(connectionResult.connection)],
+            ['接続確認ボタンでモデル一覧も取得される',
+                /取得OK（モデル /.test(connectionResult.objectInfo)
+                && connectionResult.models.includes('illustrious_xl.safetensors')],
+            ['接続確認ボタンで LoRA も同じ一覧取得で取れる',
+                /LoRA 取得OK（3 件）/.test(connectionResult.lora)
+                && connectionResult.loraChoices.includes('extraFromObjectInfo.safetensors')],
+            ['接続確認で object_info は1回だけ取る', objectInfoRequestsForConnection === 1],
             ['ワークフローの追加・改名・複製・削除・UI形式拒否', choicesResult.crudOk],
             ['編集画面にプレースホルダ検出が出る', choicesResult.tokenDetected],
             ['挿絵の ◀▶ で古い画像 / 新しい画像へ切れる',
