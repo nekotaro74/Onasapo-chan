@@ -8216,6 +8216,7 @@ font-size: 1.142em !important;
                                     ※ 一覧は <code>GET {base}/models/loras</code> から取得します。既定はすべて「使わない」です。<br>
                                     ※ 同梱の Anima 用 ① は公式 Turbo LoRA をノードへ固定済みで、<b>アプリの LoRA 1〜4 は触りません</b>。② は rgthree の Power Lora Loader を使い、<b>選んだスロットだけ <code>on: true</code></b> にします（使わないスロットは <code>on: false</code> のまま送ります）。<br>
                                     ※ <code>%lora1%</code>〜<code>%lora4%</code> と <code>%lora_str1%</code>〜<code>%lora_str4%</code> は、ワークフローに書かれている場合だけ使います。<code>%lora_strN%</code> は <code>strength_model</code> と <code>strength_clip</code> の両方に同じ値を入れます。<br>
+                                    ※ 対応 LoRA は <b>4 個まで</b>です。さらに、そのワークフローが受け取れる数（<code>%loraN%</code> を参照する LoraLoader ノードの数、または rgthree の <code>lora_1</code>〜<code>lora_4</code> の数）を超える番号のスロットは<b>選べません</b>。LoRA ノードの無いワークフローでは 4 つとも無効になります。<br>
                                     ※ LoRA の選択と強度は <b>ワークフローごとに</b>覚えます。<code>%loraN%</code> の無いワークフローで「使わない」へ戻ったあと、<code>%loraN%</code> のあるワークフローへ戻すと、そのワークフローで最後に選んだ LoRA と強度が戻ります。未設定なら「使わない」のままです。<br>
                                     ※ アプリが管理するのは <code>%loraN%</code> を参照する LoraLoader ノードと rgthree の Power Lora Loader だけです。<b>固定のファイル名を書いた LoRA ノードには触りません</b>。<br>
                                     ※ <b>使うスロット</b>は、選んだファイル名と入力した強度をそのまま入れます。フォルダが空のときは送らず「LoRAを使うには ComfyUI の loras フォルダにファイルが必要です」と表示します。<br>
@@ -10871,6 +10872,27 @@ const dbUtils = {
                 });
             },
 
+            // このワークフローが実際に受け取る LoRA スロットの数（0〜4）。
+            // 標準 LoraLoader は %loraN% / %lora_strN% を参照するノードの数（applyLoraNodes は
+            // ノードIDの小さい順にスロット1,2,... を当てるため、受け取れる数＝ノード数）。
+            // rgthree の Power Lora Loader は inputs の lora_1〜lora_4 の存在数。
+            // 両方ある場合は大きい方（スロットはどちらからも受け取れる）。
+            // 0 は「このワークフローは LoRA を使わない」で、UI の選択もすべて無効にする。
+            loraSlotCapacity(nodeObject) {
+                const tokenNodeCount = Math.min(this.loraTokenNodeIds(nodeObject).length, this.LORA_SLOT_COUNT);
+                let capacity = tokenNodeCount;
+                Object.keys(nodeObject || {}).forEach(id => {
+                    const node = nodeObject[id];
+                    if (!node || !this.isRgthreeLoraLoaderClass(node.class_type)) return;
+                    for (let slotIndex = 0; slotIndex < this.LORA_SLOT_COUNT; slotIndex++) {
+                        if (node.inputs && Object.prototype.hasOwnProperty.call(node.inputs, 'lora_' + (slotIndex + 1))) {
+                            capacity = Math.max(capacity, slotIndex + 1);
+                        }
+                    }
+                });
+                return capacity;
+            },
+
             // LoRA 一覧を取りに行く価値があるワークフローか。こちらも差し込み前の JSON で見る
             hasLoraNodes(nodeObject) {
                 return Object.keys(nodeObject || {}).some(id => {
@@ -11289,10 +11311,15 @@ const dbUtils = {
             // %loraN% の無いワークフローへ切り替えるとスロットは「使わない」へ戻り、
             // %loraN% のあるワークフローへ戻したときは、そのワークフロー最後の値を復元する。
             // 記憶がまだ無いワークフローでは「使わない」のまま（他のワークフローの選択を持ち込まない）。
-            workflowHasLoraTokens(workflow) {
-                if (!workflow) return false;
-                return illustrationUtils.findPlaceholders(workflow.json)
-                    .some(token => /^lora[1-4]$/.test(token));
+            // このワークフローが受け取る LoRA スロットの数（0〜4）。
+            // %loraN% を参照する LoraLoader ノードの数と、rgthree の lora_1〜lora_4 の存在数から決める。
+            // 対応 LoRA は 4 個までなので、これより大きい番号のスロットは選ばせない。
+            // JSON が壊れているときは 4 を返して選択を奪わない（送信時に parseWorkflow で止まる）。
+            workflowLoraCapacity(workflow) {
+                if (!workflow) return 0;
+                const parsed = illustrationUtils.parseWorkflow(workflow.json);
+                if (!parsed.ok) return illustrationUtils.LORA_SLOT_COUNT;
+                return illustrationUtils.loraSlotCapacity(parsed.object);
             },
 
             // 保存済みのスロット配列を常に 4 個・正しい形へそろえる
@@ -11337,11 +11364,18 @@ const dbUtils = {
                 await dbUtils.saveSetting('comfyLoraMemory', store);
             },
 
+            // ワークフローが受け取れない番号のスロットを「使わない」へ落とす。
+            // 記憶そのものは 4 個分残すので、ワークフロー側でスロットを増やせば戻る。
+            clampSlotsToCapacity(slots, capacity) {
+                return this.normalizeLoraSlots(slots).map((slot, index) =>
+                    index < capacity ? slot : { name: '', strength: slot.strength });
+            },
+
             // 切り替え前のワークフローが LoRA 対応で、まだ記憶が無く、スロットに選択が残っているときだけ記憶する。
             // （この記憶機能より前に選ばれていた LoRA を、ワークフローを戻したときに失わないため）
             async snapshotLoraMemoryFor(workflowId) {
                 if (!workflowId) return;
-                if (!this.workflowHasLoraTokens(this.findWorkflow(workflowId))) return;
+                if (this.workflowLoraCapacity(this.findWorkflow(workflowId)) === 0) return;
                 if (this.getLoraMemory(workflowId)) return;
                 const slots = Array.isArray(state.settings.comfyLoras) ? state.settings.comfyLoras : [];
                 if (!slots.some(slot => slot && slot.name)) return;
@@ -11356,25 +11390,33 @@ const dbUtils = {
             },
 
             // 使用中のワークフローに合わせて LoRA 1〜4 の値を決める。
-            // %loraN% があればそのワークフローの記憶を復元し、無ければ全て「使わない」へ戻す。
+            // LoRA スロットがあればそのワークフローの記憶を復元し、無ければ全て「使わない」へ戻す。
+            // ワークフローが受け取れない番号のスロットは、記憶があっても「使わない」のままにする。
             async syncLoraSlotsWithActiveWorkflow() {
                 const active = illustrationUtils.activeWorkflow();
                 if (!active) return false;
-                const hasLoraToken = this.workflowHasLoraTokens(active);
-                const remembered = hasLoraToken ? this.getLoraMemory(active.id) : null;
-                const desired = remembered || buildDefaultComfyLoraSlots();
+                const capacity = this.workflowLoraCapacity(active);
+                const remembered = capacity > 0 ? this.getLoraMemory(active.id) : null;
+                const desired = this.clampSlotsToCapacity(remembered || buildDefaultComfyLoraSlots(), capacity);
                 const current = this.normalizeLoraSlots(state.settings.comfyLoras);
                 const unchanged = desired.every((slot, index) =>
                     slot.name === current[index].name && slot.strength === current[index].strength);
-                if (unchanged) return false;
+                if (unchanged) {
+                    // 選択が変わらなくても、ワークフローごとに使えるスロット数は変わるため描画は更新する
+                    this.renderLoraRows();
+                    return false;
+                }
                 state.settings.comfyLoras = desired;
                 await dbUtils.saveSetting('comfyLoras', state.settings.comfyLoras);
                 this.renderLoraRows();
                 if (elements.comfyLoraStatus) {
-                    elements.comfyLoraStatus.textContent = hasLoraToken
-                        ? (remembered ? 'このワークフローの前回の LoRA と強度を復元しました'
-                            : 'このワークフローの LoRA は未設定です（すべて「使わない」）')
-                        : 'このワークフローには %lora1%〜%lora4% が無いため、LoRA は全て「使わない」にしました';
+                    elements.comfyLoraStatus.textContent = capacity === 0
+                        ? 'このワークフローは LoRA ノードを持たないため、LoRA は全て「使わない」にしました'
+                        : (remembered ? 'このワークフローの前回の LoRA と強度を復元しました'
+                            : 'このワークフローの LoRA は未設定です（すべて「使わない」）');
+                    if (capacity > 0 && capacity < illustrationUtils.LORA_SLOT_COUNT) {
+                        elements.comfyLoraStatus.textContent += `（このワークフローは LoRA ${capacity} 個まで）`;
+                    }
                     elements.comfyLoraStatus.style.color = 'var(--text-secondary)';
                 }
                 return true;
@@ -11734,15 +11776,19 @@ const dbUtils = {
                     state.settings.comfyLoras = buildDefaultComfyLoraSlots();
                 }
                 const names = this.loraChoices || [];
+                // 対応 LoRA は 4 個まで。そのうえで、使用中のワークフローが受け取れる数より
+                // 大きい番号のスロットは選択できなくする（選んでも効かないため）
+                const capacity = this.workflowLoraCapacity(illustrationUtils.activeWorkflow());
                 container.innerHTML = '';
                 for (let slotIndex = 0; slotIndex < illustrationUtils.LORA_SLOT_COUNT; slotIndex++) {
                     const slot = illustrationUtils.loraSlotConfig(slotIndex);
+                    const usable = slotIndex < capacity;
                     const row = document.createElement('div');
                     row.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:6px;';
 
                     const label = document.createElement('span');
                     label.textContent = `LoRA ${slotIndex + 1}:`;
-                    label.style.cssText = 'font-size:12px; min-width:56px;';
+                    label.style.cssText = 'font-size:12px; min-width:56px;' + (usable ? '' : ' opacity:0.55;');
                     row.appendChild(label);
 
                     const select = document.createElement('select');
@@ -11765,6 +11811,7 @@ const dbUtils = {
                         select.appendChild(option);
                     }
                     select.value = slot.name || '';
+                    select.disabled = !usable;
                     select.addEventListener('change', () => this.setLoraSlot(slotIndex, { name: select.value }));
                     row.appendChild(select);
 
@@ -11781,11 +11828,21 @@ const dbUtils = {
                     strength.value = slot.strength;
                     strength.style.cssText = 'width:70px; margin-bottom:0;';
                     strength.setAttribute('aria-label', `LoRA ${slotIndex + 1} 強度`);
+                    strength.disabled = !usable;
                     strength.addEventListener('change', () => {
                         const value = Number(strength.value);
                         this.setLoraSlot(slotIndex, { strength: Number.isFinite(value) ? value : 1 });
                     });
                     row.appendChild(strength);
+
+                    if (!usable) {
+                        const reason = document.createElement('span');
+                        reason.textContent = capacity === 0
+                            ? 'このワークフローは LoRA を使いません'
+                            : `このワークフローは LoRA ${capacity} 個まで`;
+                        reason.style.cssText = 'font-size:11px; color: var(--text-secondary);';
+                        row.appendChild(reason);
+                    }
 
                     container.appendChild(row);
                 }
@@ -11798,15 +11855,18 @@ const dbUtils = {
             },
 
             async setLoraSlot(index, patch) {
+                const active = illustrationUtils.activeWorkflow();
+                const capacity = this.workflowLoraCapacity(active);
+                // ワークフローが受け取れない番号のスロットは変更しない（UI でも無効にしている）
+                if (active && index >= capacity) return;
                 if (!Array.isArray(state.settings.comfyLoras)) {
                     state.settings.comfyLoras = buildDefaultComfyLoraSlots();
                 }
                 const slot = state.settings.comfyLoras[index] || { name: '', strength: 1 };
                 state.settings.comfyLoras[index] = Object.assign({}, slot, patch);
                 await dbUtils.saveSetting('comfyLoras', state.settings.comfyLoras);
-                // %lora1%〜%lora4% を持つワークフローでは、選んだ値をそのワークフローの記憶としても残す
-                const active = illustrationUtils.activeWorkflow();
-                if (active && this.workflowHasLoraTokens(active)) {
+                // LoRA スロットを持つワークフローでは、選んだ値をそのワークフローの記憶としても残す
+                if (active && capacity > 0) {
                     await this.setLoraMemory(active.id, state.settings.comfyLoras);
                 }
             },

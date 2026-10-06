@@ -522,6 +522,58 @@ const jsonResponse = (body, status) => ({
         && rgthreeAllOff.object['50'].inputs.lora_2.on === false,
         JSON.stringify(rgthreeAllOff.object['50'].inputs));
 
+    // ── 受け取れる LoRA スロット数（対応は 4 個まで）───────────────
+    // 標準 LoraLoader は %loraN% を参照するノードの数、rgthree は lora_1〜lora_4 の存在数で決める
+    const tokenLoraWf = (numbers) => {
+        const wf = {
+            '44': { class_type: 'UNETLoader', inputs: { unet_name: 'anima.safetensors' } },
+            '45': { class_type: 'CLIPLoader', inputs: { clip_name: 'gemma_2b.safetensors' } },
+            '9': { class_type: 'SaveImage', inputs: { images: null } },
+        };
+        numbers.forEach((n, i) => {
+            wf[String(50 + i)] = {
+                class_type: 'LoraLoader',
+                inputs: {
+                    model: ['44', 0], clip: ['45', 0],
+                    lora_name: `%lora${n}%`,
+                    strength_model: `%lora_str${n}%`,
+                    strength_clip: `%lora_str${n}%`,
+                },
+            };
+        });
+        return wf;
+    };
+    check('%lora1% と %lora_str1% だけなら受け取れるのは1スロット',
+        illustrationUtils.loraSlotCapacity(tokenLoraWf([1])), 1);
+    check('%lora1% と %lora2% を別ノードに書いてあれば2スロット',
+        illustrationUtils.loraSlotCapacity(tokenLoraWf([1, 2])), 2);
+    check('%lora1%〜%lora4% を1ノードに書いても差し込むのは1スロットぶん',
+        illustrationUtils.loraSlotCapacity({
+            '50': {
+                class_type: 'LoraLoader',
+                inputs: {
+                    model: ['44', 0], clip: ['45', 0],
+                    lora_name: '%lora1%', strength_model: '%lora_str1%', strength_clip: '%lora_str1%',
+                    note: '%lora2% %lora3% %lora4%',
+                },
+            },
+        }), 1);
+    check('rgthree のスロットが2個なら2スロット受け取れる',
+        illustrationUtils.loraSlotCapacity(rgthreeWf()), 2);
+    const rgthreeFour = rgthreeWf();
+    rgthreeFour['50'].inputs.lora_3 = { on: false, lora: '%lora3%', strength: '%lora_str3%' };
+    rgthreeFour['50'].inputs.lora_4 = { on: false, lora: '%lora4%', strength: '%lora_str4%' };
+    check('rgthree のスロットが4個なら4スロット受け取れる',
+        illustrationUtils.loraSlotCapacity(rgthreeFour), 4);
+    const rgthreeFive = rgthreeFour;
+    rgthreeFive['50'].inputs.lora_5 = { on: true, lora: 'fixed_always.safetensors', strength: 0.9 };
+    check('rgthree のスロットが5個あっても対応は4個まで',
+        illustrationUtils.loraSlotCapacity(rgthreeFive), 4);
+    check('固定名の LoraLoader だけなら0スロット',
+        illustrationUtils.loraSlotCapacity(fixedLoraWf()), 0);
+    check('LoRA ノードの無いワークフローは0スロット',
+        illustrationUtils.loraSlotCapacity({ '44': { class_type: 'UNETLoader', inputs: {} } }), 0);
+
     console.log('passed: ' + passed + ', failed: ' + failures.length);
     if (failures.length) {
         console.log('\n' + failures.join('\n\n'));

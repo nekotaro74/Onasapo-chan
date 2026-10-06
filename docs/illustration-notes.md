@@ -171,6 +171,11 @@ API キー・モデル名は呼び出し側で渡す（`state.settings.apiProvid
 | 使わない / フォルダ空 | そのノードだけ削除し、`model` / `clip` を受け先へ直結 |
 | 一覧取得失敗 | ノードに書かれた値のまま送る（生成は止めない） |
 
+**受け取れるスロット数**は `loraSlotCapacity` が決める。`%loraN%` を参照する LoraLoader ノードの数と、
+rgthree の `lora_1`〜`lora_4` の存在数の大きい方（4 上限）。対応 LoRA は 4 個までで、UI はこれより大きい番号の
+スロットを無効にし、`setLoraSlot` も受け付けない（選んでも効かないため）。ワークフローごとの記憶は 4 個分残るので、
+ワークフロー側でスロットを増やせば戻る。
+
 `%loraN%` / `%lora_strN%` は `buildTokenValues` で常に値を用意するので未対応トークンエラーにはならず、
 LoraLoader ノードには後段の `applyLoraNodes` が実際の値を上書きする。
 一覧は生成時に `GET /models/loras`（無ければ `/loras`）を取り、5分キャッシュする。

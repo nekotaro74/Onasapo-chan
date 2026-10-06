@@ -1185,6 +1185,28 @@ const LORA_SCRIPT = `(async () => {
     const rgthreePrompt = await runOnce();
     const rgthreeNode = rgthreePrompt && rgthreePrompt['50'] ? rgthreePrompt['50'].inputs : null;
 
+    // 7) 受け取れる数より大きいスロットは選ばせない（loraWorkflow は %lora1% のみ = 1スロット）
+    useWorkflow(JSON.parse(JSON.stringify(loraWorkflow)));
+    state.settings.comfyLoras = [{ name: '', strength: 1 }, { name: '', strength: 1 }, { name: '', strength: 1 }, { name: '', strength: 1 }];
+    const oneTokenCapacity = comfyWorkflowUtils.workflowLoraCapacity(illustrationUtils.activeWorkflow());
+    comfyWorkflowUtils.renderLoraRows();
+    const oneTokenDisabled = Array.from(elements.comfyLoraRows.children)
+        .filter(row => row.tagName === 'DIV')
+        .map(row => { const select = row.querySelector('select'); return select ? select.disabled : null; });
+    await comfyWorkflowUtils.setLoraSlot(1, { name: 'inkSketch.safetensors' });
+    const blockedSlotName = state.settings.comfyLoras[1].name;
+    await comfyWorkflowUtils.setLoraSlot(0, { name: 'inkSketch.safetensors' });
+    const allowedSlotName = state.settings.comfyLoras[0].name;
+
+    // 8) 同梱の規定①は LoRA ノードが固定名なので、4スロットとも無効になる
+    state.settings.comfyWorkflows = buildDefaultComfyWorkflows();
+    state.settings.comfyActiveWorkflowId = state.settings.comfyWorkflows[0].id;
+    const turboCapacity = comfyWorkflowUtils.workflowLoraCapacity(illustrationUtils.activeWorkflow());
+    comfyWorkflowUtils.renderLoraRows();
+    const turboDisabled = Array.from(elements.comfyLoraRows.children)
+        .filter(row => row.tagName === 'DIV')
+        .map(row => { const select = row.querySelector('select'); return select ? select.disabled : null; });
+
     return {
         usedNode: usedNode,
         unusedNode: unusedNode,
@@ -1202,6 +1224,12 @@ const LORA_SCRIPT = `(async () => {
         rgthreeChosenName: rgthreeNode ? rgthreeNode.lora_1.lora : null,
         rgthreeChosenStrength: rgthreeNode ? rgthreeNode.lora_1.strength : null,
         rgthreeUnusedOn: rgthreeNode ? rgthreeNode.lora_2.on : null,
+        oneTokenCapacity: oneTokenCapacity,
+        oneTokenDisabled: oneTokenDisabled,
+        blockedSlotName: blockedSlotName,
+        allowedSlotName: allowedSlotName,
+        turboCapacity: turboCapacity,
+        turboDisabled: turboDisabled,
         defaultWorkflowError: (state.currentMessages[1].illustration && state.currentMessages[1].illustration.error) || null,
     };
 })()`;
@@ -1545,6 +1573,14 @@ async function main() {
                 && loraResult.rgthreeChosenName === 'two.safetensors'
                 && loraResult.rgthreeChosenStrength === 0.5
                 && loraResult.rgthreeUnusedOn === false],
+            ['%lora1% だけのワークフローは受け取れる LoRA が1個', loraResult.oneTokenCapacity === 1],
+            ['%lora1% だけのワークフローでは LoRA2〜4 の選択欄が無効',
+                JSON.stringify(loraResult.oneTokenDisabled) === JSON.stringify([false, true, true, true])],
+            ['無効なスロットは setLoraSlot でも選ばれない', loraResult.blockedSlotName === ''],
+            ['有効なスロットはそのまま選べる', loraResult.allowedSlotName === 'inkSketch.safetensors'],
+            ['同梱の規定①は LoRA スロット0個で4つとも無効',
+                loraResult.turboCapacity === 0
+                && JSON.stringify(loraResult.turboDisabled) === JSON.stringify([true, true, true, true])],
 
             ['開き直後に設定が復元される', reloadResult.settingsRestored && reloadResult.templateRestored],
             ['開き直後に保存済み挿絵が履歴へ表示される',
@@ -1569,6 +1605,12 @@ async function main() {
                 rgthreeChosenOn: loraResult.rgthreeChosenOn,
                 rgthreeChosenName: loraResult.rgthreeChosenName,
                 rgthreeUnusedOn: loraResult.rgthreeUnusedOn,
+                oneTokenCapacity: loraResult.oneTokenCapacity,
+                oneTokenDisabled: loraResult.oneTokenDisabled,
+                blockedSlotName: loraResult.blockedSlotName,
+                allowedSlotName: loraResult.allowedSlotName,
+                turboCapacity: loraResult.turboCapacity,
+                turboDisabled: loraResult.turboDisabled,
                 defaultWorkflowError: loraResult.defaultWorkflowError,
             },
             regenerateError: regenerateResult.error,
