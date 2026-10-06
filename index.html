@@ -7853,8 +7853,10 @@ font-size: 1.142em !important;
                         </label>
                         <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 15px;">
                             ※ クラウドLLMの応答受信が完了した直後に、直近のシーンに合う挿絵を ComfyUI で生成します。<br>
-                            ※ ComfyUI はブラウザから直接叩くため、<code>--enable-cors-header</code> を付けて起動する必要があります。<br>
-                            ※ ローカル起動（<code>__winlocal.bat</code>）での動作確認を推奨します。GitHub Pages 上の公開オリジンからは、利用者自身のローカルや Tailscale の ComfyUI に届かない場合があります。
+                            ※ ComfyUI の起動オプション：<code>--listen 127.0.0.1,{Tailscale IP} --enable-cors-header</code>（<code>{Tailscale IP}</code> は自宅PCの Tailscale IP）。全インターフェースではなく、このPCと Tailscale 側だけに開く指定です。ComfyUI に認証は無いため、ルーターで 8188 をインターネットへ転送しないでください。<br>
+                            ※ base URL は、PCだけで使うなら <code>http://127.0.0.1:8188</code>、スマホや別PCから Tailscale 経由で使うなら <code>http://{Tailscale IP}:8188</code>。<br>
+                            ※ Chrome 系では、公開ページからローカルアドレスへ接続するとき「ローカルネットワークへの接続」の許可が出ます。許可しないと接続確認は失敗します。<br>
+                            ※ 手順の正本は <code>docs/挿絵生成と読み上げの導入手引き.md</code>（README 冒頭からもリンク）。ローカル起動（<code>__winlocal.bat</code>）でも同じ手順です。
                         </p>
                         <label for="illustration-mode-select">生成タイミング:</label>
                         <select id="illustration-mode-select" aria-label="挿絵の生成タイミング">
@@ -8114,11 +8116,14 @@ font-size: 1.142em !important;
                             ※ 応答全文の受信完了を待たず、<b>確定した段落</b>から順に TTS へ送ります（段落は空行区切り。空行が無い応答では改行区切り）。<br>
                             ※ 再生はキューで順に鳴らし、重ねません。<b>停止</b>は未送信分も含めて破棄します。<br>
                             ※ 読み上げはブラウザから直接叩くため、サーバー側で CORS が許可されている必要があります。<br>
-                            ※ APIキーはこのアプリの IndexedDB にだけ保存し、ファイル書き出しやコミットには出しません。
+                            ※ Irodori TTS Server フォルダ直下の <code>.env</code> の「# Server」最終行に <code>IRODORI_CORS_ORIGINS=["http://localhost:8072","http://127.0.0.1:8072","http://{Tailscale IP}:8072","https://nekotaro74.github.io"]</code> を追加し、Irodori を再起動します（<code>{Tailscale IP}</code> は自宅PCの Tailscale IP）。<br>
+                            ※ エンドポイントは、PCだけで使うなら <code>http://127.0.0.1:8088/v1</code>、スマホや別PCから Tailscale 経由で使うなら <code>http://{Tailscale IP}:8088/v1</code>。APIキーは通常不要で、空なら <code>Authorization</code> を送りません。<br>
+                            ※ Chrome 系では、公開ページからローカルアドレスへ接続するとき「ローカルネットワークへの接続」の許可が出ます。許可しないと接続確認は失敗します。<br>
+                            ※ 手順の正本は <code>docs/挿絵生成と読み上げの導入手引き.md</code>（README 冒頭からもリンク）。APIキーはこのアプリの IndexedDB にだけ保存し、ファイル書き出しやコミットには出しません。
                         </p>
                         <label for="tts-endpoint" style="margin-top: 15px;">OpenAI Compatible エンドポイント:</label>
                         <input type="text" id="tts-endpoint"
-                            placeholder="例：http://127.0.0.1:8088/v1/audio/speech または http://{TailscaleのURL}:8088/v1/audio/speech"
+                            placeholder="例：PCだけで使うなら http://127.0.0.1:8088/v1 ／ Tailscale 経由なら http://{Tailscale IP}:8088/v1"
                             aria-label="OpenAI Compatible エンドポイント">
                         <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
                             ※ 末尾に <code>/audio/speech</code> が無ければ自動で足します。末尾スラッシュは除去します。

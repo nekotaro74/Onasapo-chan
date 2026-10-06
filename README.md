@@ -24,36 +24,9 @@
 
 挿絵生成（ComfyUI）と読み上げ（TTS サーバー）は、**利用者自身のマシンでサーバーを起動していること**が前提です。GitHub Pages 上のこのアプリ（https オリジン）から、利用者のローカル・LAN・Tailscale にあるサーバーへブラウザが直接接続します。中継サーバーは使いません。
 
-必要な設定は次の 2 つだけです。
+**手順の正本は [docs/挿絵生成と読み上げの導入手引き.md](docs/挿絵生成と読み上げの導入手引き.md) です。** ComfyUI の起動オプション、Irodori TTS Server の `.env` の設定、ComfyUI base URL と TTS エンドポイントの書き分け、ブラウザの許可まで、すべてこのファイルに書いています。手順を変えるときは正本を先に直し、README のこの案内文と PWA 内の短文も同じ変更に含めてください。
 
-1. **サーバー側で CORS を開き、要求が届くアドレスで待受させる**
-   - ComfyUI：`--enable-cors-header` に加えて **`--listen`（Listen Address）が必要**です。既定の ComfyUI は `127.0.0.1` 専用で待受しているため、Tailscale や LAN のアドレスを指定してもパケットが届きません（`--enable-cors-header` だけでは接続できないことを、外出先スマホ + Tailscale で実測しました）。
-     - Portable 版：Settings → Server-Config → Enable CORS header に `*`、Listen Address に待受させたい IP。
-     - **推奨は Tailscale の IP だけ**を指定する形です（例 `--listen 100.x.x.x`）。`--listen` 単独は `0.0.0.0`（全インターフェース）になり、同じネットワーク上の誰でも叩ける状態になります。
-   - TTS サーバー（Irodori-TTS-Server）：`.env` に `IRODORI_CORS_ORIGINS` を追記し、**本アプリのオリジン `https://nekotaro74.github.io` を含めてください**（パスと末尾スラッシュなし）。
-     例：`IRODORI_CORS_ORIGINS=["http://localhost:8072","http://127.0.0.1:8072","http://100.x.x.x:8072","https://nekotaro74.github.io"]`
-     他の OpenAI 互換 TTS サーバーでは、サーバー側で同様の CORS 許可を設定してください。
-2. **ブラウザの「ローカルネットワークへの許可」を認める**
-   - Chrome 142 以降（Edge・Brave など Chromium 系も同様）では、公開サイトが `127.0.0.1` や LAN アドレスへ接続する際に「**このサイトはローカルネットワーク上のデバイスを検索・接続しようとしています**」というダイアログが出ます。**許可**を押すと以降つながります。
-   - 取り消し・再設定は `chrome://settings/content/localNetworkAccess` から行えます。Firefox にも同種の許可プロンプトがあります。
-   - 拒否すると要求は単に失敗します（このアプリでは接続確認の結果として表示されます）。
-
-https のページから `http://127.0.0.1:8188` への要求は mixed content としてブロックされません（ループバックおよびプライベートアドレスは例外扱い）。`sw.js` はローカル宛の要求を横取りしません。許可ダイアログの表示を妨げないためです。
-
-### LAN が使えない環境向け
-
-- **Tailscale**：別マシンやスマホからも同じ設定で使えます（`http://100.x.x.x:8188`）。`100.64.0.0/10` は「ローカル」扱いなので許可ダイアログは出ます。
-- **Cloudflare Tunnel**（`cloudflared tunnel --url http://localhost:8188`）：ComfyUI が https の公開 URL になるため、ローカルネットワークの許可も mixed content も関係なくなります。ただし **ComfyUI 自体には認証がありません**。Cloudflare Access やワンタイム PIN などで必ずアクセスを制限してください。
-
-⚠️⚠️⚠️⚠️⚠️ `--enable-cors-header` を付けた ComfyUI は、CORS の観点では**誰でも叩ける状態**になります。ComfyUI には認証がなく、ワークフローの実行とファイル書き出しが可能です。`--listen` で LAN 公開する場合は特に、信頼できるネットワークに限定してください。
-
-### 実測記録（2026-10-06）
-
-外出先のスマホ（Tailscale 経由）から、GitHub Pages 上の本アプリで動作を確認しました。
-
-- **挿絵生成**：ComfyUI base URL に `http://{Tailscale IP}:8188` を指定。`--enable-cors-header` のみでは接続できず、**`--listen --enable-cors-header`** で接続・生成に成功しました（既定の待受先が `127.0.0.1` のため）。
-- **読み上げ**：Irodori-TTS-Server の `.env` に `IRODORI_CORS_ORIGINS`（`https://nekotaro74.github.io` を含む）を設定したうえで、TTS エンドポイント `http://{Tailscale IP}:8088/v1/audio/speech` で接続確認・読み上げに成功しました。
-- https のページから `http://100.x.x.x:8088` のようなプライベートアドレスへの要求が、mixed content としてブロックされないこともあわせて確認できました。
+⚠️⚠️⚠️⚠️⚠️ ComfyUI には認証がありません。`--enable-cors-header` を付けた ComfyUI を外向きに開く設定（ルーターでポートをインターネットへ転送するなど）は避けてください。
 
 ---
 
@@ -96,11 +69,8 @@ history 完了の各時刻（起動からのミリ秒）を出すので、待ち
 設定は「設定 → 挿絵生成（ComfyUI）」にあります。生成タイミングは自動 / 手動で切り替えられ、
 入力欄付近のボタン（`絵:自動` / `絵:手動` と `絵`）からも操作できます。
 
-- ⚠️⚠️⚠️⚠️⚠️ ComfyUI はブラウザから直接叩くため、**`--enable-cors-header` を付けて起動する必要があります**。
-  Portable 版は Settings → Server-Config → Enable CORS header に `*` を入れて再起動してください。
-  Tailscale や LAN のアドレスで使うには **`--listen`（Listen Address）も必要**です（既定は `127.0.0.1` だけで待受しているため、CORS を開いてもパケットが届きません）。
-- ComfyUI base URL は末尾スラッシュを正規化します。Tailscale 経由（例: `http://100.x.x.x:8188`）も同じ欄で使えます。
-  GitHub Pages の公開オリジンから利用者自身のローカル・LAN・Tailscale の ComfyUI へ接続するには、**ブラウザのローカルネットワークへの許可**が必要です（下記「GitHub Pages で使うためのセットアップ」）。許可を出さない場合はローカル起動（`__winlocal.bat`）での動作確認を推奨します。
+- ⚠️⚠️⚠️⚠️⚠️ ComfyUI はブラウザから直接叩くため、**`--enable-cors-header` を付けて起動する必要があります**。起動オプション（`--listen` 付き）と Tailscale 用の設定は、正本である [docs/挿絵生成と読み上げの導入手引き.md](docs/挿絵生成と読み上げの導入手引き.md) をご覧ください。
+- ComfyUI base URL は末尾スラッシュを正規化します。PCだけで使うなら `http://127.0.0.1:8188`、スマホや別PCから Tailscale 経由で使うなら `http://{Tailscale IP}:8188` です。GitHub Pages の公開オリジンから接続するには、**ブラウザのローカルネットワークへの許可**が必要です。許可を出さない場合はローカル起動（`__winlocal.bat`）での動作確認を推奨します。
 - 貼り付けるのは **API 形式**のワークフロー JSON です。UI 形式（`nodes` / `links` を持つ形式）は理由付きで拒否します。
 - ワークフローは**複数登録**できます。一覧で「使用中」を切り替え、追加・改名・複製・削除、JSON の書き出し・読み込みができます。
   旧バージョンで 1 件だけ保存していたワークフローは、起動時に「移行されたワークフロー」として自動登録されます。
@@ -241,6 +211,8 @@ SillyTavern の TTS 拡張の操作を模倣した読み上げ。**プロバイ�
 
 ブラウザから直接叩くため、サーバー側で CORS が許可されている必要があります。届かなかった場合は挿絵生成と同じ形式で対処法を案内します（手動で押した場合はダイアログ、自動のときは設定欄の状態表示）。
 
+Irodori TTS Server での `IRODORI_CORS_ORIGINS` の設定と、PC用 / Tailscale 用のエンドポイントの書き分けは、正本である [docs/挿絵生成と読み上げの導入手引き.md](docs/挿絵生成と読み上げの導入手引き.md) をご覧ください。
+
 実装メモ: [docs/tts-notes.md](docs/tts-notes.md)
 
 ### 校正機能
@@ -358,6 +330,7 @@ kinkan04 氏の PWA（<https://github.com/kinkan04/Gemini-PWA-Mk-II>）の校正
 - **DeepSeek を刷新しました。** 既定エンドポイントを独自の中継サーバーから `https://api.deepseek.com` への直接接続へ変更しました（DeepSeek API 側のブラウザ CORS 対応を実測で確認済み。中継サーバーは不要になっています）。モデル一覧を現行の `deepseek-flash` / `deepseek-v4-pro` へ更新し、廃止済みの `deepseek-chat` / `deepseek-reasoner` / `deepseek-v4-flash` は「廃止済み」欄へまとめました。設定の「思考プロセス」に **Thinking Mode** と **Reasoning Effort**（`low` / `high` / `max`）を追加し、`thinking` と `reasoning_effort` を送信するようにしました。
 - **Service Worker がローカル・LAN・Tailscale 宛の要求を横取りしないよう変更しました**（`sw.js`）。Chrome 142 以降の Local Network Access 許可ダイアログは Service Worker 経由のリクエストでは表示されないため、ブラウザ本体にページ文脈で処理させます。これに伴い、GitHub Pages から挿絵生成・読み上げを使うための手順を README に新設しました。
 - 外出先スマホ + Tailscale での実測結果を反映しました。ComfyUI は `--enable-cors-header` だけでは待受先が `127.0.0.1` のため届かず、`--listen`（できれば Tailscale IP のみ）が必要である旨を追記しています。Irodori-TTS-Server の `IRODORI_CORS_ORIGINS` に本アプリのオリジンを含める具体例と、実測記録も追加しました。
+- **挿絵生成と読み上げの導入手引きを [docs/挿絵生成と読み上げの導入手引き.md](docs/挿絵生成と読み上げの導入手引き.md) として正本化しました。** README の長い手順は本引きへの案内に差し替え、PWA の「挿絵生成（ComfyUI）」と「読み上げ（TTS）」の折りたたみ内には同じ手順の短文を置いてあります。手順を変えるときは正本を先に直し、README と PWA 内の短文も同じ変更に含めます。
 - 設定画面の「接続先 ComfyUI の環境」を「モデル選択と生成パラメータ」へ改名し、従来の「生成パラメータ」折りたたみをその中へ統合しました（LoRA の上に表示されます。保存処理は変更していません）。
 - 画面・README・Service Worker・マニフェストに残っていた上流リポジトリ（geminipwa）の名前と URL を、本リポジトリ <https://github.com/nekotaro74/Onasapo-chan> / <https://nekotaro74.github.io/Onasapo-chan/> のものへ変更しました。アプリ表示名を「Onasapo-chan」に変更し、Service Worker のキャッシュ名を `onasapo-chan-cache-v4` へ更新（「アプリを更新 (キャッシュクリア)」でこのリポジトリの Service Worker が再取得されます）。バージョン表記を `0.26ti (627b3)` → `0.27on (Onasapo-chan)` へ進めました。
 
