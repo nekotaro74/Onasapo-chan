@@ -326,10 +326,17 @@ kinkan04 氏の PWA（<https://github.com/kinkan04/Gemini-PWA-Mk-II>）の校正
 
 - ⚠️ PWA で DeepSeek の API を利用できるようアップデートいたしました。本機能は試験的な実装です。デバッグは便宜的な水準にとどまっており、完璧な動作を保証するものではありません。不具合が生じた場合、予告なく当該機能全体を除去する可能性もございます。
 - ⚠️ DeepSeek API はインターネットから情報を取得する機能を提供していません。API 経由での画像やファイルの直接解析も非対応です。
-- 現在のモデル名は `deepseek-flash`（DeepSeek-V4.1-Flash）と `deepseek-v4-pro` です。旧 `deepseek-chat` / `deepseek-reasoner` は 2026-07-24 に廃止され、現在は使用できません（設定のモデル一覧では「廃止済み」欄に分けてあります）。
+- 2026-10-07 時点の現行 model id は `deepseek-flash`（DeepSeek-V4.1-Flash）と `deepseek-v4-pro` です。設定のモデル一覧は **model id をそのまま表示**しており、DeepSeek 側で世代交代しても PWA の書き換えは不要です。`deepseek-v4-flash` は世代廃止で、DeepSeek が現行モデルへ転送します。旧 `deepseek-chat` / `deepseek-reasoner` は 2026-07-24 に廃止され、現在は使用できません（一覧では「世代廃止」「廃止済み」の欄に分けてあります）。
 - **API エンドポイントの既定は `https://api.deepseek.com` への直接接続です。** DeepSeek API はブラウザからのクロスオリジン要求（CORS）に対応しているため、中継サーバーは不要になりました（従来既定だった独自中継 URL は削除しています）。プロキシや互換 API を使う場合のみ「API エンドポイントURL」を入力してください。
 - **Thinking Mode と Reasoning Effort を設定画面に追加しました。**「思考プロセス」で Thinking を切り替え、effort は `low` / `high` / `max` から選びます（公式の既定は Thinking 有効・`high`）。Thinking をオフにした場合は `reasoning_effort` を送らず `thinking: {"type": "disabled"}` のみを送ります。思考内容は `reasoning_content` で返り、Include Thoughts をオンにすると表示します。
-- サポートされていないパラメータ：`temperature`、`presence_penalty`、`frequency_penalty`、`logprobs`、`top_logprobs`。`temperature` ほか 3 つは設定してもエラーにはなりませんが効果はありません。`top_p` は Thinking 有効時 0.95〜1.0 の範囲に clamped、Thinking オフ時は 1.0 に固定され値は無視されます。`logprobs` を設定すると `top_logprobs` に関するエラーとなります。文字送りの速度を制御する専用のパラメータは提供されていません。
+- **パラメータが効くかどうかは Thinking の ON / OFF で変わります（2026-10-07 時点の公式 API。設定画面にも同じ注釈を置いてあります）。**
+  - `max_tokens` … ON・OFF どちらでも効きます。
+  - `temperature` … **Thinking OFF のときだけ効きます**。Thinking ON ではエラーにはなりませんが効果はありません。
+  - `top_p` … **Thinking ON のときだけ効きます**。有効範囲は 0.95〜1.0 で、0.95 未満は 0.95 として扱われます。Thinking OFF では 1.0 に固定され値は無視されます。
+  - `presence_penalty` / `frequency_penalty` … ON・OFF どちらでも効果はありません（公式に廃止済み扱い）。
+  - `logprobs` … 設定すると `top_logprobs` に関するエラーになります。
+  - 文字送りの速度を制御する専用のパラメータは提供されていません。
+  - 「API エンドポイントURL」で**互換 API を指定したときは上記が当てはまりません**。接続先の仕様に従います。
 - ※ DeepSeek が提供する API はすべて有料です。
 ## ■ 更新履歴
 ### 2026-10-06（バージョン 0.27on (Onasapo-chan)）

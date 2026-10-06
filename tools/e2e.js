@@ -596,6 +596,27 @@ const CONNECTION_BUTTON_SCRIPT = `(async () => {
     };
 })()`;
 
+// DeepSeek: モデル欄は model id をそのまま表示し、パラメータの効きが条件付きだと注釈に書く
+const DEEPSEEK_UI_SCRIPT = `(() => {
+    const select = elements.deepSeekModelNameSelect;
+    const options = Array.from(select.options).filter(option => option.value);
+    const groups = Array.from(select.querySelectorAll('optgroup')).map(group => group.label);
+    const currentIds = options
+        .filter(option => option.parentElement && option.parentElement.label === '現行')
+        .map(option => option.value).join(',');
+    const note = document.querySelector('#settings-group-deepseek-other-params p');
+    const noteText = note ? note.textContent : '';
+    return {
+        labelsMatchValues: options.length > 0 && options.every(option => option.textContent.trim() === option.value),
+        currentIds: currentIds === 'deepseek-flash,deepseek-v4-pro',
+        retiredSplit: groups.some(label => /世代廃止/.test(label)) && groups.some(label => /廃止済み/.test(label)),
+        datedNote: /2026-10-07/.test(noteText),
+        temperatureConditional: /temperature.*Thinking OFF のときだけ効きます/s.test(noteText),
+        topPConditional: /top_p.*Thinking ON のときだけ効きます/s.test(noteText),
+        penaltiesIneffective: /presence_penalty.*効果はありません/s.test(noteText),
+    };
+})()`;
+
 // 複数枚の表示・削除・全画面・プロンプト編集・書き出し名
 const GALLERY_SCRIPT = `(async () => {
     state.settings.illustrationEnabled = true;
@@ -1387,6 +1408,7 @@ async function main() {
         objectInfoRequests = 0;
         const connectionResult = await evaluate(CONNECTION_BUTTON_SCRIPT);
         const objectInfoRequestsForConnection = objectInfoRequests;
+        const deepSeekUiResult = await evaluate(DEEPSEEK_UI_SCRIPT);
         const galleryResult = await evaluate(GALLERY_SCRIPT);
         const regenerateResult = await evaluate(REGENERATE_SCRIPT);
         const loraResult = await evaluate(LORA_SCRIPT);
@@ -1504,6 +1526,13 @@ async function main() {
                 /LoRA 取得OK（3 件）/.test(connectionResult.lora)
                 && connectionResult.loraChoices.includes('extraFromObjectInfo.safetensors')],
             ['接続確認で object_info は1回だけ取る', objectInfoRequestsForConnection === 1],
+            ['DeepSeek モデル欄は model id をそのまま表示する', deepSeekUiResult.labelsMatchValues],
+            ['DeepSeek の現行候補は deepseek-flash と deepseek-v4-pro', deepSeekUiResult.currentIds],
+            ['DeepSeek は世代廃止と廃止済み欄を分ける', deepSeekUiResult.retiredSplit],
+            ['DeepSeek のパラメータ注釈に時点の日付がある', deepSeekUiResult.datedNote],
+            ['temperature は Thinking OFF でだけ効くと注釈している', deepSeekUiResult.temperatureConditional],
+            ['top_p は Thinking ON でだけ効くと注釈している', deepSeekUiResult.topPConditional],
+            ['penalty 系はどちらでも効果なしと注釈している', deepSeekUiResult.penaltiesIneffective],
             ['ワークフローの追加・改名・複製・削除・UI形式拒否', choicesResult.crudOk],
             ['編集画面にプレースホルダ検出が出る', choicesResult.tokenDetected],
             ['挿絵の ◀▶ で古い画像 / 新しい画像へ切れる',

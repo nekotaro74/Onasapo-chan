@@ -5615,16 +5615,23 @@ font-size: 1.142em !important;
                   label="ユーザー指定"
                   id="deepseek-user-defined-models-group"
                 ></optgroup>
+                            <!-- 表示は model id そのまま。DeepSeek 側の世代交代で PWA の書き換えが要らないようにする -->
                             <optgroup label="現行">
-  <option value="deepseek-flash">DeepSeek Flash (V4.1)</option>
-  <option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
+  <option value="deepseek-flash">deepseek-flash</option>
+  <option value="deepseek-v4-pro">deepseek-v4-pro</option>
 </optgroup>
-<optgroup label="廃止済み（2026-07-24 以降 使用不可）">
+<optgroup label="世代廃止（DeepSeek が現行モデルへ転送する）">
                                 <option value="deepseek-v4-flash">deepseek-v4-flash</option>
+                            </optgroup>
+<optgroup label="廃止済み（選んでもエラーになります）">
                                 <option value="deepseek-chat">deepseek-chat</option>
                                 <option value="deepseek-reasoner">deepseek-reasoner</option>
                             </optgroup>
               </select>
+                        <p style="font-size: 11px; color: var(--text-secondary); margin-top: 5px; margin-bottom: 10px;">
+                            ※ 表示は DeepSeek が受け付ける <b>model id そのまま</b>です（2026-10-07 時点）。DeepSeek 側の世代交代でこの欄を書き換える必要はありません。<br>
+                            ※ 「世代廃止」の id は DeepSeek が現行モデルへ転送します。「廃止済み」の id は選んでもエラーになります。
+                        </p>
                         <details style="margin-top: 10px;">
     <summary style="font-size: 14px; color: var(--text-link); cursor: pointer; list-style: revert;">追加モデル (カンマ区切り)</summary>
     <textarea id="deepseek-additional-models" placeholder="例: custom-model-1,custom-model-2" aria-label="追加モデル" style="margin-top: 5px;"></textarea>
@@ -6096,7 +6103,7 @@ font-size: 1.142em !important;
                                 </label>
                                 <p
                                     style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
-                                    ※ 公式の既定は Thinking 有効・effort high です。Thinking をオフにすると effort は送らず、<code>top_p</code> は 1.0 に固定されます（Thinking 有効時は 0.95 未満に clamped）。<br>
+                                    ※ <b>2026-10-07 時点</b>の公式の既定は Thinking 有効・effort high です。Thinking をオフにすると effort は送らず、<code>temperature</code> が効くようになります（<code>top_p</code> は 1.0 固定で値は無視）。Thinking 有効時は effort の low / high / max がそのままの強さで適用されます。<br>
                                     ※ 思考内容は <code>reasoning_content</code> で返り、Include Thoughts をオンにすると表示します。<br>
                                 </p>
                             </div>
@@ -6106,6 +6113,14 @@ font-size: 1.142em !important;
                             <summary
                                 style="cursor: pointer; font-weight: normal; font-size: 14px; color: var(--text-link); margin-bottom: 10px; list-style: revert;">
                                 その他パラメータ (DeepSeek)</summary>
+                            <p style="font-size: 11px; color: var(--text-secondary); margin: 0 0 10px; padding-left: 15px;">
+                                ※ <b>2026-10-07 時点</b>の DeepSeek 公式 API（<code>https://api.deepseek.com</code>、OpenAI 形式）での動作です。<b>Thinking の ON / OFF で効き方が変わる</b>ため、項目は残してあります。<br>
+                                ※ <code>max_tokens</code> … ON・OFF どちらでも効きます。<br>
+                                ※ <code>temperature</code> … <b>Thinking OFF のときだけ効きます</b>。Thinking ON ではエラーにはなりませんが効果はありません。<br>
+                                ※ <code>top_p</code> … <b>Thinking ON のときだけ効きます</b>。有効範囲は 0.95〜1.0 で、0.95 未満は 0.95 として扱われます。Thinking OFF では 1.0 に固定され値は無視されます。<br>
+                                ※ <code>presence_penalty</code> / <code>frequency_penalty</code> … ON・OFF どちらでも効果はありません（公式に廃止済み扱い）。<br>
+                                ※ <b>「API エンドポイントURL」で互換 API を指定したときは上記が当てはまりません</b>。接続先の仕様に従います。
+                            </p>
                             <div class="param-grid" style="padding-left: 15px;">
                                 <div class="param-slider-container">
                                     <label for="deepseek-max-tokens">Max Tokens:</label>
