@@ -1101,7 +1101,7 @@ const REGENERATE_SCRIPT = `(async () => {
     };
 })()`;
 
-// LoRA: 使う / 使わない（ファイルあり）/ 使わない（フォルダ空）/ 使うがフォルダ空 / 同梱規定
+// LoRA: 使う / 使わない（ファイルあり）/ 使わない（フォルダ空）/ 使うがフォルダ空 / 同梱規定① / 同梱規定②（rgthree）
 const LORA_SCRIPT = `(async () => {
     const base = location.origin + '/mock-comfy';
     const setLoras = async (files) => {
@@ -1167,14 +1167,23 @@ const LORA_SCRIPT = `(async () => {
     const blockedPrompt = await runOnce();
     const blockedIllustration = state.currentMessages[1].illustration;
 
-    // 5) 同梱の規定ワークフローは LoRA ノードが無いので、フォルダ空でも生成できる
+    // 5) 同梱の規定①は Turbo LoRA が固定。loras フォルダが空でも触られず、生成できる
     await setLoras([]);
     state.settings.comfyLoras = [{ name: '', strength: 1 }, { name: '', strength: 1 }, { name: '', strength: 1 }, { name: '', strength: 1 }];
-    state.settings.comfyWorkflows = [{
-        id: 'wf-default', name: '同梱', json: JSON.stringify(DEFAULT_COMFY_WORKFLOW_OBJECT),
-    }];
-    state.settings.comfyActiveWorkflowId = 'wf-default';
+    state.settings.comfyWorkflows = buildDefaultComfyWorkflows();
+    state.settings.comfyActiveWorkflowId = state.settings.comfyWorkflows[0].id;
     const defaultPrompt = await runOnce();
+    const defaultLoraNode = defaultPrompt && defaultPrompt['50'] ? defaultPrompt['50'].inputs : null;
+
+    // 6) 同梱の規定②は rgthree。選んだスロットだけ on: true になる
+    await setLoras([{ name: 'one.safetensors' }, { name: 'two.safetensors' }]);
+    state.settings.comfyLoras = [
+        { name: 'two.safetensors', strength: 0.5 },
+        { name: '', strength: 1 }, { name: '', strength: 1 }, { name: '', strength: 1 },
+    ];
+    state.settings.comfyActiveWorkflowId = state.settings.comfyWorkflows[1].id;
+    const rgthreePrompt = await runOnce();
+    const rgthreeNode = rgthreePrompt && rgthreePrompt['50'] ? rgthreePrompt['50'].inputs : null;
 
     return {
         usedNode: usedNode,
@@ -1185,9 +1194,14 @@ const LORA_SCRIPT = `(async () => {
         blockedPromptSent: blockedPrompt !== null,
         blockedError: blockedIllustration && blockedIllustration.error ? blockedIllustration.error : null,
         defaultWorkflowSent: defaultPrompt !== null,
-        defaultWorkflowHasLoraNode: !!(defaultPrompt && Object.keys(defaultPrompt)
-            .some(id => /^LoraLoader/.test(defaultPrompt[id].class_type || ''))),
-        defaultWorkflowSampler: defaultPrompt && defaultPrompt['6'] ? defaultPrompt['6'].inputs.sampler_name : null,
+        defaultWorkflowLoraName: defaultLoraNode ? defaultLoraNode.lora_name : null,
+        defaultWorkflowLoraStrength: defaultLoraNode ? defaultLoraNode.strength_model : null,
+        defaultWorkflowSampler: defaultPrompt && defaultPrompt['19'] ? defaultPrompt['19'].inputs.sampler_name : null,
+        rgthreeSent: rgthreePrompt !== null,
+        rgthreeChosenOn: rgthreeNode ? rgthreeNode.lora_1.on : null,
+        rgthreeChosenName: rgthreeNode ? rgthreeNode.lora_1.lora : null,
+        rgthreeChosenStrength: rgthreeNode ? rgthreeNode.lora_1.strength : null,
+        rgthreeUnusedOn: rgthreeNode ? rgthreeNode.lora_2.on : null,
         defaultWorkflowError: (state.currentMessages[1].illustration && state.currentMessages[1].illustration.error) || null,
     };
 })()`;
@@ -1520,9 +1534,17 @@ async function main() {
                 && JSON.stringify(loraResult.emptyFolderClip) === JSON.stringify(['1', 1])],
             ['LoRA を使う設定でフォルダが空なら送らない',
                 loraResult.blockedPromptSent === false && /loras フォルダ/.test(loraResult.blockedError || '')],
-            ['同梱の規定ワークフローは LoRA ノードを持たず生成できる',
-                loraResult.defaultWorkflowSent === true && loraResult.defaultWorkflowHasLoraNode === false],
-            ['同梱の規定ワークフローはサンプラが解決している', loraResult.defaultWorkflowSampler === 'euler_a'],
+            ['同梱の規定①は固定の Turbo LoRA を触らず生成できる',
+                loraResult.defaultWorkflowSent === true
+                && loraResult.defaultWorkflowLoraName === 'anima-turbo-lora-v0.2.safetensors'
+                && loraResult.defaultWorkflowLoraStrength === 1],
+            ['同梱の規定①はサンプラが解決している', loraResult.defaultWorkflowSampler === 'euler_a'],
+            ['同梱の規定②は選んだスロットだけ on: true',
+                loraResult.rgthreeSent === true
+                && loraResult.rgthreeChosenOn === true
+                && loraResult.rgthreeChosenName === 'two.safetensors'
+                && loraResult.rgthreeChosenStrength === 0.5
+                && loraResult.rgthreeUnusedOn === false],
 
             ['開き直後に設定が復元される', reloadResult.settingsRestored && reloadResult.templateRestored],
             ['開き直後に保存済み挿絵が履歴へ表示される',
@@ -1540,8 +1562,13 @@ async function main() {
                 blockedPromptSent: loraResult.blockedPromptSent,
                 blockedError: loraResult.blockedError,
                 defaultWorkflowSent: loraResult.defaultWorkflowSent,
-                defaultWorkflowHasLoraNode: loraResult.defaultWorkflowHasLoraNode,
+                defaultWorkflowLoraName: loraResult.defaultWorkflowLoraName,
+                defaultWorkflowLoraStrength: loraResult.defaultWorkflowLoraStrength,
                 defaultWorkflowSampler: loraResult.defaultWorkflowSampler,
+                rgthreeSent: loraResult.rgthreeSent,
+                rgthreeChosenOn: loraResult.rgthreeChosenOn,
+                rgthreeChosenName: loraResult.rgthreeChosenName,
+                rgthreeUnusedOn: loraResult.rgthreeUnusedOn,
                 defaultWorkflowError: loraResult.defaultWorkflowError,
             },
             regenerateError: regenerateResult.error,

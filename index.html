@@ -2824,6 +2824,35 @@ body.turf-mode {
             background-color: var(--bg-button-action-hover);
         }
 
+        /* 注釈内のコマンド行。右のボタンでクリップボードへコピーする */
+        .copyable-cmd {
+            display: flex;
+            align-items: flex-start;
+            gap: 6px;
+            margin: 6px 0 8px 0;
+        }
+
+        .copyable-cmd code {
+            flex: 1 1 auto;
+            display: block;
+            font-size: 11px;
+            line-height: 1.5;
+            padding: 6px 8px;
+            border: 1px solid var(--border-tertiary);
+            border-radius: 4px;
+            background-color: var(--bg-tertiary);
+            color: var(--text-primary);
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            word-break: break-all;
+        }
+
+        .copyable-cmd .copyable-cmd-btn {
+            flex: 0 0 auto;
+            padding: 6px 10px;
+            font-size: 12px;
+        }
+
         .settings-delete-button {
             background-color: var(--bg-button-delete);
             padding: 8px 15px;
@@ -7956,13 +7985,18 @@ font-size: 1.142em !important;
                             <input type="checkbox" id="illustration-enabled-toggle">
                             挿絵生成を有効にする
                         </label>
-                        <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 15px;">
+                        <div style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 15px;">
                             ※ クラウドLLMの応答受信が完了した直後に、直近のシーンに合う挿絵を ComfyUI で生成します。<br>
-                            ※ ComfyUI の起動オプション：<code>--listen 127.0.0.1,{Tailscale IP} --enable-cors-header</code>（<code>{Tailscale IP}</code> は自宅PCの Tailscale IP）。全インターフェースではなく、このPCと Tailscale 側だけに開く指定です。ComfyUI に認証は無いため、ルーターで 8188 をインターネットへ転送しないでください。<br>
+                            ※ ComfyUI の起動オプション（<code>{Tailscale IP}</code> は自宅PCの Tailscale IP）。全インターフェースではなく、このPCと Tailscale 側だけに開く指定です。ComfyUI に認証は無いため、ルーターで 8188 をインターネットへ転送しないでください。
+                            <div class="copyable-cmd">
+                                <code id="comfy-launch-cmd">--listen 127.0.0.1,{Tailscale IP} --enable-cors-header</code>
+                                <button type="button" id="comfy-launch-cmd-copy-btn" class="settings-action-button copyable-cmd-btn"
+                                    data-copy-source="comfy-launch-cmd">コピー</button>
+                            </div>
                             ※ base URL は、PCだけで使うなら <code>http://127.0.0.1:8188</code>、スマホや別PCから Tailscale 経由で使うなら <code>http://{Tailscale IP}:8188</code>。<br>
                             ※ Chrome 系では、公開ページからローカルアドレスへ接続するとき「ローカルネットワークへの接続」の許可が出ます。許可しないと接続確認は失敗します。<br>
                             ※ 手順の正本は <code>docs/挿絵生成と読み上げの導入手引き.md</code>（README 冒頭からもリンク）。ローカル起動（<code>__winlocal.bat</code>）でも同じ手順です。
-                        </p>
+                        </div>
                         <label for="illustration-mode-select">生成タイミング:</label>
                         <select id="illustration-mode-select" aria-label="挿絵の生成タイミング">
                             <option value="auto">自動（応答完了の直後に生成）</option>
@@ -8104,7 +8138,8 @@ font-size: 1.142em !important;
                             <p style="font-size: 11px; color: var(--text-secondary); margin-top: 8px; margin-bottom: 0;">
                                 ※ 接続先の <code>/object_info</code> から取得します。モデルは <code>%model%</code>、VAE は <code>%vae%</code>、テキストエンコーダは <code>%text_encoder%</code>、Sampling method は <code>%sampler%</code>、Scheduler は <code>%scheduler%</code> として差し込まれます。<br>
                                 ※ 取得に失敗しても、すでに保存している値はそのまま残ります（生成は接続先の ComfyUI が値を検証します）。<br>
-                                ※ テキストエンコーダは SillyTavern に無い本アプリ独自の項目です。
+                                ※ テキストエンコーダは SillyTavern に無い本アプリ独自の項目です。<br>
+                                ※ 同梱の Anima 用ワークフローは <code>UNETLoader</code> / <code>CLIPLoader</code> / <code>VAELoader</code> を使うため、モデル・テキストエンコーダ・VAE を選ぶ必要があります。未選択のままだと生成前に止まります。
                             </p>
                             <hr style="margin: 12px 0; border-top: 1px dashed var(--border-secondary);">
 
@@ -8179,8 +8214,10 @@ font-size: 1.142em !important;
                                 <div id="comfy-lora-rows" style="margin-top: 10px;"></div>
                                 <p style="font-size: 11px; color: var(--text-secondary); margin-top: 10px; margin-bottom: 0;">
                                     ※ 一覧は <code>GET {base}/models/loras</code> から取得します。既定はすべて「使わない」です。<br>
-                                    ※ <b>同梱の規定ワークフローには LoRA ノードを入れていません</b>。loras フォルダが空でも従来どおり生成できます。<br>
+                                    ※ 同梱の Anima 用 ① は公式 Turbo LoRA をノードへ固定済みで、<b>アプリの LoRA 1〜4 は触りません</b>。② は rgthree の Power Lora Loader を使い、<b>選んだスロットだけ <code>on: true</code></b> にします（使わないスロットは <code>on: false</code> のまま送ります）。<br>
                                     ※ <code>%lora1%</code>〜<code>%lora4%</code> と <code>%lora_str1%</code>〜<code>%lora_str4%</code> は、ワークフローに書かれている場合だけ使います。<code>%lora_strN%</code> は <code>strength_model</code> と <code>strength_clip</code> の両方に同じ値を入れます。<br>
+                                    ※ LoRA の選択と強度は <b>ワークフローごとに</b>覚えます。<code>%loraN%</code> の無いワークフローで「使わない」へ戻ったあと、<code>%loraN%</code> のあるワークフローへ戻すと、そのワークフローで最後に選んだ LoRA と強度が戻ります。未設定なら「使わない」のままです。<br>
+                                    ※ アプリが管理するのは <code>%loraN%</code> を参照する LoraLoader ノードと rgthree の Power Lora Loader だけです。<b>固定のファイル名を書いた LoRA ノードには触りません</b>。<br>
                                     ※ <b>使うスロット</b>は、選んだファイル名と入力した強度をそのまま入れます。フォルダが空のときは送らず「LoRAを使うには ComfyUI の loras フォルダにファイルが必要です」と表示します。<br>
                                     ※ <b>使わないスロット</b>で一覧にファイルがあるときは、ノードの形は変えず、一覧の先頭の実在ファイル名と強度 0 を入れます。標準 LoraLoader は両方の強度が 0 ならファイルを読まず素通しし、LoraLoaderModelOnly は <code>strength_model</code> が 0 なら同じです。<br>
                                     ※ <b>使わないスロット</b>で loras フォルダが空のときは空文字を送りません。その LoraLoader ノードだけを外して <code>model</code> と <code>clip</code>を受け先へ直結し、ワークフロー全体は書き換えません。
@@ -8216,16 +8253,21 @@ font-size: 1.142em !important;
                             <input type="checkbox" id="tts-auto-speak-toggle">
                             自動読み上げ（クラウドLLMの応答受信が完了した直後に再生する）
                         </label>
-                        <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 15px;">
+                        <div style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 15px;">
                             ※ プロバイダは <b>OpenAI Compatible のみ</b>です。<code>POST {{endpoint}}/audio/speech</code> に <code>{ model, voice, input }</code> を送ります。<br>
                             ※ 応答全文の受信完了を待たず、<b>確定した段落</b>から順に TTS へ送ります（段落は空行区切り。空行が無い応答では改行区切り）。<br>
                             ※ 再生はキューで順に鳴らし、重ねません。<b>停止</b>は未送信分も含めて破棄します。<br>
                             ※ 読み上げはブラウザから直接叩くため、サーバー側で CORS が許可されている必要があります。<br>
-                            ※ Irodori TTS Server フォルダ直下の <code>.env</code> の「# Server」最終行に <code>IRODORI_CORS_ORIGINS=["http://localhost:8072","http://127.0.0.1:8072","http://{Tailscale IP}:8072","https://nekotaro74.github.io"]</code> を追加し、Irodori を再起動します（<code>{Tailscale IP}</code> は自宅PCの Tailscale IP）。<br>
+                            ※ Irodori TTS Server フォルダ直下の <code>.env</code> の「# Server」最終行へ次の 1 行を追加し、Irodori を再起動します（<code>{Tailscale IP}</code> は自宅PCの Tailscale IP）。
+                            <div class="copyable-cmd">
+                                <code id="tts-cors-env-line">IRODORI_CORS_ORIGINS=["http://localhost:8072","http://127.0.0.1:8072","http://{Tailscale IP}:8072","https://nekotaro74.github.io"]</code>
+                                <button type="button" id="tts-cors-env-copy-btn" class="settings-action-button copyable-cmd-btn"
+                                    data-copy-source="tts-cors-env-line">コピー</button>
+                            </div>
                             ※ エンドポイントは、PCだけで使うなら <code>http://127.0.0.1:8088/v1</code>、スマホや別PCから Tailscale 経由で使うなら <code>http://{Tailscale IP}:8088/v1</code>。APIキーは通常不要で、空なら <code>Authorization</code> を送りません。<br>
                             ※ Chrome 系では、公開ページからローカルアドレスへ接続するとき「ローカルネットワークへの接続」の許可が出ます。許可しないと接続確認は失敗します。<br>
                             ※ 手順の正本は <code>docs/挿絵生成と読み上げの導入手引き.md</code>（README 冒頭からもリンク）。APIキーはこのアプリの IndexedDB にだけ保存し、ファイル書き出しやコミットには出しません。
-                        </p>
+                        </div>
                         <label for="tts-endpoint" style="margin-top: 15px;">OpenAI Compatible エンドポイント:</label>
                         <input type="text" id="tts-endpoint"
                             placeholder="例：PCだけで使うなら http://127.0.0.1:8088/v1 ／ Tailscale 経由なら http://{Tailscale IP}:8088/v1"
@@ -8234,7 +8276,7 @@ font-size: 1.142em !important;
                             ※ 末尾に <code>/audio/speech</code> が無ければ自動で足します。末尾スラッシュは除去します。
                         </p>
                         <label for="tts-api-key">APIキー:</label>
-                        <input type="password" id="tts-api-key" placeholder="通常、Irodori TTS ServerではAPIキーは必要ありません"
+                        <input type="password" id="tts-api-key" placeholder="通常、Irodori TTS ServerではAPIキー不要"
                             aria-label="TTS APIキー">
                         <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
                             ※ 空ならAuthorizationヘッダーを送りません
@@ -8263,6 +8305,9 @@ font-size: 1.142em !important;
                                 話者割当
                             </summary>
                             <div style="padding: 10px; padding-top: 5px;">
+                                <p style="font-size: 11px; color: var(--text-secondary); margin-top: 0; margin-bottom: 6px;">
+                                    ※ 本文中のセリフの表記は、セリフ部分の前に話者名が出るように調整してください。例：美咲「こんにちは」　となるようにプロンプトを調整してください。
+                                </p>
                                 <label for="tts-default-voice">デフォルトボイス（地の文）:</label>
                                 <select id="tts-default-voice" aria-label="地の文のボイス"></select>
                                 <label for="tts-generic-voice" style="margin-top: 10px;">汎用ボイス（話者名の無い引用や括弧）:</label>
@@ -8598,62 +8643,183 @@ A correctly formatted example response would be:
         const DEFAULT_COMFY_MAX_IMAGE_BYTES = 400 * 1024;
         const DEFAULT_COMFY_SAMPLER = 'euler_a';
         const DEFAULT_COMFY_SCHEDULER = 'normal';
-        // 同梱する規定ワークフロー。SillyTavern 既定ではなく、本アプリが用意した初期値です。
-        // LoRA ノードを含まないので、ComfyUI の loras フォルダが空でも従来どおり生成できます。
-        // VAE と CLIP は CheckpointLoaderSimple の出力を使い、VAELoader / TextEncoderLoader は使いません。
-        const DEFAULT_COMFY_WORKFLOW_ID = 'wf-default';
-        const DEFAULT_COMFY_WORKFLOW_NAME = '同梱ワークフロー（基本）';
-        const DEFAULT_COMFY_WORKFLOW_OBJECT = {
+        // 同梱する規定ワークフロー（Anima 用 2 件）。SillyTavern 既定ではなく、本アプリが用意した初期値です。
+        // UNETLoader / CLIPLoader / VAELoader を使うため、設定で 拡散モデル・CLIP・VAE を選ぶ必要があります。
+        // ① は公式 Turbo LoRA を LoraLoader ノードへ固定したまま送るワークフロー。
+        // ② は rgthree の Power Lora Loader で %lora1%〜%lora4% を受け取るワークフロー。
+        const ANIMA_WORKFLOW_TURBO_ID = 'wf-anima-turbo';
+        const ANIMA_WORKFLOW_TURBO_NAME = 'Anima用デフォルトワークフロー①（+Turbo LoRA組込済）';
+        const ANIMA_WORKFLOW_TURBO_OBJECT = {
             "1": {
-                class_type: "CheckpointLoaderSimple",
-                inputs: { ckpt_name: "%model%" },
-                _meta: { title: "モデル読み込み" }
+                class_type: "SaveImage",
+                inputs: { filename_prefix: "ComfyUI_01", images: ["8", 0] },
+                _meta: { title: "画像を保存" }
             },
-            "2": {
-                class_type: "CLIPSetLastLayer",
-                inputs: { clip: ["1", 1], clip_skip: "%clip_skip%" },
-                _meta: { title: "CLIP Skip" }
+            "8": {
+                class_type: "VAEDecode",
+                inputs: { samples: ["19", 0], vae: ["15", 0] },
+                _meta: { title: "VAEデコード" }
             },
-            "3": {
+            "11": {
                 class_type: "CLIPTextEncode",
-                inputs: { clip: ["2", 0], text: "%prompt%" },
-                _meta: { title: "画像プロンプト" }
+                inputs: { text: "%prompt%", clip: ["50", 1] },
+                _meta: { title: "CLIP Text Encode (Positive Prompt)" }
             },
-            "4": {
+            "12": {
                 class_type: "CLIPTextEncode",
-                inputs: { clip: ["2", 0], text: "%negative_prompt%" },
-                _meta: { title: "ネガティブプロンプト" }
+                inputs: { text: "%negative_prompt%", clip: ["50", 1] },
+                _meta: { title: "CLIP Text Encode (Negative Prompt)" }
             },
-            "5": {
-                class_type: "EmptyLatentImage",
-                inputs: { width: "%width%", height: "%height%", batch_size: 1 },
-                _meta: { title: "空の Latent" }
+            "15": {
+                class_type: "VAELoader",
+                inputs: { vae_name: "%vae%" },
+                _meta: { title: "VAEを読み込む" }
             },
-            "6": {
+            "19": {
                 class_type: "KSampler",
                 inputs: {
-                    model: ["1", 0],
-                    positive: ["3", 0],
-                    negative: ["4", 0],
-                    latent_image: ["5", 0],
                     seed: "%seed%",
                     steps: "%steps%",
                     cfg: "%cfg%",
                     sampler_name: "%sampler%",
                     scheduler: "%scheduler%",
-                    denoise: "%denoise%"
+                    denoise: "%denoise%",
+                    model: ["50", 0],
+                    positive: ["11", 0],
+                    negative: ["12", 0],
+                    latent_image: ["28", 0]
                 },
-                _meta: { title: "サンプル" }
+                _meta: { title: "Kサンプラー" }
             },
-            "7": {
-                class_type: "VAEDecode",
-                inputs: { samples: ["6", 0], vae: ["1", 2] },
-                _meta: { title: "VAE デコード" }
+            "28": {
+                class_type: "EmptyLatentImage",
+                inputs: { width: "%width%", height: "%height%", batch_size: 1 },
+                _meta: { title: "空の潜在画像" }
+            },
+            "44": {
+                class_type: "UNETLoader",
+                inputs: { unet_name: "%model%", weight_dtype: "default" },
+                _meta: { title: "拡散モデルを読み込む" }
+            },
+            "45": {
+                class_type: "CLIPLoader",
+                inputs: { clip_name: "%text_encoder%", type: "lumina2", device: "default" },
+                _meta: { title: "CLIPを読み込む" }
+            },
+            "50": {
+                class_type: "LoraLoader",
+                inputs: {
+                    model: ["44", 0],
+                    clip: ["45", 0],
+                    lora_name: "anima-turbo-lora-v0.2.safetensors",
+                    strength_model: 1.0,
+                    strength_clip: 1.0
+                },
+                _meta: { title: "LoRA Loader (公式Turbo LoRA)" }
+            }
+        };
+        const ANIMA_WORKFLOW_LORA4_ID = 'wf-anima-lora4';
+        const ANIMA_WORKFLOW_LORA4_NAME = 'Anima用デフォルトワークフロー②（LoRA x 4）';
+        const ANIMA_WORKFLOW_LORA4_OBJECT = {
+            "1": {
+                class_type: "SaveImage",
+                inputs: { filename_prefix: "ComfyUI_01", images: ["8", 0] },
+                _meta: { title: "画像を保存" }
             },
             "8": {
-                class_type: "SaveImage",
-                inputs: { images: ["7", 0], filename_prefix: "onasapo_" },
-                _meta: { title: "保存" }
+                class_type: "VAEDecode",
+                inputs: { samples: ["19", 0], vae: ["15", 0] },
+                _meta: { title: "VAEデコード" }
+            },
+            "11": {
+                class_type: "CLIPTextEncode",
+                inputs: { text: "%prompt%", clip: ["50", 1] },
+                _meta: { title: "CLIP Text Encode (Positive Prompt)" }
+            },
+            "12": {
+                class_type: "CLIPTextEncode",
+                inputs: { text: "%negative_prompt%", clip: ["50", 1] },
+                _meta: { title: "CLIP Text Encode (Negative Prompt)" }
+            },
+            "15": {
+                class_type: "VAELoader",
+                inputs: { vae_name: "%vae%" },
+                _meta: { title: "VAEを読み込む" }
+            },
+            "19": {
+                class_type: "KSampler",
+                inputs: {
+                    seed: "%seed%",
+                    steps: "%steps%",
+                    cfg: "%cfg%",
+                    sampler_name: "%sampler%",
+                    scheduler: "%scheduler%",
+                    denoise: "%denoise%",
+                    model: ["50", 0],
+                    positive: ["11", 0],
+                    negative: ["12", 0],
+                    latent_image: ["28", 0]
+                },
+                _meta: { title: "Kサンプラー" }
+            },
+            "28": {
+                class_type: "EmptyLatentImage",
+                inputs: { width: "%width%", height: "%height%", batch_size: 1 },
+                _meta: { title: "空の潜在画像" }
+            },
+            "44": {
+                class_type: "UNETLoader",
+                inputs: { unet_name: "%model%", weight_dtype: "default" },
+                _meta: { title: "拡散モデルを読み込む" }
+            },
+            "45": {
+                class_type: "CLIPLoader",
+                inputs: { clip_name: "%text_encoder%", type: "lumina2", device: "default" },
+                _meta: { title: "CLIPを読み込む" }
+            },
+            "50": {
+                class_type: "Power Lora Loader (rgthree)",
+                inputs: {
+                    PowerLoraLoaderHeaderWidget: { type: "PowerLoraLoaderHeaderWidget" },
+                    lora_1: { on: false, lora: "%lora1%", strength: "%lora_str1%" },
+                    lora_2: { on: false, lora: "%lora2%", strength: "%lora_str2%" },
+                    lora_3: { on: false, lora: "%lora3%", strength: "%lora_str3%" },
+                    lora_4: { on: false, lora: "%lora4%", strength: "%lora_str4%" },
+                    model: ["44", 0],
+                    clip: ["45", 0]
+                },
+                _meta: { title: "Power Lora Loader (rgthree)" }
+            }
+        };
+        const DEFAULT_COMFY_WORKFLOWS = [
+            { id: ANIMA_WORKFLOW_TURBO_ID, name: ANIMA_WORKFLOW_TURBO_NAME, object: ANIMA_WORKFLOW_TURBO_OBJECT },
+            { id: ANIMA_WORKFLOW_LORA4_ID, name: ANIMA_WORKFLOW_LORA4_NAME, object: ANIMA_WORKFLOW_LORA4_OBJECT },
+        ];
+        const buildDefaultComfyWorkflows = () => DEFAULT_COMFY_WORKFLOWS.map(workflow => ({
+            id: workflow.id,
+            name: workflow.name,
+            json: JSON.stringify(workflow.object, null, 2),
+        }));
+        // 旧版の同梱ワークフロー（CheckpointLoaderSimple 版）。これ 1 件だけを残す設定なら新しい 2 件へ置き換える。
+        // 中身を編集していれば JSON 文字列が合わないので、そのまま残る。
+        const LEGACY_DEFAULT_COMFY_WORKFLOW_ID = 'wf-default';
+        const LEGACY_DEFAULT_COMFY_WORKFLOW_JSON = JSON.stringify({
+            "1": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "%model%" }, _meta: { title: "モデル読み込み" } },
+            "2": { class_type: "CLIPSetLastLayer", inputs: { clip: ["1", 1], clip_skip: "%clip_skip%" }, _meta: { title: "CLIP Skip" } },
+            "3": { class_type: "CLIPTextEncode", inputs: { clip: ["2", 0], text: "%prompt%" }, _meta: { title: "画像プロンプト" } },
+            "4": { class_type: "CLIPTextEncode", inputs: { clip: ["2", 0], text: "%negative_prompt%" }, _meta: { title: "ネガティブプロンプト" } },
+            "5": { class_type: "EmptyLatentImage", inputs: { width: "%width%", height: "%height%", batch_size: 1 }, _meta: { title: "空の Latent" } },
+            "6": { class_type: "KSampler", inputs: { model: ["1", 0], positive: ["3", 0], negative: ["4", 0], latent_image: ["5", 0], seed: "%seed%", steps: "%steps%", cfg: "%cfg%", sampler_name: "%sampler%", scheduler: "%scheduler%", denoise: "%denoise%" }, _meta: { title: "サンプル" } },
+            "7": { class_type: "VAEDecode", inputs: { samples: ["6", 0], vae: ["1", 2] }, _meta: { title: "VAE デコード" } },
+            "8": { class_type: "SaveImage", inputs: { images: ["7", 0], filename_prefix: "onasapo_" }, _meta: { title: "保存" } }
+        });
+        // 保存済みワークフローが「編集されていない旧い同梱ワークフロー」かどうか。移行の判定に使う
+        const isUntouchedLegacyDefaultWorkflow = (workflow) => {
+            if (!workflow || workflow.id !== LEGACY_DEFAULT_COMFY_WORKFLOW_ID) return false;
+            try {
+                return JSON.stringify(JSON.parse(workflow.json)) === LEGACY_DEFAULT_COMFY_WORKFLOW_JSON;
+            } catch (error) {
+                return false;
             }
         };
         const DEFAULT_COMFY_LORA_SLOTS = 4;
@@ -9374,13 +9540,9 @@ geminiIncludeThoughts: false,
                 illustrationMode: 'auto', // 'auto' = 応答完了直後 / 'manual' = 手動のみ
                 comfyBaseUrl: DEFAULT_COMFY_BASE_URL,
                 // 複数ワークフロー管理（旧 comfyWorkflow 単一文字列からは loadSettings で移行する）
-                // 初期値は同梱ワークフロー 1 件。自分で登録すれば上書きできる
-                comfyWorkflows: [{
-                    id: DEFAULT_COMFY_WORKFLOW_ID,
-                    name: DEFAULT_COMFY_WORKFLOW_NAME,
-                    json: JSON.stringify(DEFAULT_COMFY_WORKFLOW_OBJECT, null, 2),
-                }],
-                comfyActiveWorkflowId: DEFAULT_COMFY_WORKFLOW_ID, // null にしない（loadSettings の数値変換で壊れる）
+                // 初期値は同梱の Anima 用 2 件。自分で登録すれば上書きできる
+                comfyWorkflows: buildDefaultComfyWorkflows(),
+                comfyActiveWorkflowId: ANIMA_WORKFLOW_TURBO_ID, // null にしない（loadSettings の数値変換で壊れる）
                 comfyCustomPlaceholders: [], // [{ find, replace }]
                 comfyPromptPrefix: '',
                 comfyCharacterPrefix: '',
@@ -9411,6 +9573,8 @@ geminiIncludeThoughts: false,
                 comfyEditPromptBeforeSend: false,
                 // LoRA は最大4個。name が空のスロットは「使わない」
                 comfyLoras: buildDefaultComfyLoraSlots(),
+                // %lora1%〜%lora4% を持つワークフローごとの LoRA 記憶。key はワークフロー id
+                comfyLoraMemory: {},
                 // ▼ 読み上げ（TTS）▼ OpenAI Compatible のみ。APIキーは既定空（IndexedDB にのみ保存）
                 ttsEnabled: false,
                 ttsMode: 'auto',              // 'auto' = 応答受信完了後に再生 / 'manual' = ボタンでのみ
@@ -10059,14 +10223,17 @@ const dbUtils = {
                                 state.settings.comfyWorkflows = [{ id: migratedId, name: '移行されたワークフロー', json: legacyWorkflow }];
                                 state.settings.comfyActiveWorkflowId = migratedId;
                             }
+                            // 編集されていない旧い同梱ワークフロー 1 件だけなら、同梱の Anima 用 2 件へ置き換える
+                            // （自分で追加・編集した人は対象外）
+                            if (state.settings.comfyWorkflows.length === 1
+                                && isUntouchedLegacyDefaultWorkflow(state.settings.comfyWorkflows[0])) {
+                                state.settings.comfyWorkflows = buildDefaultComfyWorkflows();
+                                state.settings.comfyActiveWorkflowId = ANIMA_WORKFLOW_TURBO_ID;
+                            }
                             // 1 件も無い場合は同梱の規定ワークフローを置く（消した人にも再生成できる状態を返す）
                             if (state.settings.comfyWorkflows.length === 0) {
-                                state.settings.comfyWorkflows = [{
-                                    id: DEFAULT_COMFY_WORKFLOW_ID,
-                                    name: DEFAULT_COMFY_WORKFLOW_NAME,
-                                    json: JSON.stringify(DEFAULT_COMFY_WORKFLOW_OBJECT, null, 2),
-                                }];
-                                state.settings.comfyActiveWorkflowId = DEFAULT_COMFY_WORKFLOW_ID;
+                                state.settings.comfyWorkflows = buildDefaultComfyWorkflows();
+                                state.settings.comfyActiveWorkflowId = state.settings.comfyWorkflows[0].id;
                             }
                             if (!Array.isArray(state.settings.comfyCustomPlaceholders)) {
                                 state.settings.comfyCustomPlaceholders = [];
@@ -10081,6 +10248,12 @@ const dbUtils = {
                                     strength: Number.isFinite(Number(saved.strength)) ? Number(saved.strength) : 1,
                                 };
                             });
+                            // LoRA の記憶はワークフロー id ごとのオブジェクト。壊れていれば空にする
+                            // （読み込み直後は同期しないため、前に選んでいた LoRA はそのまま残る）
+                            const rawLoraMemory = state.settings.comfyLoraMemory;
+                            state.settings.comfyLoraMemory =
+                                (rawLoraMemory && typeof rawLoraMemory === 'object' && !Array.isArray(rawLoraMemory))
+                                    ? rawLoraMemory : {};
 
                             resolve(state.settings);
                         };
@@ -10682,9 +10855,31 @@ const dbUtils = {
                 return /^(LoraLoader|LoraLoaderModelOnly)$/.test(classType || '');
             },
 
+            // rgthree の Power Lora Loader。lora_1〜lora_4 に on / lora / strength を持つ
+            isRgthreeLoraLoaderClass(classType) {
+                return /Power Lora Loader/i.test(classType || '');
+            },
+
+            // %lora1%〜%lora4% / %lora_str1%〜%lora_str4% を参照する LoraLoader ノードの id。
+            // 差し込み前の JSON で見る（差し込み後にはトークンが消えているため）。
+            // 固定のファイル名を書いた LoRA ノード（同梱①の Turbo LoRA など）は対象にしない。
+            loraTokenNodeIds(rawObject) {
+                return Object.keys(rawObject || {}).filter(id => {
+                    const node = rawObject[id];
+                    if (!node || !this.isLoraLoaderClass(node.class_type)) return false;
+                    return /%lora(_str)?[1-4]%/.test(JSON.stringify(node.inputs || {}));
+                });
+            },
+
+            // LoRA 一覧を取りに行く価値があるワークフローか。こちらも差し込み前の JSON で見る
             hasLoraNodes(nodeObject) {
-                return Object.keys(nodeObject || {}).some(id =>
-                    nodeObject[id] && this.isLoraLoaderClass(nodeObject[id].class_type));
+                return Object.keys(nodeObject || {}).some(id => {
+                    const node = nodeObject[id];
+                    if (!node) return false;
+                    if (this.isRgthreeLoraLoaderClass(node.class_type)) return true;
+                    return this.isLoraLoaderClass(node.class_type)
+                        && /%lora(_str)?[1-4]%/.test(JSON.stringify(node.inputs || {}));
+                });
             },
 
             loraSlotConfig(index) {
@@ -10716,13 +10911,52 @@ const dbUtils = {
                 return true;
             },
 
+            // rgthree の Power Lora Loader。名前と強度は %loraN% / %lora_strN% の差し込みで既に入っているので、
+            // ここでは on だけを選ぶスロットに合わせて切り替える（on: false のままでは ComfyUI が読まない）。
+            applyRgthreeLoraNodes(nodeObject, loraFiles) {
+                const nodeIds = Object.keys(nodeObject || {}).filter(id => {
+                    const node = nodeObject[id];
+                    return !!(node && this.isRgthreeLoraLoaderClass(node.class_type));
+                });
+                if (nodeIds.length === 0) return { ok: true, notes: [] };
+                const slots = [];
+                for (let slotIndex = 0; slotIndex < this.LORA_SLOT_COUNT; slotIndex++) {
+                    slots.push(this.loraSlotConfig(slotIndex));
+                }
+                if (slots.some(slot => slot.name) && Array.isArray(loraFiles) && loraFiles.length === 0) {
+                    return { ok: false, error: 'LoRAを使うには ComfyUI の loras フォルダにファイルが必要です' };
+                }
+                const notes = [];
+                nodeIds.forEach(nodeId => {
+                    const inputs = nodeObject[nodeId].inputs || {};
+                    for (let slotIndex = 0; slotIndex < this.LORA_SLOT_COUNT; slotIndex++) {
+                        const slotInputs = inputs['lora_' + (slotIndex + 1)];
+                        if (!slotInputs || typeof slotInputs !== 'object' || Array.isArray(slotInputs)) continue;
+                        if (!Object.prototype.hasOwnProperty.call(slotInputs, 'on')) continue;
+                        slotInputs.on = !!slots[slotIndex].name;
+                        notes.push(slots[slotIndex].name
+                            ? `LoRA${slotIndex + 1}: ${slots[slotIndex].name}（強度 ${slots[slotIndex].strength} / on）`
+                            : `LoRA${slotIndex + 1}: 不使用（on を切って送ります）`);
+                    }
+                });
+                return { ok: true, notes: notes };
+            },
+
             // ワークフロー内の LoraLoader ノードを、スロット順（ノードIDの小さい順）で決める。
             // loraFiles は GET /models/loras の結果。取得できなかったときは null（ノードの値をそのまま送る）。
-            applyLoraNodes(nodeObject, loraFiles) {
-                const nodeIds = Object.keys(nodeObject)
-                    .filter(id => nodeObject[id] && this.isLoraLoaderClass(nodeObject[id].class_type))
-                    .sort((a, b) => (Number(a) - Number(b)));
-                if (nodeIds.length === 0) return { ok: true, object: nodeObject, notes: [] };
+            // sourceObject（トークン差し込み前の JSON）を渡すと、そこで %loraN% を参照していたノードだけ管理する。
+            // 固定のファイル名を書いた LoRA ノードは、そのまま送る。省略時は LoraLoader ノードすべてが対象。
+            applyLoraNodes(nodeObject, loraFiles, sourceObject) {
+                const rgthree = this.applyRgthreeLoraNodes(nodeObject, loraFiles);
+                if (!rgthree.ok) return rgthree;
+                let managedIds = Object.keys(nodeObject)
+                    .filter(id => nodeObject[id] && this.isLoraLoaderClass(nodeObject[id].class_type));
+                if (sourceObject && typeof sourceObject === 'object') {
+                    const tokenIds = this.loraTokenNodeIds(sourceObject);
+                    managedIds = managedIds.filter(id => tokenIds.includes(id));
+                }
+                const nodeIds = managedIds.sort((a, b) => (Number(a) - Number(b)));
+                if (nodeIds.length === 0) return { ok: true, object: nodeObject, notes: rgthree.notes };
                 const notes = [];
                 for (let i = 0; i < nodeIds.length; i++) {
                     const nodeId = nodeIds[i];
@@ -10763,7 +10997,7 @@ const dbUtils = {
                         notes.push(`LoRA${i + 1}: 一覧を取得できなかったため、ノードに書かれた値のまま送ります`);
                     }
                 }
-                return { ok: true, object: nodeObject, notes: notes };
+                return { ok: true, object: nodeObject, notes: rgthree.notes.concat(notes) };
             },
 
             extractLoraNames(data) {
@@ -11043,30 +11277,104 @@ const dbUtils = {
 
             async selectWorkflow(id) {
                 if (!this.findWorkflow(id)) return;
-                state.settings.comfyActiveWorkflowId = id;
+                await this.activateWorkflow(id);
                 await dbUtils.saveSetting('comfyActiveWorkflowId', id);
                 await this.syncLoraSlotsWithActiveWorkflow();
                 this.renderList();
                 this.renderEditor();
             },
 
-            // 使用中のワークフローに %lora1%〜%lora4% が無いときは、LoRA 1〜4 を「使わない」へ戻す。
-            // プレースホルダを含むワークフローでは、選び済みの LoRA を変えない。
+            // ── LoRA の記憶（ワークフローごと）─────────────────────
+            // %lora1%〜%lora4% を持つワークフローでは、選んだ LoRA と強度を id ごとに覚える。
+            // %loraN% の無いワークフローへ切り替えるとスロットは「使わない」へ戻り、
+            // %loraN% のあるワークフローへ戻したときは、そのワークフロー最後の値を復元する。
+            // 記憶がまだ無いワークフローでは「使わない」のまま（他のワークフローの選択を持ち込まない）。
+            workflowHasLoraTokens(workflow) {
+                if (!workflow) return false;
+                return illustrationUtils.findPlaceholders(workflow.json)
+                    .some(token => /^lora[1-4]$/.test(token));
+            },
+
+            // 保存済みのスロット配列を常に 4 個・正しい形へそろえる
+            normalizeLoraSlots(rawSlots) {
+                return buildDefaultComfyLoraSlots().map((slot, index) => {
+                    const saved = Array.isArray(rawSlots) ? rawSlots[index] : null;
+                    if (!saved || typeof saved !== 'object') return slot;
+                    return {
+                        name: typeof saved.name === 'string' ? saved.name : '',
+                        strength: Number.isFinite(Number(saved.strength)) ? Number(saved.strength) : 1,
+                    };
+                });
+            },
+
+            loraMemoryStore() {
+                const store = state.settings.comfyLoraMemory;
+                if (!store || typeof store !== 'object' || Array.isArray(store)) {
+                    state.settings.comfyLoraMemory = {};
+                }
+                return state.settings.comfyLoraMemory;
+            },
+
+            // 記憶があれば 4 スロット分、未設定（または全部「使わない」）なら null
+            getLoraMemory(workflowId) {
+                if (!workflowId) return null;
+                const stored = this.loraMemoryStore()[workflowId];
+                if (!Array.isArray(stored)) return null;
+                if (!stored.some(slot => slot && typeof slot.name === 'string' && slot.name.trim())) return null;
+                return this.normalizeLoraSlots(stored);
+            },
+
+            async setLoraMemory(workflowId, slots) {
+                if (!workflowId) return;
+                this.loraMemoryStore()[workflowId] = this.normalizeLoraSlots(slots);
+                await dbUtils.saveSetting('comfyLoraMemory', this.loraMemoryStore());
+            },
+
+            async forgetLoraMemory(workflowId) {
+                const store = this.loraMemoryStore();
+                if (!Object.prototype.hasOwnProperty.call(store, workflowId)) return;
+                delete store[workflowId];
+                await dbUtils.saveSetting('comfyLoraMemory', store);
+            },
+
+            // 切り替え前のワークフローが LoRA 対応で、まだ記憶が無く、スロットに選択が残っているときだけ記憶する。
+            // （この記憶機能より前に選ばれていた LoRA を、ワークフローを戻したときに失わないため）
+            async snapshotLoraMemoryFor(workflowId) {
+                if (!workflowId) return;
+                if (!this.workflowHasLoraTokens(this.findWorkflow(workflowId))) return;
+                if (this.getLoraMemory(workflowId)) return;
+                const slots = Array.isArray(state.settings.comfyLoras) ? state.settings.comfyLoras : [];
+                if (!slots.some(slot => slot && slot.name)) return;
+                await this.setLoraMemory(workflowId, slots);
+            },
+
+            // 使用中のワークフローを切り替える唯一の経路。切り替え前の記憶を確保してから切り替える
+            async activateWorkflow(id) {
+                const previous = state.settings.comfyActiveWorkflowId;
+                if (previous && previous !== id) await this.snapshotLoraMemoryFor(previous);
+                state.settings.comfyActiveWorkflowId = id;
+            },
+
+            // 使用中のワークフローに合わせて LoRA 1〜4 の値を決める。
+            // %loraN% があればそのワークフローの記憶を復元し、無ければ全て「使わない」へ戻す。
             async syncLoraSlotsWithActiveWorkflow() {
                 const active = illustrationUtils.activeWorkflow();
                 if (!active) return false;
-                const hasLoraToken = illustrationUtils.findPlaceholders(active.json)
-                    .some(token => /^lora[1-4]$/.test(token));
-                if (hasLoraToken) return false;
-                const slots = Array.isArray(state.settings.comfyLoras) ? state.settings.comfyLoras : [];
-                if (!slots.some(slot => slot && slot.name)) return false;
-                for (let slotIndex = 0; slotIndex < illustrationUtils.LORA_SLOT_COUNT; slotIndex++) {
-                    await this.setLoraSlot(slotIndex, { name: '' });
-                }
+                const hasLoraToken = this.workflowHasLoraTokens(active);
+                const remembered = hasLoraToken ? this.getLoraMemory(active.id) : null;
+                const desired = remembered || buildDefaultComfyLoraSlots();
+                const current = this.normalizeLoraSlots(state.settings.comfyLoras);
+                const unchanged = desired.every((slot, index) =>
+                    slot.name === current[index].name && slot.strength === current[index].strength);
+                if (unchanged) return false;
+                state.settings.comfyLoras = desired;
+                await dbUtils.saveSetting('comfyLoras', state.settings.comfyLoras);
                 this.renderLoraRows();
                 if (elements.comfyLoraStatus) {
-                    elements.comfyLoraStatus.textContent =
-                        'このワークフローには %lora1%〜%lora4% が無いため、LoRA は全て「使わない」にしました';
+                    elements.comfyLoraStatus.textContent = hasLoraToken
+                        ? (remembered ? 'このワークフローの前回の LoRA と強度を復元しました'
+                            : 'このワークフローの LoRA は未設定です（すべて「使わない」）')
+                        : 'このワークフローには %lora1%〜%lora4% が無いため、LoRA は全て「使わない」にしました';
                     elements.comfyLoraStatus.style.color = 'var(--text-secondary)';
                 }
                 return true;
@@ -11082,7 +11390,7 @@ const dbUtils = {
                 };
                 if (!Array.isArray(state.settings.comfyWorkflows)) state.settings.comfyWorkflows = [];
                 state.settings.comfyWorkflows.push(workflow);
-                state.settings.comfyActiveWorkflowId = workflow.id;
+                await this.activateWorkflow(workflow.id);
                 await this.persist();
                 await this.syncLoraSlotsWithActiveWorkflow();
                 this.renderList();
@@ -11115,8 +11423,11 @@ const dbUtils = {
                     name: this.uniqueName(workflow.name + ' のコピー'),
                     json: workflow.json,
                 };
+                // 複製元が覚えていた LoRA はコピーにも引き継ぐ（未設定のまま増やさない）
+                const remembered = this.getLoraMemory(workflow.id);
                 state.settings.comfyWorkflows.push(copy);
-                state.settings.comfyActiveWorkflowId = copy.id;
+                await this.activateWorkflow(copy.id);
+                if (remembered) await this.setLoraMemory(copy.id, remembered);
                 await this.persist();
                 await this.syncLoraSlotsWithActiveWorkflow();
                 this.renderList();
@@ -11127,10 +11438,10 @@ const dbUtils = {
                 const list = this.getList();
                 const index = list.findIndex(workflow => workflow.id === id);
                 if (index === -1) return;
+                const wasActive = state.settings.comfyActiveWorkflowId === id;
                 list.splice(index, 1);
-                if (state.settings.comfyActiveWorkflowId === id) {
-                    state.settings.comfyActiveWorkflowId = list.length ? list[0].id : '';
-                }
+                if (wasActive) await this.activateWorkflow(list.length ? list[0].id : '');
+                await this.forgetLoraMemory(id);
                 await this.persist();
                 await this.syncLoraSlotsWithActiveWorkflow();
                 this.renderList();
@@ -11493,6 +11804,11 @@ const dbUtils = {
                 const slot = state.settings.comfyLoras[index] || { name: '', strength: 1 };
                 state.settings.comfyLoras[index] = Object.assign({}, slot, patch);
                 await dbUtils.saveSetting('comfyLoras', state.settings.comfyLoras);
+                // %lora1%〜%lora4% を持つワークフローでは、選んだ値をそのワークフローの記憶としても残す
+                const active = illustrationUtils.activeWorkflow();
+                if (active && this.workflowHasLoraTokens(active)) {
+                    await this.setLoraMemory(active.id, state.settings.comfyLoras);
+                }
             },
 
             async refreshChoices(statusElement, force) {
@@ -12504,6 +12820,49 @@ const dbUtils = {
         }
         // ▲▲▲ ここまで追加 ▲▲▲
         const uiUtils = {
+            // 設定画面の注釈にあるコード行をコピーする。クリップボード API が使えない
+            // 非安全な文脈（http:// で Tailscale IP を直接開く等）では textarea 経由で代替する
+            async copyTextToClipboard(text) {
+                const value = String(text || '');
+                if (!value) return false;
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    try {
+                        await navigator.clipboard.writeText(value);
+                        return true;
+                    } catch (error) {
+                        // fall through
+                    }
+                }
+                try {
+                    const scratch = document.createElement('textarea');
+                    scratch.value = value;
+                    scratch.setAttribute('readonly', '');
+                    scratch.style.cssText = 'position:fixed; top:-1000px; left:-1000px; opacity:0;';
+                    document.body.appendChild(scratch);
+                    scratch.select();
+                    const ok = document.execCommand('copy');
+                    document.body.removeChild(scratch);
+                    return ok;
+                } catch (error) {
+                    return false;
+                }
+            },
+
+            // data-copy-source でコードブロックを参照するコピーボタンをまとめて配線する
+            wireCopyCommandButtons() {
+                document.querySelectorAll('button[data-copy-source]').forEach(button => {
+                    const sourceId = button.getAttribute('data-copy-source');
+                    const source = document.getElementById(sourceId);
+                    if (!source) return;
+                    button.addEventListener('click', async () => {
+                        const original = button.textContent;
+                        const ok = await this.copyTextToClipboard(source.textContent.trim());
+                        button.textContent = ok ? 'コピーしました' : 'コピー失敗';
+                        setTimeout(() => { button.textContent = original; }, 1600);
+                    });
+                });
+            },
+
             updateSettingsScreenElementVisibility() {
                 elements.settingsScrollToTopBtn.classList.toggle('hidden', !state.settings.showSettingsScrollToTopButton);
                 elements.settingsScrollToBottomBtn.classList.toggle('hidden', !state.settings.showSettingsScrollToBottomButton);
@@ -16880,6 +17239,8 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                     });
                 }
                 // ワークフロー一覧の操作
+                // 注釈内のコード行（ComfyUI の起動オプション / Irodori の CORS）をコピーできるようにする
+                uiUtils.wireCopyCommandButtons();
                 if (elements.comfyWorkflowAddBtn) {
                     elements.comfyWorkflowAddBtn.addEventListener('click', async () => {
                         const json = await uiUtils.showCustomPrompt(
@@ -19273,13 +19634,15 @@ helpIcons.forEach(icon => {
                     const prepared = illustrationUtils.prepareWorkflow(parsed.object);
                     if (!prepared.ok) throw new Error(prepared.error);
 
-                    // LoRA はノード単位で差し替え／素通し／除去を決める（トークン有無に関わらず）。
+                    // LoRA はノード単位で差し替え／素通し／除去を決める。管理するのは %loraN% を参照する
+                    // LoraLoader ノードと rgthree の Power Lora Loader だけで、固定名を書いた LoRA ノード
+                    // （同梱①の Turbo LoRA など）はそのまま送る。
                     // LoRA ノードの無いワークフローでは、送信前の余分な往復を省くため一覧を取らない。
                     let loraFiles = null;
-                    if (illustrationUtils.hasLoraNodes(prepared.object)) {
+                    if (illustrationUtils.hasLoraNodes(parsed.object)) {
                         loraFiles = await illustrationUtils.fetchLoraNames(base, state.illustrationJob.controller.signal);
                     }
-                    const loraApplied = illustrationUtils.applyLoraNodes(prepared.object, loraFiles);
+                    const loraApplied = illustrationUtils.applyLoraNodes(prepared.object, loraFiles, parsed.object);
                     if (!loraApplied.ok) throw new Error(loraApplied.error);
 
                     const existing = state.currentMessages[targetIndex].illustration || {};

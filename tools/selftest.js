@@ -260,19 +260,19 @@ check('model を直結する', loraBypass.object['4'].inputs.model, ['1', 0]);
 check('clip を直結する', loraBypass.object['3'].inputs.clip, ['1', 1]);
 check('他のノードはそのまま', Object.keys(loraBypass.object).sort(), ['1', '3', '4', '9']);
 
-// LoraLoaderModelOnly も同じ扱い
+// LoraLoaderModelOnly も同じ扱い（%lora1% を参照するノードが対象）
 const modelOnlyWf = () => ({
     '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'm.safetensors' } },
-    '2': { class_type: 'LoraLoaderModelOnly', inputs: { model: ['1', 0], lora_name: 'x.safetensors', strength_model: 1 } },
+    '2': { class_type: 'LoraLoaderModelOnly', inputs: { model: ['1', 0], lora_name: '%lora1%', strength_model: '%lora_str1%' } },
     '4': { class_type: 'KSampler', inputs: { model: ['2', 0] } },
     '9': { class_type: 'SaveImage', inputs: { images: null } },
 });
-const modelOnlyUnused = illustrationUtils.applyLoraNodes(modelOnlyWf(), ['z.safetensors']);
+const modelOnlyUnused = illustrationUtils.applyLoraNodes(modelOnlyWf(), ['z.safetensors'], modelOnlyWf());
 check('LoraLoaderModelOnly は strength_model だけ 0',
     [modelOnlyUnused.object['2'].inputs.lora_name, modelOnlyUnused.object['2'].inputs.strength_model], ['z.safetensors', 0]);
 checkTrue('LoraLoaderModelOnly に strength_clip は入れない',
     modelOnlyUnused.object['2'].inputs.strength_clip === undefined);
-const modelOnlyBypass = illustrationUtils.applyLoraNodes(modelOnlyWf(), []);
+const modelOnlyBypass = illustrationUtils.applyLoraNodes(modelOnlyWf(), [], modelOnlyWf());
 checkTrue('ModelOnly もフォルダ空なら外して直結',
     modelOnlyBypass.ok && !modelOnlyBypass.object['2'] && modelOnlyBypass.object['4'].inputs.model[0] === '1',
     JSON.stringify(modelOnlyBypass.object['4'].inputs));
@@ -408,6 +408,119 @@ const jsonResponse = (body, status) => ({
     await expectThrow('中断を伝える',
         () => illustrationUtils.waitForHistory('http://h:8188', 'pid-1', 5000, 10, aborted),
         /中断/);
+
+    // ── 同梱の規定ワークフロー（Anima 用 2 件）────────────────────
+    const animaTurbo = eval(extractObject(html, 'const ANIMA_WORKFLOW_TURBO_OBJECT = ') + '; ANIMA_WORKFLOW_TURBO_OBJECT');
+    const animaLora4 = eval(extractObject(html, 'const ANIMA_WORKFLOW_LORA4_OBJECT = ') + '; ANIMA_WORKFLOW_LORA4_OBJECT');
+    checkTrue('規定ワークフロー名①が同梱されている',
+        html.includes('Anima用デフォルトワークフロー①（+Turbo LoRA組込済）'));
+    checkTrue('規定ワークフロー名②が同梱されている',
+        html.includes('Anima用デフォルトワークフロー②（LoRA x 4）'));
+
+    state.settings.comfyModel = 'anima.safetensors';
+    state.settings.comfyVae = 'anima_vae.safetensors';
+    state.settings.comfyTextEncoder = 'gemma_2b.safetensors';
+    state.settings.comfySampler = 'euler_a';
+    state.settings.comfyScheduler = 'normal';
+    state.settings.comfyWidth = 512;
+    state.settings.comfyHeight = 512;
+    state.settings.comfySteps = 20;
+    state.settings.comfyCfg = 7;
+    state.settings.comfyDenoise = 1;
+    state.settings.comfyClipSkip = 1;
+    state.settings.comfySeed = -1;
+    state.settings.comfyCustomPlaceholders = [];
+    state.settings.comfyLoras = [
+        { name: '', strength: 1 }, { name: '', strength: 1 },
+        { name: '', strength: 1 }, { name: '', strength: 1 },
+    ];
+
+    const turboParse = illustrationUtils.parseWorkflow(JSON.stringify(animaTurbo));
+    checkTrue('規定①が API 形式として通る', turboParse.ok, turboParse.error);
+    const lora4Parse = illustrationUtils.parseWorkflow(JSON.stringify(animaLora4));
+    checkTrue('規定②が API 形式として通る', lora4Parse.ok, lora4Parse.error);
+
+    const turboPrepared = illustrationUtils.prepareWorkflow(turboParse.object);
+    checkTrue('規定①のトークンが全て埋まる', turboPrepared.ok, turboPrepared.error);
+    const lora4Prepared = illustrationUtils.prepareWorkflow(lora4Parse.object);
+    checkTrue('規定②のトークンが全て埋まる', lora4Prepared.ok, lora4Prepared.error);
+
+    const turboTokens = illustrationUtils.findPlaceholders(JSON.stringify(animaTurbo));
+    checkTrue('規定①は %loraN% を持たない',
+        !turboTokens.some(token => /^lora(_str)?[1-4]$/.test(token)), turboTokens.join(','));
+    const lora4Tokens = illustrationUtils.findPlaceholders(JSON.stringify(animaLora4));
+    checkTrue('規定②は %lora1%〜%lora4% と %lora_str1%〜%lora_str4% を持つ',
+        ['lora1', 'lora2', 'lora3', 'lora4', 'lora_str1', 'lora_str2', 'lora_str3', 'lora_str4']
+            .every(token => lora4Tokens.includes(token)), lora4Tokens.join(','));
+
+    // UNETLoader / CLIPLoader / VAELoader 形式なので、VAE と CLIP の選択が必須になる
+    const savedVae = state.settings.comfyVae;
+    state.settings.comfyVae = '';
+    const noVae = illustrationUtils.prepareWorkflow(JSON.parse(JSON.stringify(animaTurbo)));
+    checkTrue('規定①は VAE 未選択だと未対応プレースホルダで止まる',
+        !noVae.ok && /%vae%/.test(noVae.error || ''), noVae.error);
+    state.settings.comfyVae = savedVae;
+
+    // 固定名の LoRA ノード（同梱①の Turbo LoRA）は、%loraN% を参照しないので管理対象にしない
+    const fixedLoraWf = () => ({
+        '44': { class_type: 'UNETLoader', inputs: { unet_name: 'anima.safetensors' } },
+        '50': {
+            class_type: 'LoraLoader',
+            inputs: {
+                model: ['44', 0], clip: ['44', 1],
+                lora_name: 'anima-turbo-lora-v0.2.safetensors', strength_model: 1, strength_clip: 1,
+            },
+        },
+        '19': { class_type: 'KSampler', inputs: { model: ['50', 0] } },
+        '9': { class_type: 'SaveImage', inputs: { images: null } },
+    });
+    const fixedLora = illustrationUtils.applyLoraNodes(fixedLoraWf(), ['z.safetensors'], fixedLoraWf());
+    checkTrue('固定名の LoRA ノードは触らない',
+        fixedLora.ok
+        && fixedLora.object['50'].inputs.lora_name === 'anima-turbo-lora-v0.2.safetensors'
+        && fixedLora.object['50'].inputs.strength_model === 1,
+        JSON.stringify(fixedLora.object['50']));
+    const fixedLoraEmpty = illustrationUtils.applyLoraNodes(fixedLoraWf(), [], fixedLoraWf());
+    checkTrue('固定名の LoRA ノードは loras フォルダが空でも外さない',
+        fixedLoraEmpty.ok && !!fixedLoraEmpty.object['50'], JSON.stringify(fixedLoraEmpty));
+    checkTrue('固定名の LoRA ノードだけなら一覧を取りに行かない',
+        illustrationUtils.hasLoraNodes(fixedLoraWf()) === false);
+
+    // rgthree の Power Lora Loader は、選んだスロットだけ on: true にする
+    const rgthreeWf = () => ({
+        '44': { class_type: 'UNETLoader', inputs: { unet_name: 'anima.safetensors' } },
+        '45': { class_type: 'CLIPLoader', inputs: { clip_name: 'gemma_2b.safetensors' } },
+        '50': {
+            class_type: 'Power Lora Loader (rgthree)',
+            inputs: {
+                model: ['44', 0], clip: ['45', 0],
+                lora_1: { on: false, lora: 'one.safetensors', strength: 0.8 },
+                lora_2: { on: false, lora: '', strength: 0 },
+            },
+        },
+        '19': { class_type: 'KSampler', inputs: { model: ['50', 0] } },
+        '9': { class_type: 'SaveImage', inputs: { images: null } },
+    });
+    checkTrue('rgthree ノードは一覧取得の対象にする',
+        illustrationUtils.hasLoraNodes(rgthreeWf()) === true);
+    state.settings.comfyLoras[0] = { name: 'one.safetensors', strength: 0.8 };
+    const rgthreeObject = rgthreeWf();
+    const rgthreeApplied = illustrationUtils.applyLoraNodes(rgthreeObject, ['one.safetensors', 'two.safetensors'], rgthreeWf());
+    checkTrue('rgthree は選んだスロットだけ on: true',
+        rgthreeApplied.ok
+        && rgthreeObject['50'].inputs.lora_1.on === true
+        && rgthreeObject['50'].inputs.lora_2.on === false,
+        JSON.stringify(rgthreeObject['50'].inputs));
+    const rgthreeEmpty = illustrationUtils.applyLoraNodes(rgthreeWf(), [], rgthreeWf());
+    checkTrue('rgthree で使うスロットがあると空フォルダは止まる',
+        !rgthreeEmpty.ok && /loras フォルダ/.test(rgthreeEmpty.error || ''), rgthreeEmpty.error);
+    state.settings.comfyLoras[0] = { name: '', strength: 1 };
+    const rgthreeAllOff = illustrationUtils.applyLoraNodes(rgthreeWf(), ['one.safetensors'], rgthreeWf());
+    checkTrue('rgthree は使わないスロットを on: false のまま送る',
+        rgthreeAllOff.ok
+        && rgthreeAllOff.object['50'].inputs.lora_1.on === false
+        && rgthreeAllOff.object['50'].inputs.lora_2.on === false,
+        JSON.stringify(rgthreeAllOff.object['50'].inputs));
 
     console.log('passed: ' + passed + ', failed: ' + failures.length);
     if (failures.length) {
