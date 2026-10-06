@@ -1493,7 +1493,7 @@ async function main() {
             ['連打でも ComfyUI への投入は1件', promptPostsAfterFailure === 1],
             ['連打後もジョブは解除される', failureResult.rapidTapResult.jobReleased && failureResult.rapidTapResult.status === 'done'],
             ['Service Worker が登録される', failureResult.swRegistered],
-            ['Service Worker のキャッシュ版が上がっている', failureResult.swVersion === 'onasapo-chan-cache-v5'],
+            ['Service Worker のキャッシュ版が上がっている', failureResult.swVersion === 'onasapo-chan-cache-v6'],
             ['不正ワークフローでは LLM を消費しない', failureResult.badWorkflowResult.spentLlmCall === false],
             ['UI形式ワークフローは ComfyUI へ送らない', failureResult.badWorkflowResult.posted === false],
             ['未知のプレースホルダは ComfyUI へ送らない', failureResult.unknownTokenResult.posted === false],

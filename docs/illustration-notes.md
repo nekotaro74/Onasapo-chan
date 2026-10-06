@@ -187,5 +187,24 @@ LoraLoader ノードには後段の `applyLoraNodes` が実際の値を上書き
 ### 同梱の規定ワークフロー
 `DEFAULT_COMFY_WORKFLOW_OBJECT` を設定の初期値と README に置いた。SillyTavern 既定ではなく本アプリ制作。
 チェックポイントから MODEL / CLIP / VAE をすべて取るので VAELoader も TextEncoderLoader も不要。
-`comfySampler` / `comfyScheduler` の既定を `euler_a` / `normal` にしたため、`%sampler%` / `%scheduler%` が
+`comfySampler` / `comfyScheduler` は既定値を初期状態から持つため、`%sampler%` / `%scheduler%` が
 初期状態でも解決される。ワークフローが 0 件になった場合は起動時に同梱分を戻す。
+
+### 生成パラメータの既定値
+Anima / SDXL 系でそのまま使える値を既定にしている（`DEFAULT_COMFY_*` 定数と `state.settings` の初期値）。
+
+| 項目 | 既定値 |
+| --- | --- |
+| Sampling method | `euler` |
+| Scheduler | `simple` |
+| 幅 x 高さ | 1024 x 1024 |
+| 解像度プリセット | `1024x1024`（1024 x 1024 (SDXL)） |
+| Steps | 8 |
+| CFG scale | 1.0 |
+| Denoise | 1 |
+| CLIP Skip | 1 |
+| seed | -1（毎回ランダム） |
+
+解像度プリセットの既定は `DEFAULT_COMFY_RESOLUTION_PRESET` が持つ。プリセットは `custom` 以外を選ぶと幅・高さへ
+反映されるだけなので、既定の 1024x1024 と幅・高さの既定値は同じ値で揃っている。
+既定値が変わるのは新規／未保存の設定だけで、IndexedDB に保存済みの値はそのまま残る（設定の移行処理は無い）。

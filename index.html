@@ -8633,10 +8633,10 @@ If character actions involve direct physical interaction with another character,
 A correctly formatted example response would be:
 '(location),(character list by gender),(primary action), (relative character position) POV, (character 1's description and actions), (character 2's description and actions)'`;
         const DEFAULT_COMFY_BASE_URL = 'http://127.0.0.1:8188';
-        const DEFAULT_COMFY_WIDTH = 512;
-        const DEFAULT_COMFY_HEIGHT = 512;
-        const DEFAULT_COMFY_STEPS = 20;
-        const DEFAULT_COMFY_CFG = 7;
+        const DEFAULT_COMFY_WIDTH = 1024;
+        const DEFAULT_COMFY_HEIGHT = 1024;
+        const DEFAULT_COMFY_STEPS = 8;
+        const DEFAULT_COMFY_CFG = 1;
         const DEFAULT_COMFY_DENOISE = 1;
         const DEFAULT_COMFY_CLIP_SKIP = 1;
         const DEFAULT_COMFY_TIMEOUT_MS = 180000;
@@ -8652,11 +8652,12 @@ A correctly formatted example response would be:
             { value: '1536x1024', label: '1536 x 1024 (SDXL 横)' },
             { value: 'custom', label: 'カスタム（上の幅・高さを使う）' },
         ];
+        const DEFAULT_COMFY_RESOLUTION_PRESET = '1024x1024';
         // 履歴に data URL で保存するため、縮小と上限で容量を抑える
         const DEFAULT_COMFY_MAX_IMAGE_EDGE = 2048;
         const DEFAULT_COMFY_MAX_IMAGE_BYTES = 400 * 1024;
-        const DEFAULT_COMFY_SAMPLER = 'euler_a';
-        const DEFAULT_COMFY_SCHEDULER = 'normal';
+        const DEFAULT_COMFY_SAMPLER = 'euler';
+        const DEFAULT_COMFY_SCHEDULER = 'simple';
         // 同梱する規定ワークフロー（Anima 用 2 件）。SillyTavern 既定ではなく、本アプリが用意した初期値です。
         // UNETLoader / CLIPLoader / VAELoader を使うため、設定で 拡散モデル・CLIP・VAE を選ぶ必要があります。
         // ① は公式 Turbo LoRA を LoraLoader ノードへ固定したまま送るワークフロー。
@@ -9567,7 +9568,7 @@ geminiIncludeThoughts: false,
                 comfyTextEncoder: '',
                 comfySampler: DEFAULT_COMFY_SAMPLER,
                 comfyScheduler: DEFAULT_COMFY_SCHEDULER,
-                comfyResolutionPreset: 'custom',
+                comfyResolutionPreset: DEFAULT_COMFY_RESOLUTION_PRESET,
                 comfyWidth: DEFAULT_COMFY_WIDTH,
                 comfyHeight: DEFAULT_COMFY_HEIGHT,
                 comfySteps: DEFAULT_COMFY_STEPS,
@@ -15565,7 +15566,7 @@ elements.footerTapScrollToBottomToggle.checked = state.settings.footerTapScrollT
                 elements.comfyNegativePromptTextarea.value = state.settings.comfyNegativePrompt || '';
                 elements.comfyImagePromptTemplateTextarea.value = state.settings.comfyImagePromptTemplate || DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE;
                 this.fillComfyResolutionPresets();
-                elements.comfyResolutionPresetSelect.value = state.settings.comfyResolutionPreset || 'custom';
+                elements.comfyResolutionPresetSelect.value = state.settings.comfyResolutionPreset || DEFAULT_COMFY_RESOLUTION_PRESET;
                 elements.comfyWidthInput.value = state.settings.comfyWidth ?? DEFAULT_COMFY_WIDTH;
                 elements.comfyHeightInput.value = state.settings.comfyHeight ?? DEFAULT_COMFY_HEIGHT;
                 elements.comfyStepsInput.value = state.settings.comfySteps ?? DEFAULT_COMFY_STEPS;

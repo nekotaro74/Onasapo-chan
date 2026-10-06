@@ -574,6 +574,38 @@ const jsonResponse = (body, status) => ({
     check('LoRA ノードの無いワークフローは0スロット',
         illustrationUtils.loraSlotCapacity({ '44': { class_type: 'UNETLoader', inputs: {} } }), 0);
 
+    // 生成パラメータの既定値（Anima / SDXL 系でそのまま使える値）
+    const constValues = {};
+    ['DEFAULT_COMFY_SAMPLER', 'DEFAULT_COMFY_SCHEDULER', 'DEFAULT_COMFY_WIDTH', 'DEFAULT_COMFY_HEIGHT',
+        'DEFAULT_COMFY_STEPS', 'DEFAULT_COMFY_CFG', 'DEFAULT_COMFY_DENOISE', 'DEFAULT_COMFY_CLIP_SKIP',
+        'DEFAULT_COMFY_RESOLUTION_PRESET'].forEach(name => {
+        const marker = `const ${name} = `;
+        const at = html.indexOf(marker);
+        if (at === -1) throw new Error('見つかりません: ' + marker);
+        const lineEnd = html.indexOf(';', at);
+        constValues[name] = eval(html.slice(at + marker.length, lineEnd));
+    });
+    check('既定の Sampling method', constValues.DEFAULT_COMFY_SAMPLER, 'euler');
+    check('既定の Scheduler', constValues.DEFAULT_COMFY_SCHEDULER, 'simple');
+    check('既定の幅', constValues.DEFAULT_COMFY_WIDTH, 1024);
+    check('既定の高さ', constValues.DEFAULT_COMFY_HEIGHT, 1024);
+    check('既定の Steps', constValues.DEFAULT_COMFY_STEPS, 8);
+    check('既定の CFG scale', constValues.DEFAULT_COMFY_CFG, 1);
+    check('既定の Denoise', constValues.DEFAULT_COMFY_DENOISE, 1);
+    check('既定の CLIP Skip', constValues.DEFAULT_COMFY_CLIP_SKIP, 1);
+    check('既定の解像度プリセット', constValues.DEFAULT_COMFY_RESOLUTION_PRESET, '1024x1024');
+    // プリセット既定が実在し、幅・高さの既定値と食い違わない
+    const presetsMarker = 'const COMFY_RESOLUTION_PRESETS = [';
+    const presetsStart = html.indexOf(presetsMarker);
+    const presetsEnd = html.indexOf('];', presetsStart);
+    const presets = eval(html.slice(presetsStart, presetsEnd + 2) + '; COMFY_RESOLUTION_PRESETS');
+    checkTrue('既定の解像度プリセットは一覧に有る',
+        presets.some(p => p.value === constValues.DEFAULT_COMFY_RESOLUTION_PRESET),
+        constValues.DEFAULT_COMFY_RESOLUTION_PRESET);
+    const presetPair = String(constValues.DEFAULT_COMFY_RESOLUTION_PRESET).split('x').map(Number);
+    check('既定のプリセットと幅・高さが一致',
+        JSON.stringify(presetPair), JSON.stringify([constValues.DEFAULT_COMFY_WIDTH, constValues.DEFAULT_COMFY_HEIGHT]));
+
     console.log('passed: ' + passed + ', failed: ' + failures.length);
     if (failures.length) {
         console.log('\n' + failures.join('\n\n'));
