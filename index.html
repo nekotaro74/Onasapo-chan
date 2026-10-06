@@ -2401,6 +2401,20 @@ body.turf-mode {
             transition: min-height 0.2s ease, height 0.2s ease, padding 0.2s ease, font-size 0.2s ease;
         }
 
+        /* 狭い画面では入力欄を上の行、ボタン類を下の行へ。
+           入力欄を 1 行占有させてから order で先頭へ持っていく（広い画面は横並びのまま） */
+        @media (max-width: 680px) {
+            .chat-input-area {
+                flex-wrap: wrap;
+            }
+
+            .chat-input-area textarea#user-input {
+                order: -1;
+                flex: 1 1 100%;
+                min-width: 0;
+            }
+        }
+
         .chat-input-area button#send-button {
             height: 40px;
             width: 40px;
@@ -4242,6 +4256,87 @@ body.turf-mode {
             line-height: 1.2;
         }
 
+        /* ── 挿絵ワークフロー一覧の名前行 ─────────────────────
+           名前は通常 読み取り専用の表示。鉛筆アイコンを右端に重ね、
+           触ったときだけ入力欄として編集できるようにする */
+        .comfy-workflow-name-row {
+            position: relative;
+            display: flex;
+            align-items: center;
+            min-width: 0;
+        }
+
+        .comfy-workflow-name-input {
+            flex: 1 1 auto;
+            width: 100%;
+            min-width: 0;
+            margin-bottom: 0;
+            /* 鉛筆アイコン分だけ右に余白を残す（名前が読める幅を優先） */
+            padding-right: 28px;
+            border-color: transparent;
+            background-color: transparent;
+            cursor: default;
+        }
+
+        .comfy-workflow-name-input.editing {
+            border-color: var(--border-primary);
+            background-color: var(--bg-input);
+            color: var(--text-primary);
+            cursor: text;
+        }
+
+        .comfy-workflow-name-edit-btn {
+            position: absolute;
+            top: 50%;
+            right: 3px;
+            transform: translateY(-50%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 22px;
+            height: 22px;
+            padding: 0;
+            border: none;
+            border-radius: 3px;
+            background-color: transparent;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+
+        .comfy-workflow-name-edit-btn:hover:not(:disabled) {
+            background-color: var(--bg-button-action-hover);
+            color: var(--text-link);
+        }
+
+        .comfy-workflow-name-edit-btn svg {
+            width: 14px;
+            height: 14px;
+            display: block;
+        }
+
+        .comfy-workflow-name-edit-btn.editing {
+            color: var(--text-link);
+        }
+
+        /* 名前以外のボタンは次の行へ回す */
+        .comfy-workflow-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+
+        /* 使用中のワークフローだけ赤地に太字の白文字（未使用ボタンは色を変えない） */
+        button.settings-action-button.comfy-workflow-use-btn.active,
+        button.settings-action-button.comfy-workflow-use-btn.active:disabled {
+            background-color: #c62828;
+            color: #ffffff;
+            font-weight: bold;
+        }
+
+        button.settings-action-button.comfy-workflow-use-btn.active:hover:not(:disabled) {
+            background-color: #a51d1d;
+        }
+
         .api-key-select-btn {
             background-color: var(--bg-button-save);
             color: var(--text-light);
@@ -4581,6 +4676,16 @@ body.turf-mode button:nth-of-type(6n) {
     opacity: 0.5;
     cursor: not-allowed;
     background-color: var(--bg-secondary);
+}
+/* PC 幅（アプリ本体が最大幅 800px に届く画面）では Max Tokens の入力欄 2 つを広げる。
+   狭い画面では今の幅のまま */
+@media (min-width: 800px) {
+    #settings-group-deepseek-other-params #deepseek-max-tokens {
+        width: 105px;
+    }
+    #settings-group-deepseek-other-params .param-slider-max-input[data-target-id="deepseek-max-tokens"] {
+        width: 90px !important;
+    }
 }
 #settings-group-gemini-other-params .param-slider-container,
 #settings-group-deepseek-other-params .param-slider-container,
@@ -8427,7 +8532,8 @@ const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
         const DEFAULT_OPENAI_MODEL = 'gpt-3.5-turbo';
         const DEFAULT_XAI_MODEL = 'grok-4-1-fast-non-reasoning';
         const DEFAULT_LLMAGGREGATOR_MODEL = 'x-ai/grok-4.1-fast';
-        const DEFAULT_STREAMING_SPEED = 12;
+        // 既定は 0（文字送りをしない）。保存済みの値は読み込み側で残るため、上書きしない
+        const DEFAULT_STREAMING_SPEED = 0;
         const DEFAULT_TEMPERATURE = 0.5;
         const DEFAULT_MAX_TOKENS = 4000;
         const DEFAULT_TOP_K = 40;
@@ -8488,7 +8594,7 @@ A correctly formatted example response would be:
             { value: 'custom', label: 'カスタム（上の幅・高さを使う）' },
         ];
         // 履歴に data URL で保存するため、縮小と上限で容量を抑える
-        const DEFAULT_COMFY_MAX_IMAGE_EDGE = 1024;
+        const DEFAULT_COMFY_MAX_IMAGE_EDGE = 2048;
         const DEFAULT_COMFY_MAX_IMAGE_BYTES = 400 * 1024;
         const DEFAULT_COMFY_SAMPLER = 'euler_a';
         const DEFAULT_COMFY_SCHEDULER = 'normal';
@@ -10939,8 +11045,31 @@ const dbUtils = {
                 if (!this.findWorkflow(id)) return;
                 state.settings.comfyActiveWorkflowId = id;
                 await dbUtils.saveSetting('comfyActiveWorkflowId', id);
+                await this.syncLoraSlotsWithActiveWorkflow();
                 this.renderList();
                 this.renderEditor();
+            },
+
+            // 使用中のワークフローに %lora1%〜%lora4% が無いときは、LoRA 1〜4 を「使わない」へ戻す。
+            // プレースホルダを含むワークフローでは、選び済みの LoRA を変えない。
+            async syncLoraSlotsWithActiveWorkflow() {
+                const active = illustrationUtils.activeWorkflow();
+                if (!active) return false;
+                const hasLoraToken = illustrationUtils.findPlaceholders(active.json)
+                    .some(token => /^lora[1-4]$/.test(token));
+                if (hasLoraToken) return false;
+                const slots = Array.isArray(state.settings.comfyLoras) ? state.settings.comfyLoras : [];
+                if (!slots.some(slot => slot && slot.name)) return false;
+                for (let slotIndex = 0; slotIndex < illustrationUtils.LORA_SLOT_COUNT; slotIndex++) {
+                    await this.setLoraSlot(slotIndex, { name: '' });
+                }
+                this.renderLoraRows();
+                if (elements.comfyLoraStatus) {
+                    elements.comfyLoraStatus.textContent =
+                        'このワークフローには %lora1%〜%lora4% が無いため、LoRA は全て「使わない」にしました';
+                    elements.comfyLoraStatus.style.color = 'var(--text-secondary)';
+                }
+                return true;
             },
 
             async addWorkflow(jsonText, name) {
@@ -10955,6 +11084,7 @@ const dbUtils = {
                 state.settings.comfyWorkflows.push(workflow);
                 state.settings.comfyActiveWorkflowId = workflow.id;
                 await this.persist();
+                await this.syncLoraSlotsWithActiveWorkflow();
                 this.renderList();
                 this.renderEditor();
                 return { ok: true, workflow: workflow };
@@ -10988,6 +11118,7 @@ const dbUtils = {
                 state.settings.comfyWorkflows.push(copy);
                 state.settings.comfyActiveWorkflowId = copy.id;
                 await this.persist();
+                await this.syncLoraSlotsWithActiveWorkflow();
                 this.renderList();
                 this.renderEditor();
             },
@@ -11001,6 +11132,7 @@ const dbUtils = {
                     state.settings.comfyActiveWorkflowId = list.length ? list[0].id : '';
                 }
                 await this.persist();
+                await this.syncLoraSlotsWithActiveWorkflow();
                 this.renderList();
                 this.renderEditor();
             },
@@ -11409,27 +11541,74 @@ const dbUtils = {
                     const item = document.createElement('div');
                     item.className = `api-key-item ${isActive ? 'active' : ''}`;
 
-                    const row = document.createElement('div');
-                    row.style.display = 'flex';
-                    row.style.gap = '5px';
-                    row.style.flexWrap = 'wrap';
+                    // 1行目: ワークフロー名。既定は読み取り専用の表示で、鉛筆を触ったときだけ編集できる
+                    const nameRow = document.createElement('div');
+                    nameRow.className = 'comfy-workflow-name-row';
 
                     const label = document.createElement('input');
                     label.type = 'text';
-                    label.className = 'api-key-item-label';
+                    label.className = 'api-key-item-label comfy-workflow-name-input';
                     label.value = workflow.name;
-                    label.style.marginBottom = '0';
-                    label.addEventListener('change', event => this.renameWorkflow(workflow.id, event.target.value));
-                    row.appendChild(label);
+                    label.readOnly = true;
+                    label.setAttribute('aria-label', 'ワークフロー名');
+                    nameRow.appendChild(label);
+
+                    const editButton = document.createElement('button');
+                    editButton.type = 'button';
+                    editButton.className = 'comfy-workflow-name-edit-btn';
+                    editButton.title = 'ワークフロー名を編集';
+                    editButton.setAttribute('aria-label', 'ワークフロー名を編集');
+                    editButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">'
+                        + '<path fill="currentColor" d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z" />'
+                        + '<path fill="currentColor" d="M20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />'
+                        + '</svg>';
+                    nameRow.appendChild(editButton);
+                    item.appendChild(nameRow);
+
+                    editButton.addEventListener('click', () => {
+                        label.readOnly = false;
+                        label.classList.add('editing');
+                        editButton.classList.add('editing');
+                        editButton.title = '確定は Enter、取り消しは Esc';
+                        label.focus();
+                        label.select();
+                    });
+                    // 編集を終えて読み取り専用へ戻す。revert = true は入力を取り消す
+                    // （空の名前は前の名前へ戻す）。blur を待たず Enter でも確定できるようにする
+                    const commitName = (revert) => {
+                        if (label.readOnly) return;
+                        label.readOnly = true;
+                        label.classList.remove('editing');
+                        editButton.classList.remove('editing');
+                        editButton.title = 'ワークフロー名を編集';
+                        if (revert || !label.value.trim()) {
+                            label.value = workflow.name;
+                            return;
+                        }
+                        this.renameWorkflow(workflow.id, label.value);
+                    };
+                    label.addEventListener('keydown', event => {
+                        if (event.key === 'Enter') {
+                            event.preventDefault();
+                            commitName(false);
+                        } else if (event.key === 'Escape') {
+                            commitName(true);
+                        }
+                    });
+                    label.addEventListener('blur', () => commitName(false));
+
+                    // 2行目: 名前以外のボタン類
+                    const actionRow = document.createElement('div');
+                    actionRow.className = 'comfy-workflow-actions';
 
                     const useButton = document.createElement('button');
                     useButton.type = 'button';
-                    useButton.className = 'settings-action-button';
+                    useButton.className = `settings-action-button comfy-workflow-use-btn${isActive ? ' active' : ''}`;
                     useButton.style.fontSize = '12px';
                     useButton.textContent = isActive ? '使用中' : '使用する';
                     useButton.disabled = isActive;
                     useButton.addEventListener('click', () => this.selectWorkflow(workflow.id));
-                    row.appendChild(useButton);
+                    actionRow.appendChild(useButton);
 
                     const duplicateButton = document.createElement('button');
                     duplicateButton.type = 'button';
@@ -11437,7 +11616,7 @@ const dbUtils = {
                     duplicateButton.style.fontSize = '12px';
                     duplicateButton.textContent = '複製';
                     duplicateButton.addEventListener('click', () => this.duplicateWorkflow(workflow.id));
-                    row.appendChild(duplicateButton);
+                    actionRow.appendChild(duplicateButton);
 
                     const exportButton = document.createElement('button');
                     exportButton.type = 'button';
@@ -11445,7 +11624,7 @@ const dbUtils = {
                     exportButton.style.fontSize = '12px';
                     exportButton.textContent = '書き出し';
                     exportButton.addEventListener('click', () => this.exportWorkflows([workflow.id]));
-                    row.appendChild(exportButton);
+                    actionRow.appendChild(exportButton);
 
                     const deleteButton = document.createElement('button');
                     deleteButton.type = 'button';
@@ -11456,9 +11635,9 @@ const dbUtils = {
                         const ok = await uiUtils.showCustomConfirm(`「${workflow.name}」を削除しますか。`);
                         if (ok) this.deleteWorkflow(workflow.id);
                     });
-                    row.appendChild(deleteButton);
+                    actionRow.appendChild(deleteButton);
 
-                    item.appendChild(row);
+                    item.appendChild(actionRow);
                     const meta = document.createElement('div');
                     meta.style.fontSize = '11px';
                     meta.style.color = 'var(--text-secondary)';
@@ -12973,6 +13152,14 @@ appendMessage(role, content, index, isStreamingPlaceholder = false, cascadeInfo 
                     deleteAllButton.classList.add('js-illustration-delete-all-btn');
                     deleteAllButton.dataset.index = index;
                     header.appendChild(deleteAllButton);
+                } else if (illustration.prompt && illustration.status !== 'generating') {
+                    // 生成に失敗して画像プロンプトだけ残った場合。画像ファイルは無いため、削除対象はプロンプト側
+                    const deletePromptButton = document.createElement('button');
+                    deletePromptButton.textContent = '挿絵を削除';
+                    deletePromptButton.title = '画像プロンプトを削除して、挿絵が無い状態に戻す';
+                    deletePromptButton.classList.add('js-illustration-delete-prompt-btn');
+                    deletePromptButton.dataset.index = index;
+                    header.appendChild(deletePromptButton);
                 }
 
                 const current = illustrationUtils.currentImage(illustration);
@@ -17516,6 +17703,10 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                             appLogic.deleteAllIllustrations(index);
                             return;
                         }
+                        if (button.classList.contains('js-illustration-delete-prompt-btn')) {
+                            appLogic.deleteIllustrationPromptOnly(index);
+                            return;
+                        }
                         if (button.classList.contains('js-illustration-prev-btn')) {
                             appLogic.cycleIllustrationView(index, -1);
                             return;
@@ -19215,6 +19406,17 @@ helpIcons.forEach(icon => {
                 const ok = await uiUtils.showCustomConfirm('この応答に対して生成された画像を全て削除しますか？');
                 if (!ok) return;
                 message.illustration = null;
+                this.clearIllustrationOnMessage(messageIndex);
+                await dbUtils.saveChat();
+            },
+            // 画像が残らずプロンプトだけ残った挿絵を消す。
+            // 画像ファイルが無いので削除対象はプロンプト側だけで、挿絵が無い状態へ戻す
+            async deleteIllustrationPromptOnly(messageIndex) {
+                const message = state.currentMessages[messageIndex];
+                if (!message || !message.illustration) return;
+                if (illustrationUtils.hasImages(message.illustration)) return;
+                const ok = await uiUtils.showCustomConfirm('画像プロンプトを削除して、挿絵が無い状態に戻しますか？');
+                if (!ok) return;
                 this.clearIllustrationOnMessage(messageIndex);
                 await dbUtils.saveChat();
             },
