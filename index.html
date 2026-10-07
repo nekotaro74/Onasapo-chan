@@ -8613,27 +8613,30 @@ const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
         const DEFAULT_AI_NAME = "AI";
 
         // ▼ 挿絵生成（ComfyUI / SillyTavern "Last message" 模倣）▼
-        // 既定の quiet 指示テンプレート。SillyTavern の generationMode.NOW の文面を基にする。
+        // 既定の quiet 指示テンプレート。直近の発話に写る人物だけを、奥行きのある構図で文章に起こす。
         // {{char}} / {{user}} は実行時にセッションの表示名（未設定なら assistant / user）で置換する。
-        const DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE = `Ignore previous instructions. Your next response must be formatted as a single comma-delimited list of concise keywords. The list will describe the visual details included in the last chat message.
+        const DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE = `Ignore all previous instructions. Do not roleplay. Do not continue the story. Do not explain. Output only the image prompt.
 
-Only mention characters by using pronouns ('he','his','she','her','it','its') or neutral nouns ('male', 'the man', 'female', 'the woman').
+Convert the last chat message into one Image generation prompt for every person visibly present. Include {{user}} only if their body is in frame. Include {{char}} only if their body is in frame. Omit anyone who is only speaking, remembered, or off-screen.
 
-Ignore non-visible things such as feelings, personality traits, thoughts, and spoken dialog.
+Rules:
+- English only. Lowercase tags, spaces instead of underscores. No weights, no (tag:1.2), no BREAK, no brackets, no XML.
+- Do not write quality, score, year, safety, or artist tags.
+- Visual facts only. Drop dialogue, thoughts, personality, and narration.
+- Choose one camera that matches the action. Do not default to a flat side-by-side lineup. Allowed cameras: wide shot, medium shot, cowboy shot, close-up, over-the-shoulder shot, low angle, high angle, dutch angle, three-quarter view, profile, from behind, bird's-eye view. Use close-up only when the last message is about a face. For two or more people, prefer cowboy shot or medium shot.
+- First line is tags: subject count, then the chosen camera, then depth cue, then place. Count must match the visible people, such as 2girls, 1girl 1boy, or 3girls.
+- Place each person in a different depth, not only left and right. Use foreground, midground, and background. One person may be closer and larger, another farther and partly overlapped. Left and right are optional, and only if they are actually true.
+- Then one closed sentence per person, nearest first. Start with depth and position, then name and series if known, then hair, eyes, top, bottom, footwear, expression, and that person's own action.
+- Every person gets the same slots. If you state hair, eyes, or clothing for one person, state them for every visible person. Never leave a slot blank, and never reuse another person's color or garment.
+- Use distinct colors. If they touch, name who uses which hand or arm. If hands are visible, say what each hand is doing. If not important, hide them. Do not mention finger counts.
+- After the character sentences, add one sentence that restates who does what, using name or hair color. End with place, light, and the camera again. No alternatives, no "or", no "maybe".
 
-Add keywords in this precise order:
-a keyword to describe the location of the scene,
-a keyword to mention how many characters of each gender or type are present in the scene (minimum of two characters: {{user}} and {{char}}, example: '2 men ' or '1 man 1 woman ', '1 man 3 robots'),
-keywords to describe the relative physical positioning of the characters to each other (if a commonly known term for the positioning is known use it instead of describing the positioning in detail) + 'POV',
-a single keyword or phrase to describe the primary act taking place in the last chat message,
-keywords to describe {{char}}'s physical appearance and facial expression,
-keywords to describe {{char}}'s actions,
-keywords to describe {{user}}'s physical appearance and actions.
+Format exactly:
 
-If character actions involve direct physical interaction with another character, mention specifically which body parts interacting and how.
-
-A correctly formatted example response would be:
-'(location),(character list by gender),(primary action), (relative character position) POV, (character 1's description and actions), (character 2's description and actions)'`;
+[count], [one camera], [depth cue], [place].
+The person in the foreground is [name] from [series]. They have [hair], [eyes], and wear [top], [bottom], and [footwear]. They [expression] and [their action].
+The person in the midground is [name] from [series]. They have [hair], [eyes], and wear [top], [bottom], and [footwear]. They [expression] and [their action].
+[name or hair color] [action], while [other name or hair color] [action]. [place], [light], [camera].`;
         const DEFAULT_COMFY_BASE_URL = 'http://127.0.0.1:8188';
         const DEFAULT_COMFY_WIDTH = 1024;
         const DEFAULT_COMFY_HEIGHT = 1024;
