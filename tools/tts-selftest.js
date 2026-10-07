@@ -211,6 +211,75 @@ check('空欄にはカンマを付けない', ttsUtils.normalizeVoicesInput('   
 check('末尾カンマで空の選択肢は増えない',
     ttsUtils.voiceChoicesFrom(ttsUtils.normalizeVoicesInput('alloy, echo')), ['alloy', 'echo']);
 
+// ── 一覧取得の base 導出（保存済み ttsEndpoint は /audio/speech を含む）──
+check('base から /audio/speech を落として一覧へ使う',
+    ttsUtils.normalizeApiBase('https://api.example.com/v1/audio/speech'), 'https://api.example.com/v1');
+check('/audio/speech 無しはそのまま',
+    ttsUtils.normalizeApiBase('https://api.example.com/v1'), 'https://api.example.com/v1');
+check('末尾スラッシュを落とす',
+    ttsUtils.normalizeApiBase('https://api.example.com/v1//'), 'https://api.example.com/v1');
+check('大文字小文字の違いでも /audio/speech を落とす',
+    ttsUtils.normalizeApiBase('https://api.example.com/v1/AUDIO/SPEECH'), 'https://api.example.com/v1');
+check('空は空のまま（base 導出）', ttsUtils.normalizeApiBase(''), '');
+
+// ── 一覧エンドポイントの候補順 ──────────────────────────
+check('/audio/voices を先に、/voices を後に試す',
+    ttsUtils.voicesUrlCandidates('https://api.example.com/v1'),
+    ['https://api.example.com/v1/audio/voices', 'https://api.example.com/v1/voices']);
+
+// ── 一覧のレスポンス形（サーバーごとに違う）──────────────
+const irodoriShape = {
+    object: 'list',
+    data: [
+        { id: 'momo', object: 'voice', ref_wav: 'momo.wav', ref_wavs: [], ref_latent: null, ref_latents: [], ref_embed: null, no_ref: false },
+        { id: 'rima', object: 'voice', ref_wav: null, ref_latent: null, ref_latents: ['r.pt'], ref_embed: null, no_ref: false },
+        { id: 'si', object: 'voice', ref_wav: null, ref_embed: 'si.speaker.safetensors', no_ref: false },
+        { id: 'none', object: 'voice', ref_wav: null, no_ref: true },
+        { id: 'both', ref_wav: 'b.wav', ref_latents: ['b.pt'] },
+    ],
+};
+check('Irodori 形は id と種別を両方取る', ttsUtils.parseVoicesPayload(irodoriShape), [
+    { id: 'momo', kinds: ['ref_wav'] },
+    { id: 'rima', kinds: ['ref_latent'] },
+    { id: 'si', kinds: ['ref_embed'] },
+    { id: 'none', kinds: ['no_ref'] },
+    { id: 'both', kinds: ['ref_wav', 'ref_latent'] },
+]);
+check('Kokoro 形の文字列一覧は種別不明',
+    ttsUtils.parseVoicesPayload({ voices: ['af_heart', 'af_bella'] }),
+    [{ id: 'af_heart', kinds: [] }, { id: 'af_bella', kinds: [] }]);
+check('素の配列も読める', ttsUtils.parseVoicesPayload(['a', 'b']), [{ id: 'a', kinds: [] }, { id: 'b', kinds: [] }]);
+check('name のみの object も拾う',
+    ttsUtils.parseVoicesPayload({ voices: [{ name: 'kanna' }] }), [{ id: 'kanna', kinds: [] }]);
+check('ref_latents の空配列を latent と誤らない',
+    ttsUtils.parseVoicesPayload({ data: [{ id: 'x', ref_latents: [] }] }), [{ id: 'x', kinds: [] }]);
+check('同一 id のエイリアスは種別を寄せる',
+    ttsUtils.parseVoicesPayload({ data: [{ id: 'y', ref_wav: 'y.wav' }, { id: 'y', ref_latent: 'y.pt' }] }),
+    [{ id: 'y', kinds: ['ref_wav', 'ref_latent'] }]);
+check('id の無い要素は除外', ttsUtils.parseVoicesPayload({ data: [{ ref_wav: 'a.wav' }, { id: 'ok' }] }), [{ id: 'ok', kinds: [] }]);
+check('一覧の形が無ければ空配列', ttsUtils.parseVoicesPayload('<html>SPA</html>'), []);
+check('null も空配列', ttsUtils.parseVoicesPayload(null), []);
+
+// ── 取得一覧を ttsVoices（カンマ区切り）へ往復 ────────────
+const fetchedIds = ttsUtils.voiceIdsFromEntries(ttsUtils.parseVoicesPayload(irodoriShape));
+check('取得 id をカンマ区切りへ（末尾カンマ付き）',
+    ttsUtils.voicesToInput(fetchedIds), 'momo, rima, si, none, both,');
+check('カンマ区切りにすると元の id 列に戻る',
+    ttsUtils.voiceChoicesFrom(ttsUtils.voicesToInput(fetchedIds)), fetchedIds);
+check('空一覧は空欄（カンマを付けない）', ttsUtils.voicesToInput([]), '');
+
+// ── チェックボックス一覧の表示列表 ────────────────────────
+const catalog = ttsUtils.parseVoicesPayload(irodoriShape);
+const merged = ttsUtils.mergeVoiceSelection(catalog, ['rima', 'gone']);
+check('カタログ順が先で、一覧に無い保存値は末尾',
+    merged.display.map(item => `${item.voice}${item.inCatalog ? '' : '*'}`),
+    ['momo', 'rima', 'si', 'none', 'both', 'gone*']);
+// 一覧から消えた保存値もチェック済みのまま残す（選択を失わない）
+check('保存値はカタログの有無に関わらずチェック済み', merged.checked, ['rima', 'gone']);
+check('種別は表示列表へ引き継ぐ', merged.display[1].kinds, ['ref_latent']);
+check('カタログが無くても保存値だけ並ぶ',
+    ttsUtils.mergeVoiceSelection([], ['a']).display.map(item => item.voice), ['a']);
+
 // ── 読み上げ本文は message.content から作る（挿絵プロンプト欄は読まない）──
 resetSettings();
 state.currentMessages = [{

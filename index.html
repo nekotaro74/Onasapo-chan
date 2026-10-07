@@ -8299,16 +8299,29 @@ font-size: 1.142em !important;
                         </p>
                         <label for="tts-model" style="margin-top: 15px;">モデル名:</label>
                         <input type="text" id="tts-model" placeholder="例：irodori-tts" aria-label="TTS モデル名">
-                        <label for="tts-voices" style="margin-top: 15px;">有効な参照ボイス一覧（カンマ区切り）:</label>
-                        <input type="text" id="tts-voices" placeholder="例: alloy, echo, fable, onyx, nova, shimmer"
-                            aria-label="カンマ区切りの有効な参照ボイス一覧">
-                        <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
-                            ※ Irodori TTS Serverフォルダ直下のVoicesフォルダに保存した参照ボイスファイルから、有効にしたいファイル名をカンマ+半角スペースで区切って入力（拡張子不要）。編集後、「接続確認＆ボイス一覧取得」ボタンで話者選択に反映されます。
-                        </p>
-
                         <button id="tts-connection-test-btn" class="settings-action-button" style="font-size: 12px;">接続確認＆ボイス一覧取得</button>
+                        <button id="tts-voice-test-btn" class="settings-action-button" style="font-size: 12px;">テスト再生</button>
                         <button id="tts-stop-btn" class="settings-action-button" style="font-size: 12px;">停止</button>
                         <span id="tts-connection-status" style="font-size: 12px; margin-left: 8px; color: var(--text-secondary);"></span>
+                        <div id="tts-voice-list-status" style="font-size: 11px; color: var(--text-secondary); margin-top: 8px;"></div>
+                        <div id="tts-voice-list" style="margin-top: 6px;"></div>
+                        <p style="font-size: 11px; color: var(--text-secondary); margin-top: 6px;">
+                            ※ 「接続確認＆ボイス一覧取得」はサーバーへ一覧を要求し、その応答自体で接続も確認します（一覧 API を持たないサーバーでは一覧だけ未取得のまま、下の「詳細」で編集できます）。<br>
+                            ※ チェックした物だけが話者選択の候補になります。テスト再生は読み上げキューとは別に鳴り、「停止」の対象外です。
+                        </p>
+                        <details id="tts-voices-details" style="margin-top: 10px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
+                            <summary style="cursor: pointer; font-size: 13px; padding: 8px; color: var(--text-secondary);">
+                                詳細（参照ボイス一覧を手で編集する）
+                            </summary>
+                            <div style="padding: 10px; padding-top: 5px;">
+                                <label for="tts-voices">有効な参照ボイス一覧（カンマ区切り）:</label>
+                                <input type="text" id="tts-voices" placeholder="例: alloy, echo, fable, onyx, nova, shimmer"
+                                    aria-label="カンマ区切りの有効な参照ボイス一覧">
+                                <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 0;">
+                                    ※ 一覧が取得できないサーバー用の入力欄です。ファイル名をカンマ+半角スペースで区切って入力（拡張子不要）。ここへ書いた内容は「接続確認＆ボイス一覧取得」が一覧を返せなかったときだけ、話者選択へ反映されます。
+                                </p>
+                            </div>
+                        </details>
 
                         <label for="tts-speed" style="margin-top: 15px;">速度: <span id="tts-speed-value">1.00</span> 倍</label>
                         <input type="range" id="tts-speed" min="0.25" max="4" step="0.05" value="1" aria-label="読み上げ速度">
@@ -9277,8 +9290,11 @@ elevationHoverOption: document.getElementById('elevation-hover-option'),
             ttsRegexEnabledToggle: document.getElementById('tts-regex-enabled-toggle'),
             ttsRegexPatternInput: document.getElementById('tts-regex-pattern'),
             ttsTestBtn: document.getElementById('tts-connection-test-btn'),
+            ttsVoiceTestBtn: document.getElementById('tts-voice-test-btn'),
             ttsStopBtn: document.getElementById('tts-stop-btn'),
             ttsStatus: document.getElementById('tts-connection-status'),
+            ttsVoiceList: document.getElementById('tts-voice-list'),
+            ttsVoiceListStatus: document.getElementById('tts-voice-list-status'),
             comfyConnectionTestBtn: document.getElementById('comfy-connection-test-btn'),
             comfyConnectionStatus: document.getElementById('comfy-connection-status'),
             comfyWorkflowTextarea: document.getElementById('comfy-workflow-textarea'),
@@ -12403,6 +12419,17 @@ const dbUtils = {
         // 再生を重ねない。停止はキューを破って現在の音声も止める。
         const TTS_SPEAKER_SLOTS = 5;          // 登場人物 1〜5
         const TTS_INPUT_CHUNK_CHARS = 1200;   // audio/speech の input は 4096 字上限。安全側に切る
+        // 参照ボイス一覧の種別。Irodori が返す ref_wav / ref_latent / ref_embed / no_ref をこの順で並べ、
+        // ラベルを付ける。サーバーが種別を返さない場合は「種別不明」になる。
+        const VOICE_KIND_ORDER = ['ref_wav', 'ref_latent', 'ref_embed', 'no_ref'];
+        const VOICE_KIND_LABELS = { ref_wav: '音声', ref_latent: 'latent', ref_embed: 'SI', no_ref: 'no_ref' };
+
+        // 一覧の種別ラベル。種別を返さないサーバー（Kokoro 形式など）は「種別不明」
+        function voiceKindLabel(kinds) {
+            const list = Array.isArray(kinds) ? kinds : [];
+            if (!list.length) return '（種別不明）';
+            return `（${list.map(kind => VOICE_KIND_LABELS[kind] || kind).join(' / ')}）`;
+        }
 
         const ttsUtils = {
             // ── 正規化 ──────────────────────────────────────
@@ -12884,26 +12911,48 @@ const dbUtils = {
                 this.updateStatus('停止しました');
             },
 
-            updateStatus(message, isError) {
+            // isOk は接続確認の成功（挿絵生成側の「接続OK」と同じ色）。既存の 2 引数呼び出しはそのまま通る
+            updateStatus(message, isError, isOk) {
                 if (!elements.ttsStatus) return;
                 elements.ttsStatus.textContent = message || '';
-                elements.ttsStatus.style.color = isError ? 'var(--text-error, var(--text-link))' : 'var(--text-secondary)';
+                if (isError) elements.ttsStatus.style.color = 'var(--text-error, var(--text-link))';
+                else if (isOk) elements.ttsStatus.style.color = 'var(--text-success, var(--text-link))';
+                else elements.ttsStatus.style.color = 'var(--text-secondary)';
             },
 
-            // 設定の「接続確認」。短い文を 1 回だけ合成して再生する
-            async testConnection() {
-                // デフォルトボイスが未設定のときは、まだ反映前の編集でも試せるよう入力欄の最新内容から選ぶ
-                const typedChoices = this.voiceChoicesFrom(
-                    elements.ttsVoicesInput ? elements.ttsVoicesInput.value : state.settings.ttsVoices);
-                const objectUrl = await this.synthesize('接続確認のテストです。', String(state.settings.ttsDefaultVoice || '').trim()
-                    || (typedChoices[0] || ''));
+            // 「テスト再生」ボタン。短い文を 1 回だけ合成して再生する。
+            // 読み上げキューとは別に鳴るので「停止」（stopAll）の対象外で、結果表示もキューに上書きされうる。
+            testVoiceUrl: null,
+            async testVoice() {
+                // voice は 設定のデフォルト → チェック済み最初 → ttsVoices の先頭 の順に決める
+                const checked = elements.ttsVoiceList
+                    ? Array.from(elements.ttsVoiceList.querySelectorAll('input.js-tts-voice-check'))
+                        .filter(box => box.checked).map(box => box.value)
+                    : [];
+                const voice = String(state.settings.ttsDefaultVoice || '').trim()
+                    || (checked[0] || '') || (this.voiceChoices()[0] || '');
+                if (!voice) throw new Error('ボイスが未設定です。一覧を取得してチェックするか、「詳細」で入力してください。');
+
+                // 連打で object URL を溜めない
+                if (this.testVoiceUrl) {
+                    URL.revokeObjectURL(this.testVoiceUrl);
+                    this.testVoiceUrl = null;
+                }
+                const objectUrl = await this.synthesize('接続確認のテストです。', voice);
+                this.testVoiceUrl = objectUrl;
+                const release = () => {
+                    URL.revokeObjectURL(objectUrl);
+                    if (this.testVoiceUrl === objectUrl) this.testVoiceUrl = null;
+                };
                 try {
                     const audio = new Audio(objectUrl);
-                    audio.onended = () => URL.revokeObjectURL(objectUrl);
+                    audio.onended = release;
+                    audio.onerror = release;
                     await audio.play();
                 } catch (error) {
-                    URL.revokeObjectURL(objectUrl);
-                    throw error;
+                    // 合成は通っている。await の後はユーザー操作が切れて再生が拒否されることがある
+                    release();
+                    throw new Error('音声は取得できましたが再生できませんでした（ブラウザの自動再生設定）。');
                 }
                 return '音声を受け取りました';
             },
@@ -12924,6 +12973,178 @@ const dbUtils = {
                 const trimmed = String(value || '').trim();
                 if (!trimmed) return '';
                 return trimmed.endsWith(',') ? trimmed : `${trimmed},`;
+            },
+
+            // ── 参照ボイス一覧の取得 ─────────────────────────────
+            // 保存済みの ttsEndpoint は normalizeEndpoint が足した /audio/speech を含みうる。
+            // 一覧は base へ /audio/voices を足して取りに行くので、接尾を落としてから使う。
+            // ここを怠ると .../audio/speech/audio/voices を叩いて「非対応」と誤案内する。
+            normalizeApiBase(endpoint) {
+                let base = String(endpoint || '').trim().replace(/\/+$/, '');
+                if (!base) return '';
+                base = base.replace(/\/audio\/speech$/i, '');
+                return base.replace(/\/+$/, '');
+            },
+
+            // 一覧のエンドポイントはサーバーごとに違う。Irodori / LocalAI / vLLM-Omni /
+            // Chatterbox-TTS-Server は /audio/voices、無いサーバー向けに /voices も試す
+            // （R の tts.api クライアントと同じフォールバック順）。
+            voicesUrlCandidates(base) {
+                const out = [];
+                for (const url of [`${base}/audio/voices`, `${base}/voices`]) {
+                    if (!out.includes(url)) out.push(url);
+                }
+                return out;
+            },
+
+            // 戻り値の形も統一されていない。Irodori は { object:'list', data:[{ id, ref_wav, ... }] }、
+            // Kokoro-FastAPI は { voices:[...] }、素の配列のサーバーもある。
+            // kinds は表示用の種別（音声 / latent / Speaker Inversion / no_ref）で、保存はしない。
+            // 単一に潰さないのは、Irodori が同一 voice で ref_wav と ref_latents を同時に返すため。
+            parseVoicesPayload(data) {
+                const raw = Array.isArray(data) ? data
+                    : (Array.isArray(data && data.data) ? data.data
+                        : (Array.isArray(data && data.voices) ? data.voices : null));
+                if (!raw) return [];
+                const entries = [];
+                const byId = new Map();
+                for (const item of raw) {
+                    const spec = (item && typeof item === 'object') ? item : null;
+                    const rawId = spec ? (spec.id || spec.name || spec.voice || spec.voice_id) : item;
+                    const id = String(rawId == null ? '' : rawId).trim();
+                    if (!id) continue;
+                    const kinds = [];
+                    if (spec) {
+                        if (spec.ref_wav) kinds.push('ref_wav');
+                        if (spec.ref_latent || (Array.isArray(spec.ref_latents) && spec.ref_latents.length > 0)) {
+                            kinds.push('ref_latent');
+                        }
+                        if (spec.ref_embed) kinds.push('ref_embed');
+                        if (spec.no_ref === true) kinds.push('no_ref');
+                    }
+                    if (byId.has(id)) {
+                        // voices.json のエイリアスで同一 id が複数返るときは種別を寄せる
+                        const kept = byId.get(id);
+                        kinds.forEach(kind => { if (!kept.kinds.includes(kind)) kept.kinds.push(kind); });
+                        continue;
+                    }
+                    const created = { id: id, kinds: kinds };
+                    byId.set(id, created);
+                    entries.push(created);
+                }
+                entries.forEach(entry => {
+                    entry.kinds.sort((a, b) => VOICE_KIND_ORDER.indexOf(a) - VOICE_KIND_ORDER.indexOf(b));
+                });
+                return entries;
+            },
+
+            voiceIdsFromEntries(entries) {
+                return (Array.isArray(entries) ? entries : []).map(entry => entry.id);
+            },
+
+            // ttsVoices はカンマ区切りのまま。末尾カンマは normalizeVoicesInput と同じ不変条件
+            voicesToInput(ids) {
+                const list = (Array.isArray(ids) ? ids : [])
+                    .map(id => String(id || '').trim())
+                    .filter(id => id.length > 0);
+                if (!list.length) return '';
+                return `${list.join(', ')},`;
+            },
+
+            // 取得したカタログと保存済みの選択を、チェックボックス一覧の表示列表へ寄せる。
+            // カタログ順が先、一覧から消えた保存値は inCatalog: false で末尾に残す（選択を失わない）。
+            mergeVoiceSelection(catalog, selected) {
+                const list = Array.isArray(catalog) ? catalog : [];
+                const chosen = Array.isArray(selected) ? selected : [];
+                const display = list.map(entry => ({
+                    voice: entry.id,
+                    inCatalog: true,
+                    kinds: Array.isArray(entry.kinds) ? entry.kinds : [],
+                }));
+                chosen.forEach(voice => {
+                    if (!list.some(entry => entry.id === voice)) {
+                        display.push({ voice: voice, inCatalog: false, kinds: [] });
+                    }
+                });
+                const checked = display
+                    .filter(item => chosen.includes(item.voice))
+                    .map(item => item.voice);
+                return { display: display, checked: checked };
+            },
+
+            VOICES_TTL_MS: 300000,
+            voicesCache: null, // { base, fetchedAt, voices, from }
+
+            // 参照ボイスの一覧。接続確認を別の軽いリクエストにしないのは、/health が Irodori 固有で
+            // 他の OpenAI Compatible サーバーを壊すため。この fetch がそのまま接続確認を兼ねる
+            // （HTTP が返れば接続OK、fetch の TypeError は CORS 側へ）。
+            // 一覧非対応のサーバーでは error.code = 'unsupported' を投げる（呼び出し側で手入力経路へ落とす）。
+            async fetchVoices(options) {
+                const opts = options || {};
+                // 未保存の URL 入力でも取れるよう、設定でなく入力欄を優先する
+                // （挿絵生成側が comfyBaseUrlInput を使うのと同じ理由）。
+                const endpoint = opts.endpointOverride !== undefined
+                    ? opts.endpointOverride
+                    : (elements.ttsEndpointInput ? elements.ttsEndpointInput.value : state.settings.ttsEndpoint);
+                const base = this.normalizeApiBase(endpoint);
+                if (!base) throw new Error('TTS のエンドポイントが設定されていません。');
+
+                const cache = this.voicesCache;
+                if (!opts.force && cache && cache.base === base && Date.now() - cache.fetchedAt < this.VOICES_TTL_MS) {
+                    return { voices: cache.voices, fetchedAt: cache.fetchedAt, from: cache.from, cached: true };
+                }
+
+                const apiKey = String(state.settings.ttsApiKey || '').trim();
+                const headers = {};
+                if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+                let lastError = null;
+                let sawNotFound = false;
+                for (const url of this.voicesUrlCandidates(base)) {
+                    let response;
+                    try {
+                        // GET に Content-Type を付けると preflight が走る。cache: 'no-store' は
+                        // Service Worker のキャッシュ優先経路で古い一覧を拾わないため。
+                        response = await fetch(url, { method: 'GET', headers: headers, cache: 'no-store' });
+                    } catch (error) {
+                        throw new Error(this.corsErrorMessage(error));
+                    }
+                    const bodyText = await response.text().catch(() => '');
+                    // SW が合成した 503 を 404（非対応）と誤読しないよう、ok 判定より前に見る
+                    if (!response.ok && illustrationUtils.isServiceWorkerNetworkError(bodyText)) {
+                        throw new Error(this.corsErrorMessage(new Error('Service Worker 経由でも届きませんでした')));
+                    }
+                    // 認証を求められたら他の候補も同じ認証で落ちる。回さずに止まる
+                    if (response.status === 401 || response.status === 403) {
+                        throw new Error(`接続できましたが APIキーを求められました (HTTP ${response.status})。APIキー欄に入力してください。`);
+                    }
+                    if (!response.ok) {
+                        if (response.status === 404 || response.status === 405) sawNotFound = true;
+                        lastError = new Error(`TTS サーバーがエラーを返しました (HTTP ${response.status})`
+                            + (bodyText ? `: ${bodyText.slice(0, 300)}` : ''));
+                        continue;
+                    }
+                    let data = null;
+                    try { data = JSON.parse(bodyText); } catch (error) { data = null; }
+                    const shaped = Array.isArray(data) ? data
+                        : (data && Array.isArray(data.data)) ? data.data
+                            : (data && Array.isArray(data.voices)) ? data.voices : null;
+                    if (!shaped) {
+                        // SPA の catch-all が HTML を返す場合など。この候補は非対応として次へ進む
+                        lastError = new Error('一覧を読み取れませんでした。');
+                        continue;
+                    }
+                    // 0 件も成功として扱う（Voices フォルダが空という情報を出す）
+                    const voices = this.parseVoicesPayload(data);
+                    this.voicesCache = { base: base, fetchedAt: Date.now(), voices: voices, from: url };
+                    return { voices: voices, fetchedAt: Date.now(), from: url, cached: false };
+                }
+                if (sawNotFound) {
+                    const error = new Error('このサーバーは参照ボイスの一覧を返しませんでした。');
+                    error.code = 'unsupported';
+                    throw error;
+                }
+                throw lastError || new Error('参照ボイスの一覧を取得できませんでした。');
             },
         };
 
@@ -15615,12 +15836,14 @@ elements.footerTapScrollToBottomToggle.checked = state.settings.footerTapScrollT
 
                 this.renderTtsVoiceSelects();
                 this.renderTtsSpeakerRows();
+                // 一覧の自動取得はしない。メモリにキャッシュしたカタログがあれば再描画するだけ
+                this.renderTtsVoiceCheckboxes();
+                this.updateTtsVoiceListStatus();
                 this.updateTtsFooterButton();
             },
-            // 接続確認が成功したときだけ呼ぶ。入力欄の最新内容で話者選択プルダウンを作り直す。
-            // 未保存の選択値は state へ写してから残す（一覧から消えても「一覧に無い保存値」で残る）
-            applyVoicesInputToLists() {
-                if (!elements.ttsVoicesInput) return;
+            // プルダウンを作り直す前に、画面の選択値を state へ写す。
+            // 未保存の選択を失わないためで、一覧の再構築経路はここを通す。
+            snapshotTtsVoiceSelection() {
                 if (elements.ttsDefaultVoiceSelect) state.settings.ttsDefaultVoice = elements.ttsDefaultVoiceSelect.value;
                 if (elements.ttsGenericVoiceSelect) state.settings.ttsGenericVoice = elements.ttsGenericVoiceSelect.value;
                 if (elements.ttsSpeakerRows) {
@@ -15631,11 +15854,115 @@ elements.footerTapScrollToBottomToggle.checked = state.settings.footerTapScrollT
                         voice: voices[i] ? voices[i].value : '',
                     }));
                 }
+            },
+            // 一覧 API が無いサーバー用。入力欄の最新内容で話者選択を作り直す。
+            // 未保存の選択値は state へ写してから残す（一覧から消えても「一覧に無い保存値」で残る）
+            applyVoicesInputToLists() {
+                if (!elements.ttsVoicesInput) return;
+                this.snapshotTtsVoiceSelection();
                 const normalized = ttsUtils.normalizeVoicesInput(elements.ttsVoicesInput.value);
                 elements.ttsVoicesInput.value = normalized;
                 state.settings.ttsVoices = normalized;
+                this.renderTtsVoiceCheckboxes();
                 this.renderTtsVoiceSelects();
                 this.renderTtsSpeakerRows();
+                this.updateTtsVoiceListStatus();
+            },
+            // 取得したカタログ（ttsUtils.voicesCache）と保存済みの選択でチェックボックスを描画する。
+            // 一覧未取得でも保存値だけは並べ、選択を失わない。
+            renderTtsVoiceCheckboxes() {
+                if (!elements.ttsVoiceList) return;
+                const catalog = ttsUtils.voicesCache ? ttsUtils.voicesCache.voices : [];
+                const merged = ttsUtils.mergeVoiceSelection(catalog, ttsUtils.voiceChoices());
+                elements.ttsVoiceList.innerHTML = '';
+                if (!merged.display.length) {
+                    const empty = document.createElement('p');
+                    empty.style.cssText = 'font-size:11px; color:var(--text-secondary); margin:0;';
+                    empty.textContent = '一覧は未取得です。「接続確認＆ボイス一覧取得」を押すと、サーバーの Voices フォルダの中身が並びます。';
+                    elements.ttsVoiceList.appendChild(empty);
+                    return;
+                }
+                for (const item of merged.display) {
+                    const label = document.createElement('label');
+                    label.className = 'checkbox-label';
+                    label.style.cssText = 'display:inline-flex; align-items:center; gap:4px; margin:2px 12px 4px 0; font-size:12px;';
+
+                    const box = document.createElement('input');
+                    box.type = 'checkbox';
+                    box.className = 'js-tts-voice-check';
+                    box.value = item.voice;
+                    box.checked = merged.checked.includes(item.voice);
+                    box.addEventListener('change', () => this.applyVoiceChecksToSettings());
+                    label.appendChild(box);
+
+                    const name = document.createElement('span');
+                    name.textContent = item.voice;
+                    label.appendChild(name);
+
+                    const kind = document.createElement('span');
+                    kind.style.cssText = 'color:var(--text-secondary); font-size:11px;';
+                    kind.textContent = item.inCatalog ? voiceKindLabel(item.kinds) : '（一覧に無い保存値）';
+                    label.appendChild(kind);
+
+                    elements.ttsVoiceList.appendChild(label);
+                }
+            },
+            // チェック状態を ttsVoices と入力欄の両方へ書き戻す。saveSettings は入力欄の値を読むため、
+            // state だけ更新すると保存した瞬間に古い一覧へ戻る。チェックボックス自体は作り直さない
+            // （操作の途中で位置が飛ぶため）。
+            applyVoiceChecksToSettings() {
+                if (!elements.ttsVoiceList) return;
+                this.snapshotTtsVoiceSelection();
+                const chosen = Array.from(elements.ttsVoiceList.querySelectorAll('input.js-tts-voice-check'))
+                    .filter(box => box.checked)
+                    .map(box => box.value);
+                const normalized = ttsUtils.voicesToInput(chosen);
+                state.settings.ttsVoices = normalized;
+                if (elements.ttsVoicesInput) elements.ttsVoicesInput.value = normalized;
+                this.renderTtsVoiceSelects();
+                this.renderTtsSpeakerRows();
+                this.updateTtsVoiceListStatus();
+            },
+            // 一覧取得成功時。既存のチェックはそのまま維持し、新規出現は OFF、消えた保存値は残す。
+            // ttsVoices が空（新規設定）のときだけ、no_ref 専用を除いて全部 ON から始める。
+            applyFetchedVoices() {
+                this.snapshotTtsVoiceSelection();
+                const catalog = ttsUtils.voicesCache ? ttsUtils.voicesCache.voices : [];
+                if (!ttsUtils.voiceChoices().length) {
+                    const initial = ttsUtils.voiceIdsFromEntries(catalog).filter(id => {
+                        const entry = catalog.find(item => item.id === id);
+                        return !(entry && entry.kinds.length === 1 && entry.kinds[0] === 'no_ref');
+                    });
+                    state.settings.ttsVoices = ttsUtils.voicesToInput(initial);
+                    if (elements.ttsVoicesInput) elements.ttsVoicesInput.value = state.settings.ttsVoices;
+                }
+                this.renderTtsVoiceCheckboxes();
+                this.renderTtsVoiceSelects();
+                this.renderTtsSpeakerRows();
+                this.updateTtsVoiceListStatus();
+            },
+            // 一覧の件数・種別内訳・取得時刻・実際に応答した URL。未取得時は手入力経路を案内する
+            updateTtsVoiceListStatus() {
+                if (!elements.ttsVoiceListStatus) return;
+                const cache = ttsUtils.voicesCache;
+                const enabled = ttsUtils.voiceChoices().length;
+                if (!cache) {
+                    elements.ttsVoiceListStatus.textContent =
+                        `一覧は未取得です（有効 ${enabled} 件）。下の「詳細」でカンマ区切り入力を使うと、そのまま話者選択へ反映できます。`;
+                    return;
+                }
+                const counts = { ref_wav: 0, ref_latent: 0, ref_embed: 0, no_ref: 0, unknown: 0 };
+                cache.voices.forEach(entry => {
+                    if (!entry.kinds.length) counts.unknown++;
+                    else entry.kinds.forEach(kind => { if (kind in counts) counts[kind]++; });
+                });
+                const stamp = new Date(cache.fetchedAt);
+                const pad = value => String(value).padStart(2, '0');
+                elements.ttsVoiceListStatus.textContent =
+                    `取得 ${cache.voices.length} 件（音声 ${counts.ref_wav} / latent ${counts.ref_latent}`
+                    + ` / SI ${counts.ref_embed} / no_ref ${counts.no_ref} / 種別不明 ${counts.unknown}） 有効 ${enabled} 件`
+                    + ` · ${stamp.getFullYear()}-${pad(stamp.getMonth() + 1)}-${pad(stamp.getDate())}`
+                    + ` ${pad(stamp.getHours())}:${pad(stamp.getMinutes())} · ${cache.from}`;
             },
             // ボイス一覧（カンマ区切り）から選択欄を作り、保存値が残るように再構築する
             renderTtsVoiceSelects() {
@@ -17485,14 +17812,32 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                     elements.ttsStopBtn.addEventListener('click', () => this.stopTts());
                 }
                 if (elements.ttsTestBtn) {
-                    // 一覧の編集は接続確認が成功したときだけ話者選択へ反映する。
-                    // 失敗時はプルダウンを変えず、エラー表示を残す（入力欄の change では作り直さない）
+                    // 一覧の fetch 自体が接続確認を兼ねる（/health は Irodori 固有なので使わない）。
+                    // 一覧を返さないサーバーでは、従来どおり入力欄の内容を話者選択へ反映する。
+                    // 疎通自体が失敗したときは一覧欄もプルダウンも触らない。
                     elements.ttsTestBtn.addEventListener('click', async () => {
                         ttsUtils.updateStatus('確認中…');
                         try {
-                            const message = await ttsUtils.testConnection();
-                            uiUtils.applyVoicesInputToLists();
-                            ttsUtils.updateStatus(message);
+                            const result = await ttsUtils.fetchVoices({ force: true });
+                            uiUtils.applyFetchedVoices();
+                            ttsUtils.updateStatus(
+                                `接続OK / 参照ボイス ${result.voices.length} 件（有効 ${ttsUtils.voiceChoices().length} 件）`,
+                                false, true);
+                        } catch (error) {
+                            if (error && error.code === 'unsupported') {
+                                uiUtils.applyVoicesInputToLists();
+                                ttsUtils.updateStatus('接続OK（このサーバーは /v1/audio/voices 非対応の可能性）', false, true);
+                                return;
+                            }
+                            ttsUtils.updateStatus(error.message, true);
+                        }
+                    });
+                }
+                if (elements.ttsVoiceTestBtn) {
+                    elements.ttsVoiceTestBtn.addEventListener('click', async () => {
+                        ttsUtils.updateStatus('再生中…');
+                        try {
+                            ttsUtils.updateStatus(await ttsUtils.testVoice(), false, true);
                         } catch (error) {
                             ttsUtils.updateStatus(error.message, true);
                         }

@@ -26,7 +26,7 @@ SillyTavern 側で参考にした点: `skip_codeblocks`（``` と ~~~ を除く�
 
 | 項目 | 場所（index.html） |
 | --- | --- |
-| 定数 | `TTS_SPEAKER_SLOTS = 5`, `TTS_INPUT_CHUNK_CHARS = 1200` |
+| 定数 | `TTS_SPEAKER_SLOTS = 5`, `TTS_INPUT_CHUNK_CHARS = 1200`, `VOICE_KIND_ORDER`, `VOICE_KIND_LABELS`（一覧の種別ラベル） |
 | ユーティリティ | `const ttsUtils = { ... }`（`comfyWorkflowUtils` の直後） |
 | 設定の既定値 | `state.settings` の `tts*`。既定値にキーを足せば `loadSettings` / `saveSettings` が自動的に保存・復元する |
 | 設定画面 | `<details class="settings-group" id="settings-group-tts">`（挿絵生成の直後） |
@@ -37,6 +37,9 @@ SillyTavern 側で参考にした点: `skip_codeblocks`（``` と ~~~ を除く�
 | 応答ごとのボタン | `appendMessage` の actions 生成部。`.js-tts-btn` |
 | クリック処理 | `messageContainer` の委譲内、`js-tts-btn` → `appLogic.speakMessage(index)` |
 | 自動読み上げ | `handleSend` 成功後、挿絵の自動生成の直後 |
+| 参照ボイス一覧の取得 | `ttsUtils` の `normalizeApiBase` / `voicesUrlCandidates` / `parseVoicesPayload` / `voicesToInput` / `mergeVoiceSelection`（純粋、自己テスト対象）と `fetchVoices` + `voicesCache`（`fetch` と `elements` を使う） |
+| 一覧のチェックボックス | `div#tts-voice-list`。描画は `uiUtils.renderTtsVoiceCheckboxes()`、チェック反映は `applyVoiceChecksToSettings()`、取得後は `applyFetchedVoices()`、件数と種別内訳は `updateTtsVoiceListStatus()`。選択値の取り込みは `snapshotTtsVoiceSelection()` に共通化 |
+| テスト再生 | `ttsUtils.testVoice()`（`#tts-voice-test-btn`）。読み上げキューとは別に鳴り、`stopAll()` の対象外 |
 
 APIキーは `ttsApiKey` として IndexedDB の `settings` にだけ保存する。既定は空文字で、リポジトリにもファイル書き出しにも出さない。
 
@@ -93,10 +96,31 @@ APIキーは `ttsApiKey` として IndexedDB の `settings` にだけ保存す�
 ## 7. テスト
 
 ```
-node tools/tts-selftest.js   # 話者検出・整形・chunk・段落送りをブラウザなしで（56 件）
-node tools/selftest.js       # 挿絵生成（97 件）
-node tools/e2e.js            # 実ブラウザ + モックサーバー（102 件）
+node tools/tts-selftest.js   # 話者検出・整形・chunk・段落送り・一覧の純粋関数をブラウザなしで（83 件）
+node tools/selftest.js       # 挿絵生成（132 件）
+node tools/e2e.js            # 実ブラウザ + モックサーバー（150 件）
 ```
 
 `tools/e2e.js` には OpenAI Compatible な `audio/speech` もどきを `/mock-tts/v1/audio/speech` に立ててある。送られた body のキー集合、`Authorization`、話者ごとの `voice`、`input` の中身をサーバー側で記録して検証する。再生の重複は `window.Audio` を包んで同時再生数を数え、最大 1 であることを確認している。Chrome には `--autoplay-policy=no-user-gesture-required --mute-audio` を渡す。
+
+一覧は `/mock-tts/v1/audio/voices`（Irodori 形）、`/mock-tts-alt/v1/audio/voices`→404 ＋ `/mock-tts-alt/v1/voices`（Kokoro 形）、`/mock-tts-auth/v1/audio/voices`→401、`/mock-tts-missing/*`→404 を立てて、フォールバック順・401 で全候補を回さないこと・非対応でも詳細欄の入力が話者選択へ反映されること・キャッシュ（`force` の有无）・GET に `Content-Type` を付けないことを確認する。**一覧取得は入力欄の URL を優先するので、テストも `state.settings.ttsEndpoint` だけでなく `elements.ttsEndpointInput.value` を切り替える**（state だけ変えると同じ接続先を叩き続ける）。
+
+## 8. 参照ボイス一覧の取得
+
+Irodori-TTS-Server は `GET /v1/audio/voices` を持ち、Voices フォルダのファイル stem を `id` として返す
+（`{"object":"list","data":[{"id":"momo","ref_wav":"...","ref_latents":[...],"no_ref":false}]}`）。
+LocalAI・vLLM-Omni・Chatterbox-TTS-Server も同じパスを持つが、Kokoro-FastAPI は `{"voices":[...]}` と形が違う。
+**エンドポイントも戻り値も統一されていない**前提で、`voicesUrlCandidates` が `/audio/voices` → `/voices` の順に試し、
+`parseVoicesPayload` が `data.data` / `data.voices` / 素の配列と、要素の文字列・`id`・`name` を吸収する。
+
+- **接続確認に `/health` は使わない**。Irodori 固有なので、他の OpenAI Compatible サーバーで接続確認が壊れる。
+  一覧の fetch がそのまま接続確認を兼ねる（HTTP が返れば接続OK、`fetch` の TypeError は CORS 側）。
+- 401/403 は他の候補も同じ認証で落ちるため回さずに止まる。全候補が 404 系なら `error.code = 'unsupported'` を投げ、
+  呼び出し側で「接続OK（…非対応の可能性）」として**詳細欄のカンマ区切り入力**を話者選択へ反映する。
+- SW が合成した 503 を 404（非対応）と誤読しないよう、`isServiceWorkerNetworkError` を ok 判定より前に見る。
+  GET には `Content-Type` を付けない（preflight を誘発する）。`cache: 'no-store'` は SW のキャッシュ優先経路用。
+- 保存形式は `ttsVoices`（カンマ区切り）のまま。種別は `voicesCache` のメモリ専用で、settings キーを作らない
+  （既定値にキーを足すと自動保存される仕組みがあるため）。
+- 一覧から消えた保存値はチェック済みで残り、選択中の値はプルダウンの「（一覧に無い保存値）」として残る。
+  チェックを外しても、その voice がデフォルト・汎用・話者割当で**選択中**ならプルダウンには残り続ける（仕様）。
 

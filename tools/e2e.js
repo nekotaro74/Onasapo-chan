@@ -45,6 +45,17 @@ function makeWav(ms) {
     return Buffer.concat([header, data]);
 }
 
+// 参照ボイス一覧のモック。Irodori の形（id + ref_* ）で返す
+const MOCK_IRODORI_VOICES = {
+    object: 'list',
+    data: [
+        { id: 'momo', object: 'voice', ref_wav: 'momo.wav', ref_wavs: [], ref_latent: null, ref_latents: [], ref_embed: null, no_ref: false },
+        { id: 'rima', object: 'voice', ref_wav: null, ref_latent: null, ref_latents: ['rima.pt'], ref_embed: null, no_ref: false },
+        { id: 'none', object: 'voice', ref_wav: null, ref_latent: null, ref_latents: [], ref_embed: null, no_ref: true },
+    ],
+};
+let voicesRequests = [];
+
 let lastPromptBody = null;
 let ttsRequests = [];
 let historyPolls = 0;
@@ -83,6 +94,63 @@ function createServer() {
         if (url.pathname === '/mock-tts/requests') {
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify(ttsRequests));
+            return;
+        }
+
+        // 参照ボイス一覧（Irodori 形）。取得回数とヘッダーを記録する
+        if (url.pathname === '/mock-tts/v1/audio/voices' && req.method === 'GET') {
+            voicesRequests.push({
+                path: url.pathname,
+                auth: req.headers['authorization'] || null,
+                contentType: req.headers['content-type'] || null,
+            });
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify(MOCK_IRODORI_VOICES));
+            return;
+        }
+        // /audio/voices が無く /voices だけ持つサーバー（Kokoro-FastAPI 形の戻り値）
+        if (url.pathname === '/mock-tts-alt/v1/audio/voices' && req.method === 'GET') {
+            voicesRequests.push({ path: url.pathname, auth: null, contentType: null });
+            res.statusCode = 404;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: 'not found' }));
+            return;
+        }
+        if (url.pathname === '/mock-tts-alt/v1/voices' && req.method === 'GET') {
+            voicesRequests.push({ path: url.pathname, auth: null, contentType: null });
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ voices: ['af_heart', 'af_bella'] }));
+            return;
+        }
+        // APIキーを求められるサーバー（他の候補も同じ認証で落ちるため、1 回で止まるはず）
+        if (url.pathname === '/mock-tts-auth/v1/audio/voices' && req.method === 'GET') {
+            voicesRequests.push({
+                path: url.pathname,
+                auth: req.headers['authorization'] || null,
+                contentType: req.headers['content-type'] || null,
+            });
+            res.statusCode = 401;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: 'unauthorized' }));
+            return;
+        }
+        // 一覧を一切返さないサーバー（全候補 404 → 「非対応」の案内）
+        if (url.pathname.startsWith('/mock-tts-missing/') && req.method === 'GET') {
+            voicesRequests.push({ path: url.pathname, auth: null, contentType: null });
+            res.statusCode = 404;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: 'not found' }));
+            return;
+        }
+        if (url.pathname === '/mock-tts/voices-requests' && req.method === 'DELETE') {
+            voicesRequests = [];
+            res.setHeader('Content-Type', 'application/json');
+            res.end('[]');
+            return;
+        }
+        if (url.pathname === '/mock-tts/voices-requests') {
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify(voicesRequests));
             return;
         }
 
@@ -841,7 +909,8 @@ const TTS_UI_SCRIPT = `(() => {
         'tts-enabled-toggle', 'tts-auto-speak-toggle', 'tts-endpoint', 'tts-api-key', 'tts-model',
         'tts-voices', 'tts-speed', 'tts-default-voice', 'tts-generic-voice', 'tts-speaker-rows',
         'tts-narrate-dialogue-only-toggle', 'tts-regex-enabled-toggle', 'tts-regex-pattern',
-        'tts-connection-test-btn', 'tts-stop-btn',
+        'tts-connection-test-btn', 'tts-voice-test-btn', 'tts-stop-btn',
+        'tts-voice-list', 'tts-voice-list-status',
     ];
     const missingIds = requiredIds.filter(id => !document.getElementById(id));
 
@@ -877,12 +946,13 @@ const TTS_UI_SCRIPT = `(() => {
     };
 })()`;
 
-// 有効な参照ボイス一覧: 接続確認が成功したときだけ話者選択へ反映し、失敗時は変えない
+// 参照ボイス一覧: サーバーから取得してチェックボックスで選び、一覧非対応でも手入力は生かす
 const TTS_VOICES_SCRIPT = `(async () => {
     const settingsSnapshot = JSON.parse(JSON.stringify(state.settings));
     const waitStatus = async () => {
         let waited = 0;
-        while (elements.ttsStatus.textContent === '確認中…' && waited < 8000) {
+        while ((elements.ttsStatus.textContent === '確認中…' || elements.ttsStatus.textContent === '再生中…')
+            && waited < 8000) {
             await new Promise(r => setTimeout(r, 100));
             waited += 100;
         }
@@ -891,56 +961,151 @@ const TTS_VOICES_SCRIPT = `(async () => {
     const options = () => Array.from(elements.ttsDefaultVoiceSelect.options).map(o => o.value);
     const speakerOptions = () => Array.from(
         elements.ttsSpeakerRows.querySelector('select.js-tts-speaker-voice').options).map(o => o.value);
+    const boxes = () => Array.from(elements.ttsVoiceList.querySelectorAll('input.js-tts-voice-check'));
+    const checked = () => boxes().filter(b => b.checked).map(b => b.value);
+    const labels = () => boxes().map(b => b.parentElement.textContent.trim());
+    const json = async (path) => await (await fetch(path)).json();
+    // 一覧取得は未保存の URL でも試せるよう入力欄を優先するので、テストも入力欄側で切り替える
+    const setEndpoint = (path) => {
+        state.settings.ttsEndpoint = path;
+        elements.ttsEndpointInput.value = path;
+    };
 
     state.settings.ttsEnabled = true;
-    state.settings.ttsEndpoint = location.origin + '/mock-tts/v1';
+    setEndpoint(location.origin + '/mock-tts/v1');
     state.settings.ttsApiKey = '';
     state.settings.ttsModel = 'mock-tts-model';
-    state.settings.ttsVoices = 'alloy, echo,';
-    state.settings.ttsDefaultVoice = 'alloy';
+    state.settings.ttsVoices = '';
+    state.settings.ttsDefaultVoice = '';
     state.settings.ttsGenericVoice = '';
-    state.settings.ttsSpeakers = [{ name: 'まゆみ', voice: 'echo' }];
+    state.settings.ttsSpeakers = [{ name: 'まゆみ', voice: '' }];
+    ttsUtils.voicesCache = null;
     uiUtils.applyTtsSettingsToUI();
-    const before = options();
+    const beforeFetch = options();
+    const emptyListText = elements.ttsVoiceList.textContent;
 
-    // 編集しただけ（change）では話者選択は作り直さない
-    elements.ttsVoicesInput.value = 'momo, rima, tsukasa';
-    elements.ttsVoicesInput.dispatchEvent(new Event('change'));
-    const afterEdit = options();
-
-    // 接続確認の成功で、入力欄の最新内容へ更新し末尾カンマを付ける
+    // 新規（未設定）で取得: no_ref 専用だけ OFF、他は ON
     elements.ttsTestBtn.click();
     await waitStatus();
-    const afterSuccess = options();
-    const afterSuccessSpeakerOptions = speakerOptions();
-    const inputAfterSuccess = elements.ttsVoicesInput.value;
-    const statusAfterSuccess = elements.ttsStatus.textContent;
+    const statusFirstFetch = elements.ttsStatus.textContent;
+    const checksFirstFetch = checked();
+    const labelsFirstFetch = labels();
+    const listStatusFirstFetch = elements.ttsVoiceListStatus.textContent;
+    const afterFirstFetch = options();
+    const inputFirstFetch = elements.ttsVoicesInput.value;
 
-    // 接続確認の失敗ではプルダウンを変えず、エラー表示を残す
-    state.settings.ttsEndpoint = 'http://127.0.0.1:1/v1';
+    // 既存の選択がある状態で再取得: 既存選択は ON のまま、カタログの新規は OFF
+    state.settings.ttsVoices = 'alloy, echo,';
+    state.settings.ttsDefaultVoice = 'alloy';
+    state.settings.ttsSpeakers = [{ name: 'まゆみ', voice: 'echo' }];
+    uiUtils.applyTtsSettingsToUI();
+    elements.ttsTestBtn.click();
+    await waitStatus();
+    const checksSecondFetch = checked();
+    const labelsSecondFetch = labels();
+    const afterSecondFetch = options();
+    const afterSecondFetchSpeaker = speakerOptions();
+
+    // チェックを外すと ttsVoices・入力欄・話者選択から消える
+    const momo = boxes().find(b => b.value === 'momo');
+    momo.checked = true;
+    momo.dispatchEvent(new Event('change'));
+    const afterCheckMomo = state.settings.ttsVoices;
+    const momoBox = boxes().find(b => b.value === 'momo');
+    momoBox.checked = false;
+    momoBox.dispatchEvent(new Event('change'));
+    const afterUncheck = state.settings.ttsVoices;
+    const inputAfterUncheck = elements.ttsVoicesInput.value;
+    const optionsAfterUncheck = options();
+
+    // 一覧 API が無いサーバー: /voices へフォールバックし、Kokoro 形は「種別不明」
+    setEndpoint(location.origin + '/mock-tts-alt/v1');
+    elements.ttsTestBtn.click();
+    await waitStatus();
+    const statusFallback = elements.ttsStatus.textContent;
+    const checksFallback = checked();
+    const labelsFallback = labels();
+
+    // APIキーを求められるサーバーは全候補を回さず、1 回で止まる
+    await fetch('/mock-tts/voices-requests', { method: 'DELETE' });
+    setEndpoint(location.origin + '/mock-tts-auth/v1');
+    elements.ttsTestBtn.click();
+    await waitStatus();
+    const statusAuth = elements.ttsStatus.textContent;
+    const authRequests = await json('/mock-tts/voices-requests');
+
+    // 一覧非対応（全候補 404）でも、詳細欄の入力は話者選択へ反映される
+    setEndpoint(location.origin + '/mock-tts-missing/v1');
     elements.ttsVoicesInput.value = 'nope1, nope2';
     elements.ttsTestBtn.click();
     await waitStatus();
-    const afterFailure = options();
-    const statusAfterFailure = elements.ttsStatus.textContent;
-    const inputAfterFailure = elements.ttsVoicesInput.value;
+    const statusMissing = elements.ttsStatus.textContent;
+    const afterMissing = options();
+    const inputAfterMissing = elements.ttsVoicesInput.value;
 
-    // 保存時にも末尾カンマを付ける。空の項目は選択肢へ足さない
+    // 疎通が失敗する先ではプルダウンもチェック一覧も変えない
+    const checksBeforeDown = checked();
+    setEndpoint('http://127.0.0.1:1/v1');
+    elements.ttsVoicesInput.value = 'nope3';
+    elements.ttsTestBtn.click();
+    await waitStatus();
+    const statusDown = elements.ttsStatus.textContent;
+    const checksAfterDown = checked();
+    const optionsAfterDown = options();
+
+    // キャッシュ: force なしは 2 回目が cached:true でリクエストを増やさない
+    setEndpoint(location.origin + '/mock-tts/v1');
+    await fetch('/mock-tts/voices-requests', { method: 'DELETE' });
+    await ttsUtils.fetchVoices({ force: true });
+    const secondCall = await ttsUtils.fetchVoices({ force: false });
+    const cacheRequests = await json('/mock-tts/voices-requests');
+
+    // 設定の再描画は再取得しない（自動取得が無いこと）
+    uiUtils.applyTtsSettingsToUI();
+    const requestsAfterApply = (await json('/mock-tts/voices-requests')).length;
+
+    // GET に Content-Type を付けず、APIキーが空なら Authorization も送らない
+    const firstVoiceRequest = cacheRequests[0] || {};
+
+    // テスト再生: 設定のデフォルトが空なら、チェック済み最初のもので合成する
+    state.settings.ttsVoices = 'rima,';
+    state.settings.ttsDefaultVoice = '';
+    uiUtils.applyTtsSettingsToUI();
+    await fetch('/mock-tts/requests', { method: 'DELETE' });
+    elements.ttsVoiceTestBtn.click();
+    await waitStatus();
+    const speechRequests = await json('/mock-tts/requests');
+
+    // 保存時の末尾カンマと空項目除外（詳細欄の入力がそのまま保存される）
     elements.ttsVoicesInput.value = 'alloy, echo';
     await appLogic.saveSettings(false);
     const savedVoices = state.settings.ttsVoices;
     const savedChoices = ttsUtils.voiceChoices();
 
     state.settings = settingsSnapshot;
+    ttsUtils.voicesCache = null;
     ttsUtils.stopAll();
     return {
-        before: before, afterEdit: afterEdit,
-        afterSuccess: afterSuccess, afterSuccessSpeakerOptions: afterSuccessSpeakerOptions,
-        inputAfterSuccess: inputAfterSuccess, statusAfterSuccess: statusAfterSuccess,
-        afterFailure: afterFailure, statusAfterFailure: statusAfterFailure,
-        inputAfterFailure: inputAfterFailure,
+        beforeFetch: beforeFetch, emptyListText: emptyListText,
+        statusFirstFetch: statusFirstFetch, checksFirstFetch: checksFirstFetch,
+        labelsFirstFetch: labelsFirstFetch, listStatusFirstFetch: listStatusFirstFetch,
+        afterFirstFetch: afterFirstFetch, inputFirstFetch: inputFirstFetch,
+        checksSecondFetch: checksSecondFetch, labelsSecondFetch: labelsSecondFetch,
+        afterSecondFetch: afterSecondFetch, afterSecondFetchSpeaker: afterSecondFetchSpeaker,
+        afterCheckMomo: afterCheckMomo, afterUncheck: afterUncheck,
+        inputAfterUncheck: inputAfterUncheck, optionsAfterUncheck: optionsAfterUncheck,
+        statusFallback: statusFallback, checksFallback: checksFallback, labelsFallback: labelsFallback,
+        statusAuth: statusAuth, authRequests: authRequests,
+        statusMissing: statusMissing, afterMissing: afterMissing, inputAfterMissing: inputAfterMissing,
+        checksBeforeDown: checksBeforeDown, statusDown: statusDown,
+        checksAfterDown: checksAfterDown, optionsAfterDown: optionsAfterDown,
+        secondCallCached: secondCall.cached, cacheRequests: cacheRequests,
+        firstVoiceRequest: firstVoiceRequest,
+        requestsAfterApply: requestsAfterApply,
+        speechRequests: speechRequests,
         savedVoices: savedVoices, savedChoices: savedChoices,
         label: (elements.ttsTestBtn.textContent || '').trim(),
+        testLabel: (elements.ttsVoiceTestBtn.textContent || '').trim(),
     };
 })()`;
 
@@ -1605,20 +1770,65 @@ async function main() {
 
             ['TTS 接続確認ボタンの名称が「接続確認＆ボイス一覧取得」',
                 ttsVoicesResult.label === '接続確認＆ボイス一覧取得'],
-            ['参照ボイス: 編集しただけでは話者選択は作り直さない',
-                JSON.stringify(ttsVoicesResult.afterEdit) === JSON.stringify(ttsVoicesResult.before)],
-            // 一覧から消えた保存値は「（一覧に無い保存値）」として残す既存仕様も候補に含む
-            ['参照ボイス: 接続確認の成功で話者選択が入力欄の最新内容になる',
-                JSON.stringify(ttsVoicesResult.afterSuccess) === JSON.stringify(['', 'momo', 'rima', 'tsukasa', 'alloy'])],
-            ['参照ボイス: 接続確認の成功で話者割当の候補も最新内容になる',
-                JSON.stringify(ttsVoicesResult.afterSuccessSpeakerOptions) === JSON.stringify(['', 'momo', 'rima', 'tsukasa', 'echo'])],
-            ['参照ボイス: 接続確認の成功時に末尾カンマを自動で付ける',
-                ttsVoicesResult.inputAfterSuccess === 'momo, rima, tsukasa,'],
-            ['参照ボイス: 接続確認の失敗では話者選択は以前のまま',
-                JSON.stringify(ttsVoicesResult.afterFailure) === JSON.stringify(ttsVoicesResult.afterSuccess)
-                && ttsVoicesResult.inputAfterFailure === 'nope1, nope2'],
-            ['参照ボイス: 接続確認の失敗時はエラー表示を残す',
-                /TTS サーバーに届きませんでした/.test(ttsVoicesResult.statusAfterFailure)],
+            ['TTS テスト再生ボタンの名称が「テスト再生」',
+                ttsVoicesResult.testLabel === 'テスト再生'],
+            ['参照ボイス: 未取得時は一覧が空で、手入力を案内する',
+                ttsVoicesResult.beforeFetch.length === 1 && /一覧は未取得/.test(ttsVoicesResult.emptyListText)],
+            ['参照ボイス: 一覧取得でサーバーの全 voice がチェックボックスに並ぶ',
+                JSON.stringify(ttsVoicesResult.checksFirstFetch) === JSON.stringify(['momo', 'rima'])],
+            // no_ref 専用（Voice Design 用）は話者選択へ流入させない
+            ['参照ボイス: no_ref 専用は既定で有効にしない',
+                ttsVoicesResult.labelsFirstFetch.some(l => /none（no_ref）/.test(l))],
+            ['参照ボイス: 一覧に種別ラベルを添える',
+                ttsVoicesResult.labelsFirstFetch.some(l => /momo（音声）/.test(l))
+                && ttsVoicesResult.labelsFirstFetch.some(l => /rima（latent）/.test(l))],
+            // 話者選択の候補は「有効」にした voice だけ（no_ref は既定で有効にしないので出ない）
+            ['参照ボイス: 有効にした voice が話者選択の候補になる',
+                JSON.stringify(ttsVoicesResult.afterFirstFetch) === JSON.stringify(['', 'momo', 'rima'])],
+            ['参照ボイス: 取得した選択は末尾カンマ付きで ttsVoices へ入る',
+                ttsVoicesResult.inputFirstFetch === 'momo, rima,'],
+            ['参照ボイス: 一覧の件数と種別内訳を出す',
+                /取得 3 件（音声 1 \/ latent 1 \/ SI 0 \/ no_ref 1 \/ 種別不明 0）/.test(ttsVoicesResult.listStatusFirstFetch)],
+            ['参照ボイス: 既存の選択は再取得でも ON のまま、カタログの新規は OFF',
+                JSON.stringify(ttsVoicesResult.checksSecondFetch) === JSON.stringify(['alloy', 'echo'])],
+            ['参照ボイス: 一覧に無い保存値はラベルを付けて残る',
+                ttsVoicesResult.labelsSecondFetch.some(l => /alloy（一覧に無い保存値）/.test(l))],
+            ['参照ボイス: 一覧に無い保存値も話者選択と話者割当の候補に残る',
+                JSON.stringify(ttsVoicesResult.afterSecondFetch) === JSON.stringify(['', 'alloy', 'echo'])
+                && JSON.stringify(ttsVoicesResult.afterSecondFetchSpeaker) === JSON.stringify(['', 'alloy', 'echo'])],
+            ['参照ボイス: チェックの変更が ttsVoices と入力欄の両方へ同期する',
+                ttsVoicesResult.afterCheckMomo === 'momo, alloy, echo,'
+                && ttsVoicesResult.afterUncheck === 'alloy, echo,'],
+            ['参照ボイス: チェックを外すと話者選択の候補からも消える',
+                !ttsVoicesResult.optionsAfterUncheck.includes('momo')
+                && ttsVoicesResult.inputAfterUncheck === 'alloy, echo,'],
+            ['参照ボイス: /audio/voices 非対応でも /voices へフォールバックする',
+                ttsVoicesResult.labelsFallback.some(l => /af_heart（種別不明）/.test(l))
+                && JSON.stringify(ttsVoicesResult.checksFallback) === JSON.stringify(['alloy', 'echo'])],
+            ['参照ボイス: APIキーを求められたら全候補を回さない',
+                /APIキー/.test(ttsVoicesResult.statusAuth) && ttsVoicesResult.authRequests.length === 1],
+            ['参照ボイス: 一覧取得の GET に Content-Type を付けない',
+                !ttsVoicesResult.firstVoiceRequest.contentType],
+            ['参照ボイス: APIキーが空なら Authorization も送らない',
+                !ttsVoicesResult.firstVoiceRequest.auth],
+            // 選択中の alloy は一覧から消えても「一覧に無い保存値」で残り続ける（既存仕様）
+            ['参照ボイス: 一覧非対応でも接続OKとし、詳細欄の入力は話者選択へ反映される',
+                /非対応/.test(ttsVoicesResult.statusMissing)
+                && JSON.stringify(ttsVoicesResult.afterMissing) === JSON.stringify(['', 'nope1', 'nope2', 'alloy'])
+                && ttsVoicesResult.inputAfterMissing === 'nope1, nope2,'],
+            ['参照ボイス: 疎通の失敗ではチェック一覧も話者選択も変えない',
+                JSON.stringify(ttsVoicesResult.checksAfterDown) === JSON.stringify(ttsVoicesResult.checksBeforeDown)
+                && ttsVoicesResult.optionsAfterDown.includes('nope1')],
+            ['参照ボイス: 到達しない先ではエラー表示を残す',
+                /TTS サーバーに届きませんでした/.test(ttsVoicesResult.statusDown)],
+            ['参照ボイス: 5 分以内の再取得はキャッシュを使い、ボタンは取り直す',
+                ttsVoicesResult.secondCallCached === true && ttsVoicesResult.cacheRequests.length === 1],
+            ['参照ボイス: 設定の再描画で一覧を再取得しない',
+                ttsVoicesResult.requestsAfterApply === ttsVoicesResult.cacheRequests.length],
+            ['テスト再生: チェック済み最初のボイスで audio/speech へ送る',
+                ttsVoicesResult.speechRequests.length === 1
+                && ttsVoicesResult.speechRequests[0].body.voice === 'rima'
+                && ttsVoicesResult.speechRequests[0].body.model === 'mock-tts-model'],
             ['参照ボイス: 保存時に末尾カンマを付ける',
                 ttsVoicesResult.savedVoices === 'alloy, echo,'],
             ['参照ボイス: 末尾カンマで空の選択肢は増えない',
