@@ -8075,11 +8075,11 @@ font-size: 1.142em !important;
                             </summary>
                             <div style="padding: 10px; padding-top: 5px;">
                                 <label for="comfy-prompt-prefix">共通プロンプトプレフィックス:</label>
-                                <textarea id="comfy-prompt-prefix" rows="2" placeholder="例: best quality, absurdres, aesthetic"></textarea>
+                                <textarea id="comfy-prompt-prefix" rows="2" placeholder="masterpiece, best quality, score_7, nsfw"></textarea>
                                 <label for="comfy-character-prefix">キャラ外見プレフィックス:</label>
                                 <textarea id="comfy-character-prefix" rows="2" placeholder="例: 1girl, long silver hair"></textarea>
                                 <label for="comfy-negative-prompt">ネガティブプロンプト:</label>
-                                <textarea id="comfy-negative-prompt" rows="2" placeholder="例: lowres, bad anatomy, bad hands"></textarea>
+                                <textarea id="comfy-negative-prompt" rows="2" placeholder="worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, chromatic aberration"></textarea>
                                 <label class="checkbox-label" style="margin-top: 8px;">
                                     <input type="checkbox" id="comfy-use-character-prefix-toggle">
                                     キャラ外見プレフィックスを合成に含める
@@ -8313,6 +8313,10 @@ font-size: 1.142em !important;
                         <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
                             ※ 本文には <code>model</code> / <code>voice</code> / <code>input</code> だけを送り、速度は再生側（<code>playbackRate</code>）で掛けます。サーバー非依存で効きます。
                         </p>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="tts-narrate-dialogue-only-toggle">
+                            地の文を読まずセリフだけ読み上げる
+                        </label>
 
                         <details open style="margin-top: 12px; border: 1px solid var(--border-tertiary); border-radius: 5px;">
                             <summary style="cursor: pointer; font-size: 13px; padding: 8px; font-weight: bold; color: var(--text-secondary);">
@@ -8332,10 +8336,6 @@ font-size: 1.142em !important;
                                     ※ 半角と全角のスペース、<code>()</code> と <code>（）</code>、<code>:</code> と <code>：</code>、<code>"</code> と <code>”</code> は同じとして扱います。<br>
                                     ※ 同じ行での優先順: 1 名前+心理描写+セリフ / 2 名前+セリフ（「」『』または引用符） / 3 名前+心理描写だけ / 4 名前+<code>:</code> または <code>：</code>+その行の残り / 5 話者名なしの引用・心理描写は汎用ボイス / 6 残りは地の文。
                                 </p>
-                                <label class="checkbox-label" style="margin-top: 10px;">
-                                    <input type="checkbox" id="tts-narrate-dialogue-only-toggle">
-                                    地の文を読まずセリフだけ読み上げる
-                                </label>
                             </div>
                         </details>
 
@@ -8663,7 +8663,7 @@ A correctly formatted example response would be:
         // ① は公式 Turbo LoRA を LoraLoader ノードへ固定したまま送るワークフロー。
         // ② は rgthree の Power Lora Loader で %lora1%〜%lora4% を受け取るワークフロー。
         const ANIMA_WORKFLOW_TURBO_ID = 'wf-anima-turbo';
-        const ANIMA_WORKFLOW_TURBO_NAME = 'Anima用デフォルトワークフロー①（+Turbo LoRA組込済）';
+        const ANIMA_WORKFLOW_TURBO_NAME = 'Anima用デフォルト① +Turbo LoRA組込済';
         const ANIMA_WORKFLOW_TURBO_OBJECT = {
             "1": {
                 class_type: "SaveImage",
@@ -8734,7 +8734,7 @@ A correctly formatted example response would be:
             }
         };
         const ANIMA_WORKFLOW_LORA4_ID = 'wf-anima-lora4';
-        const ANIMA_WORKFLOW_LORA4_NAME = 'Anima用デフォルトワークフロー②（LoRA x 4）';
+        const ANIMA_WORKFLOW_LORA4_NAME = 'Anima用デフォルト② LoRA x 4';
         const ANIMA_WORKFLOW_LORA4_OBJECT = {
             "1": {
                 class_type: "SaveImage",
@@ -9557,10 +9557,11 @@ geminiIncludeThoughts: false,
                 comfyWorkflows: buildDefaultComfyWorkflows(),
                 comfyActiveWorkflowId: ANIMA_WORKFLOW_TURBO_ID, // null にしない（loadSettings の数値変換で壊れる）
                 comfyCustomPlaceholders: [], // [{ find, replace }]
-                comfyPromptPrefix: '',
+                // 未設定の新規状態だけの既定。保存済みは loadSettings で上書きされない
+                comfyPromptPrefix: 'masterpiece, best quality, score_7, nsfw',
                 comfyCharacterPrefix: '',
                 comfyUseCharacterPrefix: true,
-                comfyNegativePrompt: '',
+                comfyNegativePrompt: 'worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, chromatic aberration',
                 comfyImagePromptTemplate: DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE,
                 // 接続先 ComfyUI の object_info から選ぶ項目（保存値はサーバーの生の名前）
                 comfyModel: '',
@@ -9590,7 +9591,7 @@ geminiIncludeThoughts: false,
                 comfyLoraMemory: {},
                 // ▼ 読み上げ（TTS）▼ OpenAI Compatible のみ。APIキーは既定空（IndexedDB にのみ保存）
                 ttsEnabled: false,
-                ttsMode: 'auto',              // 'auto' = 応答受信完了後に再生 / 'manual' = ボタンでのみ
+                ttsMode: 'manual',            // 'auto' = 応答受信完了後に再生 / 'manual' = ボタンでのみ（既定は自動読み上げオフ）
                 ttsEndpoint: '',              // 例: https://api.example.com/v1
                 ttsApiKey: '',
                 ttsModel: '',
