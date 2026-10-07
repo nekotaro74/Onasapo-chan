@@ -940,6 +940,7 @@ const TTS_VOICES_SCRIPT = `(async () => {
         afterFailure: afterFailure, statusAfterFailure: statusAfterFailure,
         inputAfterFailure: inputAfterFailure,
         savedVoices: savedVoices, savedChoices: savedChoices,
+        label: (elements.ttsTestBtn.textContent || '').trim(),
     };
 })()`;
 
@@ -1602,6 +1603,8 @@ async function main() {
                 && /CORS/.test(ttsPlayResult.corsAlerts[0])
                 && /TTS サーバーに届きませんでした/.test(ttsPlayResult.corsAlerts[0])],
 
+            ['TTS 接続確認ボタンの名称が「接続確認＆ボイス一覧取得」',
+                ttsVoicesResult.label === '接続確認＆ボイス一覧取得'],
             ['参照ボイス: 編集しただけでは話者選択は作り直さない',
                 JSON.stringify(ttsVoicesResult.afterEdit) === JSON.stringify(ttsVoicesResult.before)],
             // 一覧から消えた保存値は「（一覧に無い保存値）」として残す既存仕様も候補に含む
