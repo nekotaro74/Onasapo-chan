@@ -187,6 +187,15 @@ JSON 文字列に `%loraN%` と `%lora_strN%` が入っているかで見る（*
   （固定名を書いた LoraLoader ノードに触らないのと同じ約束）。UI は select を無効にして理由を行に出す
 - `%lora_strN%` の無いスロット → LoRA 名は効き、強度だけ JSON の値のまま。UI は強度欄だけを無効にする
 
+**LoRA 検出はリアルタイム**で行う。`comfyWorkflowUtils.detectionWorkflow()` は保存済み JSON ではなく
+**テキストエリアの内容**を返し、`detectLoraState()` が parse を 1 回にまとめて capacity と制御可否を出す。
+textarea の `input` で `renderTokenStatus` / `renderLoraWarnings` / `renderLoraRows` を同時に呼ぶので、
+`%loraN%` を打ち込んだ瞬間にプルダウンと強度欄が有効になり、消すと元に戻る（`%prompt%` 検出と同じ操作感）。
+`setLoraSlot` も同じ出典を見るため、表示と受け付けが食い違わない。ワークフロー編集欄の直下
+（`#comfy-workflow-lora-warnings`）には検出内訳（標準ノード数 / rgthree 数 / 受け取れる数）と警告を並べる。
+JSON が読めない間は capacity を 4 のままにして選択を奪わない（送信前にワークフロー検証で止まる）。
+警告文は `rgthreeSlotWarningSummary` が LoRA 欄の行・LoRA 欄の下の要約・編集欄下の警告の 3 か所分を共通生成する。
+
 生成は止めない（固定強度は正当な設定）。`loraSlotCapacity` はスロット数だけを見る設計のまま制御可否を別立てにし、
 ワークフローごとの記憶（`clampSlotsToCapacity`）へ影響させない。ComfyUI の画面では rgthree の欄に
 `%loraN%` を入力できない（実ファイル名のドロップダウン）ので、自作する場合は保存後に JSON を編集する必要がある。

@@ -8066,6 +8066,7 @@ font-size: 1.142em !important;
                                 </div>
                                 <button id="comfy-workflow-validate-btn" class="settings-action-button" style="font-size: 12px; margin-top: 10px;">ワークフロー検証</button>
                                 <span id="comfy-workflow-status" style="font-size: 12px; margin-left: 8px; color: var(--text-secondary);"></span>
+                                <div id="comfy-workflow-lora-warnings" style="margin-top: 8px;"></div>
                             </div>
                         </details>
 
@@ -9286,6 +9287,7 @@ elevationHoverOption: document.getElementById('elevation-hover-option'),
             comfyWorkflowImportBtn: document.getElementById('comfy-workflow-import-btn'),
             comfyWorkflowImportInput: document.getElementById('comfy-workflow-import-input'),
             comfyTokenStatusList: document.getElementById('comfy-token-status-list'),
+            comfyWorkflowLoraWarnings: document.getElementById('comfy-workflow-lora-warnings'),
             comfyCustomPlaceholderList: document.getElementById('comfy-custom-placeholder-list'),
             comfyCustomPlaceholderAddBtn: document.getElementById('comfy-custom-placeholder-add-btn'),
             comfyObjectInfoStatus: document.getElementById('comfy-object-info-status'),
@@ -10959,6 +10961,36 @@ const dbUtils = {
                 return found ? controls : null;
             },
 
+            // 検出結果の言い回しは 3 か所（LoRA 欄の行 / LoRA 欄の下の要約 / ワークフロー編集欄の下）で
+            // 共通にする。スロット番号は 1 始まり
+            rgthreeSlotWarningSummary(controls) {
+                if (!controls) return [];
+                const missingName = [];
+                const missingStrength = [];
+                for (let slotIndex = 0; slotIndex < this.LORA_SLOT_COUNT; slotIndex++) {
+                    if (!controls.name[slotIndex]) missingName.push(slotIndex + 1);
+                    if (!controls.strength[slotIndex]) missingStrength.push(slotIndex + 1);
+                }
+                const parts = [];
+                if (missingName.length) {
+                    parts.push(`rgthree Power LoRA Loader のスロット ${missingName.join(' / ')} に %loraN% がありません`
+                        + '（そのスロットで選んだ LoRA は送られず、ワークフローに書かれた LoRA 名がそのまま使われます）');
+                }
+                if (missingStrength.length) {
+                    parts.push(`rgthree Power LoRA Loader のスロット ${missingStrength.join(' / ')} に %lora_strN% がありません`
+                        + '（強度はワークフローに書かれた値が送られます）');
+                }
+                return parts;
+            },
+
+            // rgthree の Power Lora Loader ノードの数（検出結果の説明に使う）
+            rgthreeLoaderCount(nodeObject) {
+                return Object.keys(nodeObject || {}).filter(id => {
+                    const node = nodeObject[id];
+                    return !!(node && this.isRgthreeLoraLoaderClass(node.class_type));
+                }).length;
+            },
+
             loraSlotConfig(index) {
                 const list = Array.isArray(state.settings.comfyLoras) ? state.settings.comfyLoras : [];
                 const slot = list[index] || {};
@@ -11017,8 +11049,8 @@ const dbUtils = {
                             ? this.rgthreeSlotControl(sourceInputs['lora_' + (slotIndex + 1)], slotIndex)
                             : { name: true, strength: true };
                         if (!control.name) {
-                            notes.push(`LoRA${slotIndex + 1}: %lora${slotIndex + 1}% が無いスロットのため触らず、`
-                                + 'ワークフローに書かれた LoRA 名をそのまま送ります');
+                            notes.push(`LoRA${slotIndex + 1}: rgthree Power LoRA Loader のスロット ${slotIndex + 1} に`
+                                + ` %lora${slotIndex + 1}% が無いため触らず、ワークフローに書かれた LoRA 名をそのまま送ります`);
                             continue;
                         }
                         slotInputs.on = !!slots[slotIndex].name;
@@ -11026,8 +11058,8 @@ const dbUtils = {
                             ? `LoRA${slotIndex + 1}: ${slots[slotIndex].name}（強度 ${slots[slotIndex].strength} / on）`
                             : `LoRA${slotIndex + 1}: 不使用（on を切って送ります）`);
                         if (!control.strength) {
-                            notes.push(`LoRA${slotIndex + 1}: %lora_str${slotIndex + 1}% が無いため、`
-                                + '強度はワークフローに書かれた値のままです');
+                            notes.push(`LoRA${slotIndex + 1}: rgthree Power LoRA Loader のスロット ${slotIndex + 1} に`
+                                + ` %lora_str${slotIndex + 1}% が無いため、強度はワークフローに書かれた値のままです`);
                         }
                     }
                 });
@@ -11400,6 +11432,32 @@ const dbUtils = {
                 const parsed = illustrationUtils.parseWorkflow(workflow.json);
                 if (!parsed.ok) return null;
                 return illustrationUtils.rgthreeSlotControls(parsed.object);
+            },
+
+            // LoRA の検出は、保存済みの JSON ではなくテキストエリアの内容で見る。
+            // %prompt% などのプレースホルダ検出と同じで、編集した瞬間にスロットの状態も変わって見えるため。
+            // テキストエリアは使用中のワークフローを映しているので、それが無ければ保存済みを使う。
+            detectionWorkflow() {
+                const active = illustrationUtils.activeWorkflow();
+                if (!active) return null;
+                const textarea = elements.comfyWorkflowTextarea;
+                const text = (textarea && !textarea.disabled) ? textarea.value.trim() : '';
+                return { id: active.id, json: text || active.json };
+            },
+
+            // 検出に使う値を 1 回の parse でまとめる（キー入力ごとに呼ぶので parse は 1 回に抑える）
+            detectLoraState(workflow) {
+                if (!workflow) return { capacity: 0, rgthreeControls: null, parsedOk: false };
+                const parsed = illustrationUtils.parseWorkflow(workflow.json);
+                if (!parsed.ok) {
+                    // JSON が読めない間はスロット選択を奪わず、制御可否の判定もしない
+                    return { capacity: illustrationUtils.LORA_SLOT_COUNT, rgthreeControls: null, parsedOk: false };
+                }
+                return {
+                    capacity: illustrationUtils.loraSlotCapacity(parsed.object),
+                    rgthreeControls: illustrationUtils.rgthreeSlotControls(parsed.object),
+                    parsedOk: true,
+                };
             },
 
             // 保存済みのスロット配列を常に 4 個・正しい形へそろえる
@@ -11871,10 +11929,11 @@ const dbUtils = {
                 const names = this.loraChoices || [];
                 // 対応 LoRA は 4 個まで。そのうえで、使用中のワークフローが受け取れる数より
                 // 大きい番号のスロットは選択できなくする（選んでも効かないため）
-                const activeRecord = illustrationUtils.activeWorkflow();
-                const capacity = this.workflowLoraCapacity(activeRecord);
+                // 編集中の JSON で判定する（キー入力と同時にスロットの状態が見えるように）
+                const detection = this.detectLoraState(this.detectionWorkflow());
+                const capacity = detection.capacity;
                 // rgthree のスロットにプレースホルダが無ければ、そこは選んでも効かない
-                const rgthreeControls = this.workflowRgthreeSlotControls(activeRecord);
+                const rgthreeControls = detection.rgthreeControls;
                 const alwaysOn = [true, true, true, true];
                 const nameControls = rgthreeControls ? rgthreeControls.name : alwaysOn;
                 const strengthControls = rgthreeControls ? rgthreeControls.strength : alwaysOn;
@@ -11958,26 +12017,12 @@ const dbUtils = {
 
                     container.appendChild(row);
                 }
-                // rgthree のプレースホルダ不足は、選ぶ前に気づけるよう 1 行にまとめて出す
-                const missingName = [];
-                const missingStrength = [];
-                for (let slotIndex = 0; slotIndex < illustrationUtils.LORA_SLOT_COUNT; slotIndex++) {
-                    if (!nameControls[slotIndex]) missingName.push(slotIndex + 1);
-                    if (!strengthControls[slotIndex]) missingStrength.push(slotIndex + 1);
-                }
-                if (missingName.length || missingStrength.length) {
+                // プレースホルダ不足は、選ぶ前に気づけるよう 1 行にまとめて出す
+                const warnings = illustrationUtils.rgthreeSlotWarningSummary(rgthreeControls);
+                if (warnings.length) {
                     const note = document.createElement('p');
                     note.style.cssText = 'font-size:11px; color: var(--text-error, var(--text-link)); margin: 6px 0 0 0;';
-                    const parts = [];
-                    if (missingName.length) {
-                        parts.push(`rgthree のスロット ${missingName.join(' / ')} に %loraN% がありません`
-                            + '（そのスロットで選んだ LoRA は送られず、ワークフローに書かれた名前がそのまま使われます）');
-                    }
-                    if (missingStrength.length) {
-                        parts.push(`rgthree のスロット ${missingStrength.join(' / ')} に %lora_strN% がありません`
-                            + '（強度はワークフローに書かれた値が送られます）');
-                    }
-                    note.textContent = parts.join(' ／ ');
+                    note.textContent = warnings.join(' ／ ');
                     container.appendChild(note);
                 }
                 if (names.length === 0) {
@@ -11989,13 +12034,12 @@ const dbUtils = {
             },
 
             async setLoraSlot(index, patch) {
-                const active = illustrationUtils.activeWorkflow();
-                const capacity = this.workflowLoraCapacity(active);
+                // renderLoraRows と同じ出典（編集中の JSON）で見る。表示と受け付けが食い違わないようにする
+                const detection = this.detectLoraState(this.detectionWorkflow());
                 // ワークフローが受け取れない番号のスロットは変更しない（UI でも無効にしている）
-                if (active && index >= capacity) return;
+                if (index >= detection.capacity) return;
                 // rgthree のスロットに %loraN% が無いときも、選んでも効かないので受け付けない
-                const rgthreeControls = this.workflowRgthreeSlotControls(active);
-                if (rgthreeControls && !rgthreeControls.name[index]) return;
+                if (detection.rgthreeControls && !detection.rgthreeControls.name[index]) return;
                 if (!Array.isArray(state.settings.comfyLoras)) {
                     state.settings.comfyLoras = buildDefaultComfyLoraSlots();
                 }
@@ -12188,6 +12232,44 @@ const dbUtils = {
                 textarea.value = active ? active.json : '';
                 textarea.disabled = !active;
                 this.renderTokenStatus();
+                this.renderLoraWarnings();
+            },
+
+            // ワークフロー編集欄の直下に、LoRA ノードの検出結果を出す。
+            // テキストエリアの内容で判定するので、%prompt% などの検出と同じタイミングで見え変わる
+            renderLoraWarnings() {
+                const container = elements.comfyWorkflowLoraWarnings;
+                if (!container) return;
+                container.innerHTML = '';
+                const textarea = elements.comfyWorkflowTextarea;
+                const text = textarea ? textarea.value.trim() : '';
+                if (!text) return;
+                const parsed = illustrationUtils.parseWorkflow(text);
+                if (!parsed.ok) {
+                    const line = document.createElement('p');
+                    line.style.cssText = 'font-size:11px; color: var(--text-secondary); margin: 0;';
+                    line.textContent = '（JSON が読めないため、LoRA ノードの検出は行っていません）';
+                    container.appendChild(line);
+                    return;
+                }
+                const object = parsed.object;
+                const rgthreeControls = illustrationUtils.rgthreeSlotControls(object);
+                const summary = illustrationUtils.rgthreeSlotWarningSummary(rgthreeControls);
+
+                const info = document.createElement('p');
+                info.style.cssText = 'font-size:11px; color: var(--text-secondary); margin: 0;';
+                info.textContent = 'LoRA 検出: 標準 LoraLoader '
+                    + `${illustrationUtils.loraTokenNodeIds(object).length} 個`
+                    + ` ／ rgthree Power LoRA Loader ${illustrationUtils.rgthreeLoaderCount(object)} 個`
+                    + ` ／ このワークフローが受け取れる LoRA は ${illustrationUtils.loraSlotCapacity(object)} 個まで`;
+                container.appendChild(info);
+
+                summary.forEach(message => {
+                    const line = document.createElement('p');
+                    line.style.cssText = 'font-size:11px; color: var(--text-error, var(--text-link)); margin: 2px 0 0 0;';
+                    line.textContent = '⚠ ' + message;
+                    container.appendChild(line);
+                });
             },
 
             renderTokenStatus() {
@@ -17488,8 +17570,18 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                         if (active) comfyWorkflowUtils.setWorkflowJson(active.id, elements.comfyWorkflowTextarea.value);
                         comfyWorkflowUtils.renderTokenStatus();
                     };
-                    elements.comfyWorkflowTextarea.addEventListener('change', reflectEditedWorkflow);
-                    elements.comfyWorkflowTextarea.addEventListener('input', () => comfyWorkflowUtils.renderTokenStatus());
+                    // 編集内容の保存と、LoRA 検出の再判定。%prompt% などの検出と同じタイミングで
+                    // スロットの状態も作り直すので、プレースホルダを足した瞬間に選択できるようになる
+                    elements.comfyWorkflowTextarea.addEventListener('change', async () => {
+                        await reflectEditedWorkflow();
+                        comfyWorkflowUtils.renderLoraWarnings();
+                        comfyWorkflowUtils.renderLoraRows();
+                    });
+                    elements.comfyWorkflowTextarea.addEventListener('input', () => {
+                        comfyWorkflowUtils.renderTokenStatus();
+                        comfyWorkflowUtils.renderLoraWarnings();
+                        comfyWorkflowUtils.renderLoraRows();
+                    });
                 }
                 if (elements.comfyCustomPlaceholderAddBtn) {
                     elements.comfyCustomPlaceholderAddBtn.addEventListener('click', () => comfyWorkflowUtils.addCustomPlaceholder());
