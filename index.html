@@ -8232,6 +8232,7 @@ font-size: 1.142em !important;
                                     ※ 対応 LoRA は <b>4 個まで</b>です。さらに、そのワークフローが受け取れる数（<code>%loraN%</code> を参照する LoraLoader ノードの数、または rgthree の <code>lora_1</code>〜<code>lora_4</code> の数）を超える番号のスロットは<b>選べません</b>。LoRA ノードの無いワークフローでは 4 つとも無効になります。<br>
                                     ※ LoRA の選択と強度は <b>ワークフローごとに</b>覚えます。<code>%loraN%</code> の無いワークフローで「使わない」へ戻ったあと、<code>%loraN%</code> のあるワークフローへ戻すと、そのワークフローで最後に選んだ LoRA と強度が戻ります。未設定なら「使わない」のままです。<br>
                                     ※ アプリが管理するのは <code>%loraN%</code> を参照する LoraLoader ノードと rgthree の Power Lora Loader だけです。<b>固定のファイル名を書いた LoRA ノードには触りません</b>。<br>
+                                    ※ rgthree の Power Lora Loader を自分で追加するときは、各スロットに <code>%loraN%</code> と <code>%lora_strN%</code> を書いてください（ComfyUI の画面では入力できないので、保存後に JSON を編集します）。<b>プレースホルダの無いスロットには触らず</b>、ワークフローに書かれた LoRA 名と強度がそのまま送られます。設定画面でもそのスロットは選べなくなり、理由が行に表示されます。<br>
                                     ※ <b>使うスロット</b>は、選んだファイル名と入力した強度をそのまま入れます。フォルダが空のときは送らず「LoRAを使うには ComfyUI の loras フォルダにファイルが必要です」と表示します。<br>
                                     ※ <b>使わないスロット</b>で一覧にファイルがあるときは、ノードの形は変えず、一覧の先頭の実在ファイル名と強度 0 を入れます。標準 LoraLoader は両方の強度が 0 ならファイルを読まず素通しし、LoraLoaderModelOnly は <code>strength_model</code> が 0 なら同じです。<br>
                                     ※ <b>使わないスロット</b>で loras フォルダが空のときは空文字を送りません。その LoraLoader ノードだけを外して <code>model</code> と <code>clip</code>を受け先へ直結し、ワークフロー全体は書き換えません。
@@ -10917,6 +10918,47 @@ const dbUtils = {
                 });
             },
 
+            // rgthree の Power Lora Loader の 1 スロットが、アプリから制御できる形か。
+            // プレースホルダは差し込み前の JSON で見る（prepareWorkflow 後は値に置き換わって消える）。
+            // 強度欄は版によって strength / strength_model + strength_clip と名前が変わるので、
+            // スロット全体の JSON 文字列にプレースホルダが入っているかで見る。
+            // 番号も見る: lora_2 に %lora3% が入っていると、on はスロット2、名前はスロット3 になって
+            // 「ON にした LoRA と実際に入る LoRA」が別物になる。
+            rgthreeSlotControl(slotObject, slotIndex) {
+                const raw = JSON.stringify(slotObject || {});
+                return {
+                    name: raw.includes(`%lora${slotIndex + 1}%`),
+                    strength: raw.includes(`%lora_str${slotIndex + 1}%`),
+                };
+            },
+
+            // ワークフロー内の rgthree スロット制御可否。スロット番号ごとに、
+            // そのスロットを持つ rgthree ノードすべてがプレースホルダを持つかで決める
+            // （applyRgthreeLoraNodes は全ノードへ同じ on を立てるため）。
+            // rgthree ノードが無ければ null。その場合は標準 LoraLoader の制御可否に影響しない。
+            rgthreeSlotControls(nodeObject) {
+                const controls = { name: [], strength: [] };
+                for (let slotIndex = 0; slotIndex < this.LORA_SLOT_COUNT; slotIndex++) {
+                    controls.name.push(true);
+                    controls.strength.push(true);
+                }
+                let found = false;
+                Object.keys(nodeObject || {}).forEach(id => {
+                    const node = nodeObject[id];
+                    if (!node || !this.isRgthreeLoraLoaderClass(node.class_type)) return;
+                    const inputs = node.inputs || {};
+                    for (let slotIndex = 0; slotIndex < this.LORA_SLOT_COUNT; slotIndex++) {
+                        const slotInputs = inputs['lora_' + (slotIndex + 1)];
+                        if (!slotInputs || typeof slotInputs !== 'object' || Array.isArray(slotInputs)) continue;
+                        found = true;
+                        const control = this.rgthreeSlotControl(slotInputs, slotIndex);
+                        if (!control.name) controls.name[slotIndex] = false;
+                        if (!control.strength) controls.strength[slotIndex] = false;
+                    }
+                });
+                return found ? controls : null;
+            },
+
             loraSlotConfig(index) {
                 const list = Array.isArray(state.settings.comfyLoras) ? state.settings.comfyLoras : [];
                 const slot = list[index] || {};
@@ -10948,7 +10990,9 @@ const dbUtils = {
 
             // rgthree の Power Lora Loader。名前と強度は %loraN% / %lora_strN% の差し込みで既に入っているので、
             // ここでは on だけを選ぶスロットに合わせて切り替える（on: false のままでは ComfyUI が読まない）。
-            applyRgthreeLoraNodes(nodeObject, loraFiles) {
+            // sourceObject（トークン差し込み前の JSON）を渡すと、%loraN% の無いスロットの on を触らない。
+            // 固定名を書いた rgthree スロットには触らない、という標準ノードと同じ約束になる。
+            applyRgthreeLoraNodes(nodeObject, loraFiles, sourceObject) {
                 const nodeIds = Object.keys(nodeObject || {}).filter(id => {
                     const node = nodeObject[id];
                     return !!(node && this.isRgthreeLoraLoaderClass(node.class_type));
@@ -10964,14 +11008,27 @@ const dbUtils = {
                 const notes = [];
                 nodeIds.forEach(nodeId => {
                     const inputs = nodeObject[nodeId].inputs || {};
+                    const sourceInputs = (sourceObject && sourceObject[nodeId] && sourceObject[nodeId].inputs) || null;
                     for (let slotIndex = 0; slotIndex < this.LORA_SLOT_COUNT; slotIndex++) {
                         const slotInputs = inputs['lora_' + (slotIndex + 1)];
                         if (!slotInputs || typeof slotInputs !== 'object' || Array.isArray(slotInputs)) continue;
                         if (!Object.prototype.hasOwnProperty.call(slotInputs, 'on')) continue;
+                        const control = sourceInputs
+                            ? this.rgthreeSlotControl(sourceInputs['lora_' + (slotIndex + 1)], slotIndex)
+                            : { name: true, strength: true };
+                        if (!control.name) {
+                            notes.push(`LoRA${slotIndex + 1}: %lora${slotIndex + 1}% が無いスロットのため触らず、`
+                                + 'ワークフローに書かれた LoRA 名をそのまま送ります');
+                            continue;
+                        }
                         slotInputs.on = !!slots[slotIndex].name;
                         notes.push(slots[slotIndex].name
                             ? `LoRA${slotIndex + 1}: ${slots[slotIndex].name}（強度 ${slots[slotIndex].strength} / on）`
                             : `LoRA${slotIndex + 1}: 不使用（on を切って送ります）`);
+                        if (!control.strength) {
+                            notes.push(`LoRA${slotIndex + 1}: %lora_str${slotIndex + 1}% が無いため、`
+                                + '強度はワークフローに書かれた値のままです');
+                        }
                     }
                 });
                 return { ok: true, notes: notes };
@@ -10982,7 +11039,7 @@ const dbUtils = {
             // sourceObject（トークン差し込み前の JSON）を渡すと、そこで %loraN% を参照していたノードだけ管理する。
             // 固定のファイル名を書いた LoRA ノードは、そのまま送る。省略時は LoraLoader ノードすべてが対象。
             applyLoraNodes(nodeObject, loraFiles, sourceObject) {
-                const rgthree = this.applyRgthreeLoraNodes(nodeObject, loraFiles);
+                const rgthree = this.applyRgthreeLoraNodes(nodeObject, loraFiles, sourceObject);
                 if (!rgthree.ok) return rgthree;
                 let managedIds = Object.keys(nodeObject)
                     .filter(id => nodeObject[id] && this.isLoraLoaderClass(nodeObject[id].class_type));
@@ -11333,6 +11390,16 @@ const dbUtils = {
                 const parsed = illustrationUtils.parseWorkflow(workflow.json);
                 if (!parsed.ok) return illustrationUtils.LORA_SLOT_COUNT;
                 return illustrationUtils.loraSlotCapacity(parsed.object);
+            },
+
+            // rgthree のスロットがアプリから制御できるか（プレースホルダの有無）。
+            // rgthree ノードを持たない / JSON が壊れているときは null。その場合は制御可能扱いにする
+            // （壊れているときは送信前にワークフロー検証で止まる）
+            workflowRgthreeSlotControls(workflow) {
+                if (!workflow) return null;
+                const parsed = illustrationUtils.parseWorkflow(workflow.json);
+                if (!parsed.ok) return null;
+                return illustrationUtils.rgthreeSlotControls(parsed.object);
             },
 
             // 保存済みのスロット配列を常に 4 個・正しい形へそろえる
@@ -11804,17 +11871,25 @@ const dbUtils = {
                 const names = this.loraChoices || [];
                 // 対応 LoRA は 4 個まで。そのうえで、使用中のワークフローが受け取れる数より
                 // 大きい番号のスロットは選択できなくする（選んでも効かないため）
-                const capacity = this.workflowLoraCapacity(illustrationUtils.activeWorkflow());
+                const activeRecord = illustrationUtils.activeWorkflow();
+                const capacity = this.workflowLoraCapacity(activeRecord);
+                // rgthree のスロットにプレースホルダが無ければ、そこは選んでも効かない
+                const rgthreeControls = this.workflowRgthreeSlotControls(activeRecord);
+                const alwaysOn = [true, true, true, true];
+                const nameControls = rgthreeControls ? rgthreeControls.name : alwaysOn;
+                const strengthControls = rgthreeControls ? rgthreeControls.strength : alwaysOn;
                 container.innerHTML = '';
                 for (let slotIndex = 0; slotIndex < illustrationUtils.LORA_SLOT_COUNT; slotIndex++) {
                     const slot = illustrationUtils.loraSlotConfig(slotIndex);
                     const usable = slotIndex < capacity;
+                    const nameUsable = usable && nameControls[slotIndex];
+                    const strengthUsable = usable && strengthControls[slotIndex];
                     const row = document.createElement('div');
                     row.style.cssText = 'display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:6px;';
 
                     const label = document.createElement('span');
                     label.textContent = `LoRA ${slotIndex + 1}:`;
-                    label.style.cssText = 'font-size:12px; min-width:56px;' + (usable ? '' : ' opacity:0.55;');
+                    label.style.cssText = 'font-size:12px; min-width:56px;' + (nameUsable ? '' : ' opacity:0.55;');
                     row.appendChild(label);
 
                     const select = document.createElement('select');
@@ -11837,7 +11912,7 @@ const dbUtils = {
                         select.appendChild(option);
                     }
                     select.value = slot.name || '';
-                    select.disabled = !usable;
+                    select.disabled = !nameUsable;
                     select.addEventListener('change', () => this.setLoraSlot(slotIndex, { name: select.value }));
                     row.appendChild(select);
 
@@ -11854,23 +11929,56 @@ const dbUtils = {
                     strength.value = slot.strength;
                     strength.style.cssText = 'width:70px; margin-bottom:0;';
                     strength.setAttribute('aria-label', `LoRA ${slotIndex + 1} 強度`);
-                    strength.disabled = !usable;
+                    strength.disabled = !strengthUsable;
                     strength.addEventListener('change', () => {
                         const value = Number(strength.value);
                         this.setLoraSlot(slotIndex, { strength: Number.isFinite(value) ? value : 1 });
                     });
                     row.appendChild(strength);
 
+                    let reasonText = '';
+                    let reasonColor = 'var(--text-secondary)';
                     if (!usable) {
-                        const reason = document.createElement('span');
-                        reason.textContent = capacity === 0
+                        reasonText = capacity === 0
                             ? 'このワークフローは LoRA を使いません'
                             : `このワークフローは LoRA ${capacity} 個まで`;
-                        reason.style.cssText = 'font-size:11px; color: var(--text-secondary);';
+                    } else if (!nameUsable) {
+                        reasonText = `このスロットに %lora${slotIndex + 1}% が無いので選べません`
+                            + '（ワークフローに書かれた LoRA 名がそのまま送られます）';
+                        reasonColor = 'var(--text-error, var(--text-link))';
+                    } else if (!strengthUsable) {
+                        reasonText = `このスロットに %lora_str${slotIndex + 1}% が無いため、強度はワークフローに書かれた値のままです`;
+                    }
+                    if (reasonText) {
+                        const reason = document.createElement('span');
+                        reason.textContent = reasonText;
+                        reason.style.cssText = `font-size:11px; color: ${reasonColor};`;
                         row.appendChild(reason);
                     }
 
                     container.appendChild(row);
+                }
+                // rgthree のプレースホルダ不足は、選ぶ前に気づけるよう 1 行にまとめて出す
+                const missingName = [];
+                const missingStrength = [];
+                for (let slotIndex = 0; slotIndex < illustrationUtils.LORA_SLOT_COUNT; slotIndex++) {
+                    if (!nameControls[slotIndex]) missingName.push(slotIndex + 1);
+                    if (!strengthControls[slotIndex]) missingStrength.push(slotIndex + 1);
+                }
+                if (missingName.length || missingStrength.length) {
+                    const note = document.createElement('p');
+                    note.style.cssText = 'font-size:11px; color: var(--text-error, var(--text-link)); margin: 6px 0 0 0;';
+                    const parts = [];
+                    if (missingName.length) {
+                        parts.push(`rgthree のスロット ${missingName.join(' / ')} に %loraN% がありません`
+                            + '（そのスロットで選んだ LoRA は送られず、ワークフローに書かれた名前がそのまま使われます）');
+                    }
+                    if (missingStrength.length) {
+                        parts.push(`rgthree のスロット ${missingStrength.join(' / ')} に %lora_strN% がありません`
+                            + '（強度はワークフローに書かれた値が送られます）');
+                    }
+                    note.textContent = parts.join(' ／ ');
+                    container.appendChild(note);
                 }
                 if (names.length === 0) {
                     const note = document.createElement('p');
@@ -11885,6 +11993,9 @@ const dbUtils = {
                 const capacity = this.workflowLoraCapacity(active);
                 // ワークフローが受け取れない番号のスロットは変更しない（UI でも無効にしている）
                 if (active && index >= capacity) return;
+                // rgthree のスロットに %loraN% が無いときも、選んでも効かないので受け付けない
+                const rgthreeControls = this.workflowRgthreeSlotControls(active);
+                if (rgthreeControls && !rgthreeControls.name[index]) return;
                 if (!Array.isArray(state.settings.comfyLoras)) {
                     state.settings.comfyLoras = buildDefaultComfyLoraSlots();
                 }
@@ -19742,6 +19853,10 @@ helpIcons.forEach(icon => {
                     }
                     const loraApplied = illustrationUtils.applyLoraNodes(prepared.object, loraFiles, parsed.object);
                     if (!loraApplied.ok) throw new Error(loraApplied.error);
+                    // 各スロットで何をしたか（on を切った／触らずそのまま送った 等）を開発者ツールに残す
+                    if (Array.isArray(loraApplied.notes) && loraApplied.notes.length) {
+                        console.log('[挿絵] LoRA: ' + loraApplied.notes.join(' / '));
+                    }
 
                     const existing = state.currentMessages[targetIndex].illustration || {};
                     const storedPrompt = typeof existing.prompt === 'string' ? existing.prompt.trim() : '';

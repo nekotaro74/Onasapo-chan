@@ -177,6 +177,20 @@ rgthree の `lora_1`〜`lora_4` の存在数の大きい方（4 上限）。対�
 スロットを無効にし、`setLoraSlot` も受け付けない（選んでも効かないため）。ワークフローごとの記憶は 4 個分残るので、
 ワークフロー側でスロットを増やせば戻る。
 
+**rgthree のスロットが制御できるか**は `rgthreeSlotControl` / `rgthreeSlotControls` が決める。スロット全体の
+JSON 文字列に `%loraN%` と `%lora_strN%` が入っているかで見る（**番号も一致させる**。`lora_2` に `%lora3%` だと
+`on` はスロット2、名前はスロット3 になって別物の LoRA になる）。強度欄は版によって `strength` /
+`strength_model` + `strength_clip` と名前が変わるので、キー名では見ない。判定に使う JSON は必ず**差し込み前**
+（`parsed.object` / `sourceObject`）で、`prepareWorkflow` 後にはプレースホルダが値に置き換わって消えている。
+
+- `%loraN%` の無いスロット → `applyRgthreeLoraNodes` は `on` を触らず、ワークフローに書かれた LoRA 名をそのまま送る
+  （固定名を書いた LoraLoader ノードに触らないのと同じ約束）。UI は select を無効にして理由を行に出す
+- `%lora_strN%` の無いスロット → LoRA 名は効き、強度だけ JSON の値のまま。UI は強度欄だけを無効にする
+
+生成は止めない（固定強度は正当な設定）。`loraSlotCapacity` はスロット数だけを見る設計のまま制御可否を別立てにし、
+ワークフローごとの記憶（`clampSlotsToCapacity`）へ影響させない。ComfyUI の画面では rgthree の欄に
+`%loraN%` を入力できない（実ファイル名のドロップダウン）ので、自作する場合は保存後に JSON を編集する必要がある。
+
 `%loraN%` / `%lora_strN%` は `buildTokenValues` で常に値を用意するので未対応トークンエラーにはならず、
 LoraLoader ノードには後段の `applyLoraNodes` が実際の値を上書きする。
 一覧は「接続確認＆モデル一覧取得」で `object_info` の `LoraLoader` / `LoraLoaderModelOnly` から取り、
