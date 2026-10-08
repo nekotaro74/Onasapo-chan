@@ -1619,6 +1619,11 @@ async function main() {
         console.log(JSON.stringify(failureResult, null, 2));
         console.log('promptPosts =', promptPostsAfterFailure);
 
+        // キャッシュ名はアプリ更新のたびに上げる。数値を固定すると上げるたびにこの検査が
+        // 落ちるため、本リポジトリの名前であることと v6 以降であることを見る。
+        const swCacheName = String(failureResult.swVersion || '');
+        const swCacheSeq = Number(swCacheName.replace(/^onasapo-chan-cache-v/, ''));
+
         const checks = [
             ['ページエラーが無い', pageResult.pageErrors.length === 0],
             ['quiet 生成は背景実行で、履歴を文脈にしている', pageResult.quietRequest && pageResult.quietRequest.isBackground && pageResult.quietRequest.historyLength === 2],
@@ -1659,7 +1664,7 @@ async function main() {
             ['連打でも ComfyUI への投入は1件', promptPostsAfterFailure === 1],
             ['連打後もジョブは解除される', failureResult.rapidTapResult.jobReleased && failureResult.rapidTapResult.status === 'done'],
             ['Service Worker が登録される', failureResult.swRegistered],
-            ['Service Worker のキャッシュ版が上がっている', failureResult.swVersion === 'onasapo-chan-cache-v6'],
+            ['Service Worker のキャッシュ版が上がっている', /^onasapo-chan-cache-v\d+$/.test(swCacheName) && swCacheSeq >= 6],
             ['不正ワークフローでは LLM を消費しない', failureResult.badWorkflowResult.spentLlmCall === false],
             ['UI形式ワークフローは ComfyUI へ送らない', failureResult.badWorkflowResult.posted === false],
             ['未知のプレースホルダは ComfyUI へ送らない', failureResult.unknownTokenResult.posted === false],
