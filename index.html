@@ -2707,6 +2707,31 @@ body.turf-mode {
             user-select: text;
         }
 
+        /* 設定画面: 注釈などの文章はマウスで選択できるようにする */
+        #settings-screen p,
+        #settings-screen div,
+        #settings-screen span,
+        #settings-screen li {
+            -webkit-user-select: text;
+            user-select: text;
+        }
+
+        /* 操作する要素は従来どおり選択不可（ドラッグ選択による誤動作を防ぐ） */
+        #settings-screen button,
+        #settings-screen button *,
+        #settings-screen summary,
+        #settings-screen summary *,
+        #settings-screen label,
+        #settings-screen label *,
+        #settings-screen .api-key-help-icon,
+        #settings-screen .param-slider-wrapper,
+        #settings-screen .param-slider-container,
+        #settings-cryscroller-scroll-zone,
+        #settings-cryscroller-scroll-zone * {
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
         #settings-screen .main-content {
             background-color: transparent;
         }
