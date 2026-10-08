@@ -1,6 +1,6 @@
 ## 概要
 
-本リポジトリは、Gemini PWA（<https://github.com/ona-oni/geminipwa>）を個人的にフォークし、挿絵生成機能（ComfyUIに接続）と読み上げ（Irodori TTS ServerなどのOpenAI互換のみ）機能を追加したものです。
+本リポジトリは、Gemini PWA（<https://github.com/titan823/geminipwa>）を個人的にフォークし、挿絵生成機能（ComfyUIに接続）と読み上げ（Irodori TTS ServerなどのOpenAI互換のみ）機能を追加したものです。
 
 自前の API キーを用いて Chat AI とやりとりを行うためのアプリです。
 
@@ -269,7 +269,7 @@ Irodori TTS Server での `IRODORI_CORS_ORIGINS` の設定と、PC用 / Tailscal
 
 ---
 
-**↓ ここから下はフォーク元リポジトリ [Gemini PWA](https://github.com/ona-oni/geminipwa) の更新履歴の写しです**
+**↓ ここから下はフォーク元リポジトリ [Gemini PWA](https://github.com/titan823/geminipwa) の更新履歴の写しです**
 
 ### 2026/08/04
 -  モデルカード更新、微調整

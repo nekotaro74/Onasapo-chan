@@ -1348,6 +1348,9 @@ const LORA_SCRIPT = `(async () => {
     const useWorkflow = (obj) => {
         state.settings.comfyWorkflows = [{ id: 'wf-lora', name: 'LoRA 付き', json: JSON.stringify(obj) }];
         state.settings.comfyActiveWorkflowId = 'wf-lora';
+        // 実際の UI ではワークフローを切り替えると編集欄へ JSON が反映され、LoRA スロットの
+        // 有効・無効はその編集欄の内容で決まる（comfyWorkflowUtils.detectionWorkflow）
+        comfyWorkflowUtils.renderEditor();
     };
     const runOnce = async () => {
         state.illustrationJob = null;
@@ -1430,6 +1433,7 @@ const LORA_SCRIPT = `(async () => {
     // 8) 同梱の規定①は LoRA ノードが固定名なので、4スロットとも無効になる
     state.settings.comfyWorkflows = buildDefaultComfyWorkflows();
     state.settings.comfyActiveWorkflowId = state.settings.comfyWorkflows[0].id;
+    comfyWorkflowUtils.renderEditor();
     const turboCapacity = comfyWorkflowUtils.workflowLoraCapacity(illustrationUtils.activeWorkflow());
     comfyWorkflowUtils.renderLoraRows();
     const turboDisabled = Array.from(elements.comfyLoraRows.children)

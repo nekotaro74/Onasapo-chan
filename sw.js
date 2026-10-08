@@ -1,6 +1,6 @@
 // sw.js
 
-const CACHE_NAME = 'onasapo-chan-cache-v17'; // キャッシュ名を変更すると強制的に更新がかかる場合がある
+const CACHE_NAME = 'onasapo-chan-cache-v18'; // キャッシュ名を変更すると強制的に更新がかかる場合がある
 const urlsToCache = [
   './', // ルートパス (index.html を指すことが多い)
   './index.html',

@@ -12087,7 +12087,8 @@ const dbUtils = {
                 state.settings.comfyLoras[index] = Object.assign({}, slot, patch);
                 await dbUtils.saveSetting('comfyLoras', state.settings.comfyLoras);
                 // LoRA スロットを持つワークフローでは、選んだ値をそのワークフローの記憶としても残す
-                if (active && capacity > 0) {
+                const active = illustrationUtils.activeWorkflow();
+                if (active && detection.capacity > 0) {
                     await this.setLoraMemory(active.id, state.settings.comfyLoras);
                 }
             },

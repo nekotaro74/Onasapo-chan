@@ -413,9 +413,9 @@ const jsonResponse = (body, status) => ({
     const animaTurbo = eval(extractObject(html, 'const ANIMA_WORKFLOW_TURBO_OBJECT = ') + '; ANIMA_WORKFLOW_TURBO_OBJECT');
     const animaLora4 = eval(extractObject(html, 'const ANIMA_WORKFLOW_LORA4_OBJECT = ') + '; ANIMA_WORKFLOW_LORA4_OBJECT');
     checkTrue('規定ワークフロー名①が同梱されている',
-        html.includes('Anima用デフォルトワークフロー①（+Turbo LoRA組込済）'));
+        html.includes('Anima用デフォルト① +Turbo LoRA組込済'));
     checkTrue('規定ワークフロー名②が同梱されている',
-        html.includes('Anima用デフォルトワークフロー②（LoRA x 4）'));
+        html.includes('Anima用デフォルト② LoRA x 4'));
 
     state.settings.comfyModel = 'anima.safetensors';
     state.settings.comfyVae = 'anima_vae.safetensors';
@@ -486,7 +486,8 @@ const jsonResponse = (body, status) => ({
     checkTrue('固定名の LoRA ノードだけなら一覧を取りに行かない',
         illustrationUtils.hasLoraNodes(fixedLoraWf()) === false);
 
-    // rgthree の Power Lora Loader は、選んだスロットだけ on: true にする
+    // rgthree の Power Lora Loader は、選んだスロットだけ on: true にする。
+    // 制御するのは %loraN% / %lora_strN% のあるスロットだけ（固定名を書いたスロットは触らない）
     const rgthreeWf = () => ({
         '44': { class_type: 'UNETLoader', inputs: { unet_name: 'anima.safetensors' } },
         '45': { class_type: 'CLIPLoader', inputs: { clip_name: 'gemma_2b.safetensors' } },
@@ -494,8 +495,8 @@ const jsonResponse = (body, status) => ({
             class_type: 'Power Lora Loader (rgthree)',
             inputs: {
                 model: ['44', 0], clip: ['45', 0],
-                lora_1: { on: false, lora: 'one.safetensors', strength: 0.8 },
-                lora_2: { on: false, lora: '', strength: 0 },
+                lora_1: { on: false, lora: '%lora1%', strength: '%lora_str1%' },
+                lora_2: { on: false, lora: '%lora2%', strength: '%lora_str2%' },
             },
         },
         '19': { class_type: 'KSampler', inputs: { model: ['50', 0] } },
