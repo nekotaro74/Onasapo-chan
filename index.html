@@ -5654,7 +5654,7 @@ font-size: 1.142em !important;
                             </optgroup>
               </select>
                         <p style="font-size: 11px; color: var(--text-secondary); margin-top: 5px; margin-bottom: 10px;">
-                            ※ 表示は DeepSeek が受け付ける <b>model id そのまま</b>です（2026-10-07 時点）。DeepSeek 側の世代交代でこの欄を書き換える必要はありません。<br>
+                            ※ 表示は DeepSeek が受け付ける <b>model id そのまま</b>です。（2026-10-07 時点）<br>
                             ※ 「世代廃止」の id は DeepSeek が現行モデルへ転送します。「廃止済み」の id は選んでもエラーになります。
                         </p>
                         <details style="margin-top: 10px;">
@@ -8070,9 +8070,9 @@ font-size: 1.142em !important;
                                     placeholder='ComfyUI の「Save (API Format)」で書き出した JSON を貼り付けます。例: {"3": {"class_type": "CLIPTextEncode", "inputs": {"text": "%prompt%"}}}'
                                     aria-label="API形式ワークフロー JSON"></textarea>
                                 <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
-                                    ※ UI形式（<code>nodes</code> / <code>links</code> を持つ形式）は受け付けません。API形式で保存してください。<br>
+                                    ※ API形式のワークフローのみ受け付けます。<br>
                                     ※ 文字列値の中なら文中に埋め込んでも置換されます（例: <code>"masterpiece, %prompt%"</code>）。値そのものを差し込む箇所は <code>"%seed%"</code> のように書くと数値として入ります。<br>
-                                    ※ 未対応のトークンが残っている場合は ComfyUI へ送らず、ここでエラーを表示します。
+                                    ※ ワークフロー内に未対応のプレースホルダがある場合は ComfyUI へ送らず、ここでエラーを表示します。
                                 </p>
                                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                                     <div style="flex: 1 1 260px;">
@@ -8177,9 +8177,7 @@ font-size: 1.142em !important;
                             </div>
                             <p style="font-size: 11px; color: var(--text-secondary); margin-top: 8px; margin-bottom: 0;">
                                 ※ 一覧は <b>「接続確認＆モデル一覧取得」で接続先の <code>/object_info</code> からまとめて取得</b>します（この設定グループを開いたとき、キャッシュが 5 分以上古ければ裏で取り直します）。モデルは <code>%model%</code>、VAE は <code>%vae%</code>、テキストエンコーダは <code>%text_encoder%</code>、Sampling method は <code>%sampler%</code>、Scheduler は <code>%scheduler%</code> として差し込まれます。<br>
-                                ※ 取得に失敗しても、すでに保存している値はそのまま残ります（生成は接続先の ComfyUI が値を検証します）。<br>
-                                ※ テキストエンコーダは SillyTavern に無い本アプリ独自の項目です。<br>
-                                ※ 同梱の Anima 用ワークフローは <code>UNETLoader</code> / <code>CLIPLoader</code> / <code>VAELoader</code> を使うため、モデル・テキストエンコーダ・VAE を選ぶ必要があります。未選択のままだと生成前に止まります。
+                                ※ 取得に失敗しても、すでに保存している値はそのまま残ります（生成は接続先の ComfyUI が値を検証します）。
                             </p>
                             <hr style="margin: 12px 0; border-top: 1px dashed var(--border-secondary);">
 
@@ -8217,10 +8215,6 @@ font-size: 1.142em !important;
                                 </div>
                                 <label for="comfy-seed" style="margin-top: 10px;">seed (-1 で毎回ランダム):</label>
                                 <input type="number" id="comfy-seed" min="-1" step="1">
-                                <p style="font-size: 11px; color: var(--text-secondary); margin-top: 5px; margin-bottom: 0;">
-                                    ※ 幅・高さ・steps・CFG scale・Denoise・CLIP Skip・seed は、ワークフロー内の <code>%width%</code> <code>%height%</code> <code>%steps%</code> <code>%cfg%</code>（CFG scale のこと）<code>%denoise%</code> <code>%clip_skip%</code> <code>%seed%</code> に差し込まれます。CLIP Skip は ComfyUI 側では負の値として渡されます。<code>%scale%</code> は廃止しました。<br>
-                                    ※ 幅・高さの直接入力は「カスタム」のときだけ使われます。
-                                </p>
                                 <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
                                     <div style="flex: 1 1 140px;">
                                         <label for="comfy-timeout-ms">タイムアウト (ms):</label>
