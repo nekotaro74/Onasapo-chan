@@ -8101,7 +8101,7 @@ font-size: 1.142em !important;
                             </summary>
                             <div style="padding: 10px; padding-top: 5px;">
                                 <label for="comfy-prompt-prefix">共通プロンプトプレフィックス:</label>
-                                <textarea id="comfy-prompt-prefix" rows="2" placeholder="masterpiece, best quality, score_7, nsfw"></textarea>
+                                <textarea id="comfy-prompt-prefix" rows="2" placeholder="masterpiece, best quality, score_7,"></textarea>
                                 <label for="comfy-character-prefix">キャラ外見プレフィックス:</label>
                                 <textarea id="comfy-character-prefix" rows="2" placeholder="例: 1girl, long silver hair"></textarea>
                                 <label for="comfy-negative-prompt">ネガティブプロンプト:</label>
@@ -9599,7 +9599,7 @@ geminiIncludeThoughts: false,
                 comfyActiveWorkflowId: ANIMA_WORKFLOW_TURBO_ID, // null にしない（loadSettings の数値変換で壊れる）
                 comfyCustomPlaceholders: [], // [{ find, replace }]
                 // 未設定の新規状態だけの既定。保存済みは loadSettings で上書きされない
-                comfyPromptPrefix: 'masterpiece, best quality, score_7, nsfw',
+                comfyPromptPrefix: 'masterpiece, best quality, score_7,',
                 comfyCharacterPrefix: '',
                 comfyUseCharacterPrefix: true,
                 comfyNegativePrompt: 'worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, chromatic aberration',
