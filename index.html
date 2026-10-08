@@ -8033,6 +8033,7 @@ font-size: 1.142em !important;
                                 <button type="button" id="comfy-launch-cmd-copy-btn" class="settings-action-button copyable-cmd-btn"
                                     data-copy-source="comfy-launch-cmd">コピー</button>
                             </div>
+                            ※ 外出先のスマホや別PCから使うには、Tailscale を <b>PCとスマホの両方</b>に入れて同じアカウントでログインします。片方だけでは ComfyUI に届きません。<br>
                             ※ base URL は、PCだけで使うなら <code>http://127.0.0.1:8188</code>、スマホや別PCから Tailscale 経由で使うなら <code>http://{Tailscale IP}:8188</code>。<br>
                             ※ Chrome 系では、公開ページからローカルアドレスへ接続するとき「ローカルネットワークへの接続」の許可が出ます。許可しないと接続確認は失敗します。<br>
                             ※ 手順の正本は <code>docs/挿絵生成と読み上げの導入手引き.md</code>（README 冒頭からもリンク）。ローカル起動（<code>__winlocal.bat</code>）でも同じ手順です。
@@ -8299,6 +8300,7 @@ font-size: 1.142em !important;
                                 <button type="button" id="tts-cors-env-copy-btn" class="settings-action-button copyable-cmd-btn"
                                     data-copy-source="tts-cors-env-line">コピー</button>
                             </div>
+                            ※ 外出先のスマホや別PCから使うには、Tailscale を <b>PCとスマホの両方</b>に入れて同じアカウントでログインします。片方だけでは TTS サーバーに届きません。<br>
                             ※ エンドポイントは、PCだけで使うなら <code>http://127.0.0.1:8088/v1</code>、スマホや別PCから Tailscale 経由で使うなら <code>http://{Tailscale IP}:8088/v1</code>。APIキーは通常不要で、空なら <code>Authorization</code> を送りません。<br>
                             ※ Chrome 系では、公開ページからローカルアドレスへ接続するとき「ローカルネットワークへの接続」の許可が出ます。許可しないと接続確認は失敗します。<br>
                             ※ 手順の正本は <code>docs/挿絵生成と読み上げの導入手引き.md</code>（README 冒頭からもリンク）。APIキーはこのアプリの IndexedDB にだけ保存し、ファイル書き出しやコミットには出しません。
