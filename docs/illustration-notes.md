@@ -247,7 +247,7 @@ Anima / SDXL 系でそのまま使える値を既定にしている（`DEFAULT_C
 - 単位は**往復**。AI応答1回とその直前のユーザー入力を1組として数える。
 - 既定 12 往復（`DEFAULT_ILLUSTRATION_HISTORY_ROUNDS`）。`0` で全件。空欄は 12 として扱う。
 - 設定キーは `state.settings.illustrationHistoryRounds`。UI は「設定 → 挿絵生成（ComfyUI）→ 挿絵生成用プロンプト」内の
-  `挿絵生成の推論に使う履歴の往復数`（number input、`min="0"`）。スライダーは付けない
+  `挿絵生成の推論に使う履歴の往復(入力→応答)数`（number input、`min="0"`）。スライダーは付けない
   （`0 = 全件` がスライダーの目盛りの意味と衝突するため）。
 - 内部ガードとして文字数上限 `ILLUSTRATION_HISTORY_CHAR_CAP = 24000` を併用する。設定画面には出さない。
   最後の1件（挿絵の対象応答）は上限を超えても残す。
