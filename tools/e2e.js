@@ -375,6 +375,17 @@ const PAGE_SCRIPT = `(async () => {
         },
         historyRoundsInput: historyRoundsInput
             ? { min: historyRoundsInput.min, type: historyRoundsInput.type } : null,
+        // 導入手引きへのリンク（挿絵生成と TTS の注釈に1つずつ、別タブで開く）
+        guideLinks: Array.from(document.querySelectorAll('a'))
+            .filter(a => {
+                const href = a.getAttribute('href') || '';
+                return href.includes('/docs/') && href.endsWith('.html');
+            })
+            .map(a => ({
+                target: a.getAttribute('target'),
+                rel: a.getAttribute('rel') || '',
+                text: a.textContent.trim(),
+            })),
     };
 })()`;
 
@@ -1654,6 +1665,9 @@ async function main() {
             ['quiet 生成は背景実行で、履歴を文脈にしている', pageResult.quietRequest && pageResult.quietRequest.isBackground && pageResult.quietRequest.historyLength === 2],
             ['挿絵の履歴往復数の入力欄がある（0 以上を受け付ける）', !!pageResult.historyRoundsInput
                 && pageResult.historyRoundsInput.type === 'number' && pageResult.historyRoundsInput.min === '0'],
+            ['導入手引きへのリンクが2か所にあり、新しいタブで開く',
+                pageResult.guideLinks.length === 2 && pageResult.guideLinks.every(l => l.target === '_blank'
+                    && l.rel.includes('noopener') && l.text.length > 0)],
             ['往復数で挿絵に送る履歴を絞る（直近2往復だけ残す）',
                 JSON.stringify(pageResult.trimProbe && pageResult.trimProbe.contents) === JSON.stringify(['u3', 'm3', 'u4', 'm4'])
                 && pageResult.trimProbe.keptRounds === 2 && pageResult.trimProbe.totalRounds === 4],
