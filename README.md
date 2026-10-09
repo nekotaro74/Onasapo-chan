@@ -270,6 +270,7 @@ Irodori TTS Server での `IRODORI_CORS_ORIGINS` の設定と、PC用 / Tailscal
 ### 2026-10-09（バージョン 0.27on (Onasapo-chan)）
 - **挿絵生成の推論に使う会話履歴を、既定で直近12往復に絞るようにしました。**それまで quiet 生成（挿絵用の文をクラウド LLM に書かせる1回）には対象応答までの履歴が**全件**渡っており、長い会話では挿絵1枚あたりの入力トークンが会話長に比例して増え、モデルの context window を超えて失敗していました。本家 SillyTavern が Chat Completion 側のトークン予算で古い方から捨てているのと同じ目的ですが、本アプリでは単位を**往復**（AI応答1回とその直前のユーザー入力を1組）にしています。
 - 設定の「挿絵生成（ComfyUI）→ 挿絵生成用プロンプト」に **`挿絵生成の推論に使う履歴の往復数`** を追加しました。既定 12、`0` で全件送信、空欄は 12 として扱います。内部の文字数上限（24,000 文字）も併用し、挿絵を付ける応答そのものは必ず送られます。設定の「デバッグ（挿絵生成用プロンプト）」には `直近 N 往復（会話全体では M 往復）` を表示します。Service Worker のキャッシュ名を `onasapo-chan-cache-v19` へ更新しました。
+- 設定の「モデル選択と生成パラメータ」内にある一覧取得の注釈を書き換えました。内部の実装名ではなく画面から見える表現にし、「接続先の `/object_info` からまとめて取得」を「接続先 ComfyUI の該当フォルダからまとめて取得」へ、モデル・VAE・テキストエンコーダ・Sampling method・Scheduler のプレースホルダ名を並べた説明を「選択したモデル／VAE／テキストエンコーダはワークフロー内の該当プレースホルダを置換します」へ変更しました。Service Worker のキャッシュ名を `onasapo-chan-cache-v20` へ更新しました。
 
 ### 2026-10-06（バージョン 0.27on (Onasapo-chan)）
 - **DeepSeek を刷新しました。** 既定エンドポイントを独自の中継サーバーから `https://api.deepseek.com` への直接接続へ変更しました（DeepSeek API 側のブラウザ CORS 対応を実測で確認済み。中継サーバーは不要になっています）。モデル一覧を現行の `deepseek-flash` / `deepseek-v4-pro` へ更新し、廃止済みの `deepseek-chat` / `deepseek-reasoner` / `deepseek-v4-flash` は「廃止済み」欄へまとめました。設定の「思考プロセス」に **Thinking Mode** と **Reasoning Effort**（`low` / `high` / `max`）を追加し、`thinking` と `reasoning_effort` を送信するようにしました。

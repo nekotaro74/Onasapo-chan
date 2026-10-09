@@ -8186,7 +8186,7 @@ font-size: 1.142em !important;
                                 </div>
                             </div>
                             <p style="font-size: 11px; color: var(--text-secondary); margin-top: 8px; margin-bottom: 0;">
-                                ※ 一覧は <b>「接続確認＆モデル一覧取得」で接続先の <code>/object_info</code> からまとめて取得</b>します（この設定グループを開いたとき、キャッシュが 5 分以上古ければ裏で取り直します）。モデルは <code>%model%</code>、VAE は <code>%vae%</code>、テキストエンコーダは <code>%text_encoder%</code>、Sampling method は <code>%sampler%</code>、Scheduler は <code>%scheduler%</code> として差し込まれます。<br>
+                                ※ 一覧は <b>「接続確認＆モデル一覧取得」で接続先 ComfyUI の該当フォルダからまとめて取得</b>します（この設定グループを開いたとき、キャッシュが 5 分以上古ければ裏で取り直します）。選択したモデル／VAE／テキストエンコーダはワークフロー内の該当プレースホルダを置換します。<br>
                                 ※ 取得に失敗しても、すでに保存している値はそのまま残ります（生成は接続先の ComfyUI が値を検証します）。
                             </p>
                             <hr style="margin: 12px 0; border-top: 1px dashed var(--border-secondary);">
