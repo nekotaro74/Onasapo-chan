@@ -1472,6 +1472,32 @@ const LORA_SCRIPT = `(async () => {
         .filter(row => row.tagName === 'DIV')
         .map(row => { const select = row.querySelector('select'); return select ? select.disabled : null; });
 
+    // 9) LoRA 対応のワークフローを「使用中」にしただけで一覧がそろう（接続確認を押さない）
+    await setLoras([{ name: 'one.safetensors' }, { name: 'two.safetensors' }]);
+    state.settings.comfyBaseUrl = base;
+    elements.comfyBaseUrlInput.value = base;
+    state.settings.comfyWorkflows = buildDefaultComfyWorkflows();
+    state.settings.comfyActiveWorkflowId = state.settings.comfyWorkflows[0].id;
+    comfyWorkflowUtils.loraChoices = null;
+    illustrationUtils.loraCache = null;
+    elements.comfyLoraStatus.textContent = '';
+    comfyWorkflowUtils.renderList();
+    comfyWorkflowUtils.renderEditor();
+    const loraCapableId = state.settings.comfyWorkflows[1].id;
+    await comfyWorkflowUtils.selectWorkflow(loraCapableId);
+    // 一覧取得は裏で進むので、LoRA 欄に結果が出るまで待つ
+    let waitedForChoices = 0;
+    while (waitedForChoices < 5000 && !/LoRA 取得OK/.test(elements.comfyLoraStatus.textContent)) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+        waitedForChoices += 50;
+    }
+    const autoChoices = comfyWorkflowUtils.loraChoices || [];
+    const autoSlotOptions = Array.from(elements.comfyLoraRows.querySelectorAll('select'))
+        .map(select => Array.from(select.options).map(option => option.value));
+    // ①（LoRA 固定）から ② へ切り替えた直後。編集欄が ① のままだと 4 つとも無効になる
+    const autoDisabled = Array.from(elements.comfyLoraRows.querySelectorAll('select')).map(select => select.disabled);
+    const autoLoraStatus = elements.comfyLoraStatus.textContent;
+
     return {
         usedNode: usedNode,
         unusedNode: unusedNode,
@@ -1495,6 +1521,10 @@ const LORA_SCRIPT = `(async () => {
         allowedSlotName: allowedSlotName,
         turboCapacity: turboCapacity,
         turboDisabled: turboDisabled,
+        autoChoices: autoChoices,
+        autoSlotOptions: autoSlotOptions,
+        autoDisabled: autoDisabled,
+        autoLoraStatus: autoLoraStatus,
         defaultWorkflowError: (state.currentMessages[1].illustration && state.currentMessages[1].illustration.error) || null,
     };
 })()`;
@@ -1613,7 +1643,10 @@ async function main() {
         const deepSeekUiResult = await evaluate(DEEPSEEK_UI_SCRIPT);
         const galleryResult = await evaluate(GALLERY_SCRIPT);
         const regenerateResult = await evaluate(REGENERATE_SCRIPT);
+        // LoRA の裏取得が object_info を取りに行かないことを、増分で見る（他の確認は通算を見る）
+        const objectInfoRequestsBeforeLora = objectInfoRequests;
         const loraResult = await evaluate(LORA_SCRIPT);
+        const objectInfoRequestsForLora = objectInfoRequests - objectInfoRequestsBeforeLora;
         const footerResult = await evaluate(FOOTER_BUTTON_SCRIPT);
         const ttsUiResult = await evaluate(TTS_UI_SCRIPT);
         const ttsPlayResult = await evaluate(TTS_PLAY_SCRIPT);
@@ -1930,6 +1963,16 @@ async function main() {
             ['同梱の規定①は LoRA スロット0個で4つとも無効',
                 loraResult.turboCapacity === 0
                 && JSON.stringify(loraResult.turboDisabled) === JSON.stringify([true, true, true, true])],
+            ['LoRA 対応のワークフローを使用中にすると一覧が裏で取れる',
+                /LoRA 取得OK（2 件）/.test(loraResult.autoLoraStatus)
+                && loraResult.autoChoices.join(',') === 'one.safetensors,two.safetensors'],
+            ['使用中にした時点で LoRA 1〜4 のプルダウンが選べて選択肢もそろう',
+                loraResult.autoSlotOptions.length === 4
+                && loraResult.autoSlotOptions.every(values =>
+                    values.includes('one.safetensors') && values.includes('two.safetensors'))],
+            ['LoRA 一覧の裏取得は object_info を取りに行かない', objectInfoRequestsForLora === 0],
+            ['固定 LoRA の①から LoRA 対応の②へ切り替えた直後もスロットが有効',
+                JSON.stringify(loraResult.autoDisabled) === JSON.stringify([false, false, false, false])],
 
             ['開き直後に設定が復元される', reloadResult.settingsRestored && reloadResult.templateRestored],
             ['開き直後に保存済み挿絵が履歴へ表示される',
@@ -1960,6 +2003,10 @@ async function main() {
                 allowedSlotName: loraResult.allowedSlotName,
                 turboCapacity: loraResult.turboCapacity,
                 turboDisabled: loraResult.turboDisabled,
+                autoChoices: loraResult.autoChoices,
+                autoDisabled: loraResult.autoDisabled,
+                autoSlotOptions: loraResult.autoSlotOptions,
+                autoLoraStatus: loraResult.autoLoraStatus,
                 defaultWorkflowError: loraResult.defaultWorkflowError,
             },
             regenerateError: regenerateResult.error,

@@ -196,6 +196,19 @@ textarea の `input` で `renderTokenStatus` / `renderLoraWarnings` / `renderLor
 JSON が読めない間は capacity を 4 のままにして選択を奪わない（送信前にワークフロー検証で止まる）。
 警告文は `rgthreeSlotWarningSummary` が LoRA 欄の行・LoRA 欄の下の要約・編集欄下の警告の 3 か所分を共通生成する。
 
+**編集欄の反映は LoRA 判定より先。** 検出は編集欄の JSON を見るので、`syncLoraSlotsWithActiveWorkflow()` は
+`renderEditor()` を先に呼ぶ。反映前に判定すると、固定 LoRA の①から LoRA 対応の②へ切り替えたときに
+①の JSON で capacity 0 と判定され、4 スロットとも無効のまま残る（`renderEditor` は `renderLoraRows` を呼ばない）。
+
+**LoRA 一覧の取得は 2 経路。** `ensureLoraChoices()` は使用中のワークフローが LoRA を受け取るときだけ
+`GET /models/loras` を取りに行く（`loraChoices` が既にある / capacity 0 / 接続先が空なら何もしない。
+object_info は取らない）。ワークフローの切り替え・追加・複製・削除は `syncLoraSlotsWithActiveWorkflow()` に
+集約してあり、`applyLoraSlotsForActiveWorkflow()` の後に呼ぶ。ここでは **await しない**（ComfyUI が止まっていても
+切り替えを待たせず、失敗時は LoRA 欄に理由を出すだけ）。もう 1 経路は「接続確認＆モデル一覧取得」で、
+`refreshChoices` が object_info から得た一覧を `applyLoraChoices` → `setLoraChoices` で反映する。
+挿絵設定グループを開いたときは、object_info が新しければ `ensureLoraChoices()` だけ、古ければ
+`refreshChoices()` を呼ぶ。一覧は `illustrationUtils.loraCache` を通るので、生成時の再取得は省ける。
+
 生成は止めない（固定強度は正当な設定）。`loraSlotCapacity` はスロット数だけを見る設計のまま制御可否を別立てにし、
 ワークフローごとの記憶（`clampSlotsToCapacity`）へ影響させない。ComfyUI の画面では rgthree の欄に
 `%loraN%` を入力できない（実ファイル名のドロップダウン）ので、自作する場合は保存後に JSON を編集する必要がある。

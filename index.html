@@ -8255,7 +8255,7 @@ font-size: 1.142em !important;
                                 <span id="comfy-lora-status" style="font-size: 12px; color: var(--text-secondary);"></span>
                                 <div id="comfy-lora-rows" style="margin-top: 10px;"></div>
                                 <p style="font-size: 11px; color: var(--text-secondary); margin-top: 10px; margin-bottom: 0;">
-                                    ※ LoRA の一覧も <b>「接続確認＆モデル一覧取得」で一緒に取得</b>します（<code>GET {base}/object_info</code> の LoraLoader から取り、そこに一覧が無い環境では <code>GET {base}/models/loras</code> を使います）。既定はすべて「使わない」です。<br>
+                                    ※ LoRA の一覧は、<b>LoRA を受け取るワークフローを「使用中」にした時点で裏から取得しに行きます</b>（<code>GET {base}/models/loras</code>。接続先が入力済みであることが条件です）。<b>「接続確認＆モデル一覧取得」でも一緒に取得</b>します（<code>GET {base}/object_info</code> の LoraLoader から取り、そこに一覧が無い環境では <code>GET {base}/models/loras</code> を使います）。既定はすべて「使わない」です。<br>
                                     ※ 同梱の Anima 用 ① は公式 Turbo LoRA をノードへ固定済みで、<b>アプリの LoRA 1〜4 は触りません</b>。② は rgthree の Power Lora Loader を使い、<b>選んだスロットだけ <code>on: true</code></b> にします（使わないスロットは <code>on: false</code> のまま送ります）。<br>
                                     ※ <code>%lora1%</code>〜<code>%lora4%</code> と <code>%lora_str1%</code>〜<code>%lora_str4%</code> は、ワークフローに書かれている場合だけ使います。<code>%lora_strN%</code> は <code>strength_model</code> と <code>strength_clip</code> の両方に同じ値を入れます。<br>
                                     ※ 対応 LoRA は <b>4 個まで</b>です。さらに、そのワークフローが受け取れる数（<code>%loraN%</code> を参照する LoraLoader ノードの数、または rgthree の <code>lora_1</code>〜<code>lora_4</code> の数）を超える番号のスロットは<b>選べません</b>。LoRA ノードの無いワークフローでは 4 つとも無効になります。<br>
@@ -11627,10 +11627,23 @@ const dbUtils = {
                 state.settings.comfyActiveWorkflowId = id;
             },
 
+            // 使用中のワークフローに合わせた LoRA の処理をまとめた入口。
+            // スロットの値を作り直したうえで、LoRA を受け取るワークフローなら一覧も取りに行く。
+            // 一覧の取得は待たない（待つと ComfyUI が止まっているときに切り替えが遅れる。
+            // 失敗時は LoRA 欄に理由を出すだけで、選択自体はそのままできる）。
+            async syncLoraSlotsWithActiveWorkflow() {
+                // LoRA の検出は編集欄の JSON で見る。切り替え直後に編集欄が前のワークフローのままだと、
+                // 前の JSON で判定してスロットを無効にしてしまうので、先に編集欄へ反映する
+                this.renderEditor();
+                const changed = await this.applyLoraSlotsForActiveWorkflow();
+                this.ensureLoraChoices();
+                return changed;
+            },
+
             // 使用中のワークフローに合わせて LoRA 1〜4 の値を決める。
             // LoRA スロットがあればそのワークフローの記憶を復元し、無ければ全て「使わない」へ戻す。
             // ワークフローが受け取れない番号のスロットは、記憶があっても「使わない」のままにする。
-            async syncLoraSlotsWithActiveWorkflow() {
+            async applyLoraSlotsForActiveWorkflow() {
                 const active = illustrationUtils.activeWorkflow();
                 if (!active) return false;
                 const capacity = this.workflowLoraCapacity(active);
@@ -12009,15 +12022,50 @@ const dbUtils = {
                     }
                     return { ok: false, error: 'LoRA 一覧を取得できませんでした' };
                 }
-                this.loraChoices = resolved;
+                this.setLoraChoices(resolved, statusElement);
+                return { ok: true, names: resolved };
+            },
+
+            // 取得できた一覧を選択肢へ反映して、LoRA 欄の状態に結果を出す
+            setLoraChoices(names, statusElement) {
+                this.loraChoices = names;
                 this.renderLoraRows();
                 if (statusElement) {
-                    statusElement.textContent = resolved.length
-                        ? `LoRA 取得OK（${resolved.length} 件）`
+                    statusElement.textContent = names.length
+                        ? `LoRA 取得OK（${names.length} 件）`
                         : 'LoRA 取得OK（loras フォルダは空です）';
                     statusElement.style.color = 'var(--text-success, var(--text-link))';
                 }
-                return { ok: true, names: resolved };
+            },
+
+            // 使用中のワークフローが LoRA を受け取るとき、一覧が未取得なら裏で取りに行く。
+            // 「使用する」へ切り替えた時点で LoRA を選べるようにするためで、接続確認を押すのを待たせない。
+            // 既に選択肢があるとき / LoRA ノードの無いワークフロー / 接続先が空のときは何もしない。
+            // 一覧は illustrationUtils.loraCache を通すので、生成時や接続確認での再取得は省ける。
+            async ensureLoraChoices() {
+                if (this.loraChoices) return;
+                if (this.detectLoraState(this.detectionWorkflow()).capacity === 0) return;
+                const base = illustrationUtils.normalizeBaseUrl(
+                    elements.comfyBaseUrlInput ? elements.comfyBaseUrlInput.value : state.settings.comfyBaseUrl);
+                if (!base) return;
+                if (elements.comfyLoraStatus) {
+                    elements.comfyLoraStatus.textContent = 'LoRA 一覧取得中…';
+                    elements.comfyLoraStatus.style.color = 'var(--text-secondary)';
+                }
+                let names = null;
+                try {
+                    names = await illustrationUtils.fetchLoraNames(base, null);
+                } catch (error) {
+                    names = null;
+                }
+                if (!Array.isArray(names)) {
+                    if (elements.comfyLoraStatus) {
+                        elements.comfyLoraStatus.textContent = 'LoRA 一覧を取得できませんでした（models/loras）';
+                        elements.comfyLoraStatus.style.color = 'var(--text-error, var(--text-link))';
+                    }
+                    return;
+                }
+                this.setLoraChoices(names, elements.comfyLoraStatus);
             },
 
             renderLoraRows() {
@@ -18029,6 +18077,8 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                         if (!state.settings.illustrationEnabled) return;
                         if (comfyWorkflowUtils.objectInfoCache &&
                             Date.now() - comfyWorkflowUtils.objectInfoCache.fetchedAt < comfyWorkflowUtils.OBJECT_INFO_TTL_MS) {
+                            // object_info は取り直さないが、LoRA の選択肢だけが未取得のことはあるので取りに行く
+                            comfyWorkflowUtils.ensureLoraChoices();
                             return;
                         }
                         comfyWorkflowUtils.refreshChoices(elements.comfyObjectInfoStatus, false);
