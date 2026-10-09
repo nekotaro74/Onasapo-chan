@@ -325,6 +325,20 @@ const PAGE_SCRIPT = `(async () => {
     await appLogic.generateIllustration();
     appLogic.handleSend = originalHandleSend;
 
+    // 往復数で送る履歴を絞る動作（実会話の添字を壊さないよう、別配列で関数を見る）
+    const longChat = [];
+    for (let i = 1; i <= 4; i++) {
+        longChat.push({ role: 'user', content: 'u' + i, timestamp: Date.now() });
+        longChat.push({ role: 'model', content: 'm' + i, timestamp: Date.now() });
+    }
+    const savedRounds = state.settings.illustrationHistoryRounds;
+    state.settings.illustrationHistoryRounds = 2;
+    const trimProbe = illustrationUtils.trimHistoryForIllustration(
+        longChat, state.settings.illustrationHistoryRounds, 24000);
+    state.settings.illustrationHistoryRounds = savedRounds;
+
+    const historyRoundsInput = document.getElementById('comfy-history-rounds');
+
     const target = state.currentMessages[1];
     const renderedImage = document.querySelector('.message-illustration-image');
 
@@ -354,6 +368,13 @@ const PAGE_SCRIPT = `(async () => {
         renderedImage: !!renderedImage,
         restoredFromDb: restored,
         mainTextIntact: state.currentMessages[1].content.indexOf('公園のベンチ') !== -1,
+        trimProbe: {
+            contents: trimProbe.messages.map(m => m.content),
+            keptRounds: trimProbe.keptRounds,
+            totalRounds: trimProbe.totalRounds,
+        },
+        historyRoundsInput: historyRoundsInput
+            ? { min: historyRoundsInput.min, type: historyRoundsInput.type } : null,
     };
 })()`;
 
@@ -1631,6 +1652,11 @@ async function main() {
         const checks = [
             ['ページエラーが無い', pageResult.pageErrors.length === 0],
             ['quiet 生成は背景実行で、履歴を文脈にしている', pageResult.quietRequest && pageResult.quietRequest.isBackground && pageResult.quietRequest.historyLength === 2],
+            ['挿絵の履歴往復数の入力欄がある（0 以上を受け付ける）', !!pageResult.historyRoundsInput
+                && pageResult.historyRoundsInput.type === 'number' && pageResult.historyRoundsInput.min === '0'],
+            ['往復数で挿絵に送る履歴を絞る（直近2往復だけ残す）',
+                JSON.stringify(pageResult.trimProbe && pageResult.trimProbe.contents) === JSON.stringify(['u3', 'm3', 'u4', 'm4'])
+                && pageResult.trimProbe.keptRounds === 2 && pageResult.trimProbe.totalRounds === 4],
             ['quiet 指示はシステムプロンプトではなく発話として送る', pageResult.quietRequest && pageResult.quietRequest.systemPrompt === '' && pageResult.quietRequest.inputText === pageResult.quietTemplate],
             ['表示名がテンプレートに置換されている', pageResult.quietRequest && /詩織/.test(pageResult.quietRequest.inputText || '')],
             ['挿絵が完了状態になる', pageResult.illustrationStatus === 'done'],

@@ -8129,6 +8129,15 @@ font-size: 1.142em !important;
                                 </p>
                                 <button id="comfy-template-reset-btn" class="settings-action-button" style="font-size: 12px;">既定に戻す</button>
                                 <hr style="margin: 12px 0; border-top: 1px dashed var(--border-secondary);">
+                            <div style="margin-bottom: 6px;">
+                                <label for="comfy-history-rounds">挿絵生成の推論に使う履歴の往復数:</label>
+                                <input type="number" id="comfy-history-rounds" min="0" step="1" placeholder="例:12" aria-label="挿絵生成の推論に使う履歴の往復数" style="width: 90px; margin-left: 6px;">
+                            </div>
+                            <p style="font-size: 11px; color: var(--text-secondary); margin-top: -2px; margin-bottom: 10px;">
+                                ※ AI応答1回とその直前のユーザー入力を1組として数えます。12 なら直近の12往復が対象で、それより古い会話は挿絵の生成に使われません。<br>
+                                ※ 0 を入れると全件送ります（長い会話では料金が増えます）。空欄は 12 として扱います。<br>
+                                ※ 挿絵を付ける応答そのものは、必ず送られます。
+                            </p>
                             <label class="checkbox-label">
                                 <input type="checkbox" id="comfy-edit-prompt-toggle">
                                 画像プロンプトを送信前に編集する
@@ -8671,6 +8680,10 @@ Format exactly:
 The person in the foreground is [name] from [series]. They have [hair], [eyes], and wear [top], [bottom], and [footwear]. They [expression] and [their action].
 The person in the midground is [name] from [series]. They have [hair], [eyes], and wear [top], [bottom], and [footwear]. They [expression] and [their action].
 [name or hair color] [action], while [other name or hair color] [action]. [place], [light], [camera].`;
+        // 挿絵生成用プロンプトの生成に送る履歴の既定往復数（0 で全件）。
+        // 文字数上限は context 超過防止の内部ガードで、設定画面には出さない。
+        const DEFAULT_ILLUSTRATION_HISTORY_ROUNDS = 12;
+        const ILLUSTRATION_HISTORY_CHAR_CAP = 24000;
         const DEFAULT_COMFY_BASE_URL = 'http://127.0.0.1:8188';
         const DEFAULT_COMFY_WIDTH = 1024;
         const DEFAULT_COMFY_HEIGHT = 1024;
@@ -9343,6 +9356,7 @@ elevationHoverOption: document.getElementById('elevation-hover-option'),
             comfyNegativePromptTextarea: document.getElementById('comfy-negative-prompt'),
             comfyImagePromptTemplateTextarea: document.getElementById('comfy-image-prompt-template'),
             comfyTemplateResetBtn: document.getElementById('comfy-template-reset-btn'),
+            comfyHistoryRoundsInput: document.getElementById('comfy-history-rounds'),
             comfyWidthInput: document.getElementById('comfy-width'),
             comfyHeightInput: document.getElementById('comfy-height'),
             comfyStepsInput: document.getElementById('comfy-steps'),
@@ -9606,6 +9620,8 @@ geminiIncludeThoughts: false,
                 comfyUseCharacterPrefix: true,
                 comfyNegativePrompt: 'worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, chromatic aberration',
                 comfyImagePromptTemplate: DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE,
+                // 挿絵生成用プロンプトの生成に送る履歴の往復数。0 で全件
+                illustrationHistoryRounds: DEFAULT_ILLUSTRATION_HISTORY_ROUNDS,
                 // 接続先 ComfyUI の object_info から選ぶ項目（保存値はサーバーの生の名前）
                 comfyModel: '',
                 comfyVae: '',
@@ -10886,6 +10902,49 @@ const dbUtils = {
                 return String(template || '')
                     .replace(/\{\{char\}\}/gi, charName)
                     .replace(/\{\{user\}\}/gi, userName);
+            },
+
+            // 挿絵生成に送る履歴を「往復数」と「文字数」で絞る。常に新しい方を残す。
+            // 1往復 = ユーザー入力1件 + その後の応答。rounds が 0 なら往復数は無制限。
+            // 文字数上限は最後の1件（挿絵の対象応答）を必ず残したうえで、古い方を捨てる。
+            trimHistoryForIllustration(messages, rounds, charCap) {
+                const list = Array.isArray(messages) ? messages : [];
+                const totalRounds = list.filter(msg => msg.role === 'user').length;
+                const limitRounds = Number.isFinite(rounds) && rounds > 0 ? Math.floor(rounds) : 0;
+
+                let kept = list;
+                if (limitRounds > 0 && totalRounds > limitRounds) {
+                    let seenUsers = 0;
+                    let fromIndex = 0;
+                    for (let i = list.length - 1; i >= 0; i--) {
+                        if (list[i].role !== 'user') continue;
+                        seenUsers++;
+                        if (seenUsers === limitRounds) { fromIndex = i; break; }
+                    }
+                    kept = list.slice(fromIndex);
+                }
+
+                let cutByChars = false;
+                const cap = Number.isFinite(charCap) && charCap > 0 ? charCap : 0;
+                if (cap > 0 && kept.length > 0) {
+                    let used = 0;
+                    let startIndex = kept.length - 1;
+                    for (let i = kept.length - 1; i >= 0; i--) {
+                        const size = (kept[i].content || '').length;
+                        // 最後の1件は上限を超えても残す（対象応答自体を消さないため）
+                        if (i < kept.length - 1 && used + size > cap) { cutByChars = true; break; }
+                        used += size;
+                        startIndex = i;
+                    }
+                    if (startIndex > 0) kept = kept.slice(startIndex);
+                }
+
+                return {
+                    messages: kept,
+                    totalRounds: totalRounds,
+                    keptRounds: kept.filter(msg => msg.role === 'user').length,
+                    cutByChars: cutByChars,
+                };
             },
 
             // 別オリジンなので ComfyUI 側は --enable-cors-header が必要。
@@ -16111,6 +16170,7 @@ elements.footerTapScrollToBottomToggle.checked = state.settings.footerTapScrollT
                 elements.comfyUseCharacterPrefixToggle.checked = state.settings.comfyUseCharacterPrefix !== false;
                 elements.comfyNegativePromptTextarea.value = state.settings.comfyNegativePrompt || '';
                 elements.comfyImagePromptTemplateTextarea.value = state.settings.comfyImagePromptTemplate || DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE;
+                elements.comfyHistoryRoundsInput.value = state.settings.illustrationHistoryRounds ?? DEFAULT_ILLUSTRATION_HISTORY_ROUNDS;
                 this.fillComfyResolutionPresets();
                 elements.comfyResolutionPresetSelect.value = state.settings.comfyResolutionPreset || DEFAULT_COMFY_RESOLUTION_PRESET;
                 elements.comfyWidthInput.value = state.settings.comfyWidth ?? DEFAULT_COMFY_WIDTH;
@@ -16162,8 +16222,12 @@ elements.footerTapScrollToBottomToggle.checked = state.settings.footerTapScrollT
                     return;
                 }
                 const fallbackNote = debug.fellBack ? '\n（厳格な整形では空になったため、最小限の整形に切り替えました）' : '';
+                const historyNote = typeof debug.historyRounds === 'number'
+                    ? `--- 送った会話履歴 ---\n直近 ${debug.historyRounds} 往復（会話全体では ${debug.historyTotalRounds} 往復）`
+                        + `${debug.historyCutByChars ? '\n（文字数の上限で、往復数内でもさらに古い方を省略しました）' : ''}\n\n`
+                    : '';
                 elements.comfyDebugOutput.textContent =
-                    `--- 指示テンプレート（{{char}}/{{user}} 置換後）---\n${debug.template}\n\n--- LLM の返文（整形前）---\n${debug.rawReply}\n\n--- 整形後キーワード ---${fallbackNote}\n${debug.processedPrompt}\n\n--- ComfyUI に送った prompt ---\n${debug.finalPrompt || '（画像送信していません）'}`;
+                    `${historyNote}--- 指示テンプレート（{{char}}/{{user}} 置換後）---\n${debug.template}\n\n--- LLM の返文（整形前）---\n${debug.rawReply}\n\n--- 整形後キーワード ---${fallbackNote}\n${debug.processedPrompt}\n\n--- ComfyUI に送った prompt ---\n${debug.finalPrompt || '（画像送信していません）'}`;
             },
             updateIllustrationFooterButtons() {
                 if (!elements.illustrationModeToggleBtn) return;
@@ -20220,10 +20284,17 @@ helpIcons.forEach(icon => {
                     .map(msg => ({ role: msg.role, content: msg.content, timestamp: msg.timestamp }));
                 if (history.length === 0) throw new Error('挿絵の生成に使える会話履歴がありません。');
 
+                // 往復数と文字数で古い方を捨てる。対象応答（末尾）は必ず残る。
+                const trimmed = illustrationUtils.trimHistoryForIllustration(
+                    history,
+                    state.settings.illustrationHistoryRounds ?? DEFAULT_ILLUSTRATION_HISTORY_ROUNDS,
+                    ILLUSTRATION_HISTORY_CHAR_CAP
+                );
+
                 const credentials = this.resolveSessionApiCredentials();
                 const context = {
                     sessionId: null,
-                    messages: history,
+                    messages: trimmed.messages,
                     systemPrompt: '',
                     inputText: quietTemplate,
                     attachments: [],
@@ -20248,6 +20319,9 @@ helpIcons.forEach(icon => {
 
                 illustrationUtils.lastDebug = {
                     at: Date.now(),
+                    historyRounds: trimmed.keptRounds,
+                    historyTotalRounds: trimmed.totalRounds,
+                    historyCutByChars: trimmed.cutByChars,
                     template: quietTemplate,
                     rawReply: rawReply,
                     processedPrompt: keywords,
@@ -22718,6 +22792,10 @@ newSettings.footerTapScrollToBottom = elements.footerTapScrollToBottomToggle.che
                 newSettings.comfyUseCharacterPrefix = elements.comfyUseCharacterPrefixToggle.checked;
                 newSettings.comfyNegativePrompt = elements.comfyNegativePromptTextarea.value.trim();
                 newSettings.comfyImagePromptTemplate = elements.comfyImagePromptTemplateTextarea.value;
+                // 往復数: 空欄は既定値、0 は全件、負数と小数は丸める
+                newSettings.illustrationHistoryRounds = Math.round(
+                    getComfyNumber(elements.comfyHistoryRoundsInput, DEFAULT_ILLUSTRATION_HISTORY_ROUNDS, 0, Number.MAX_SAFE_INTEGER)
+                );
                 newSettings.comfyModel = elements.comfyModelSelect ? elements.comfyModelSelect.value : '';
                 newSettings.comfyVae = elements.comfyVaeSelect ? elements.comfyVaeSelect.value : '';
                 newSettings.comfyTextEncoder = elements.comfyTextEncoderSelect ? elements.comfyTextEncoderSelect.value : '';

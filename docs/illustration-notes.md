@@ -132,10 +132,10 @@ API キー・モデル名は呼び出し側で渡す（`state.settings.apiProvid
 
 ## 5. 検証
 
-- `node tools/selftest.js` — 抜き出した純ロジック（96件）。
+- `node tools/selftest.js` — 抜き出した純ロジック（144件）。
   文中埋め込みの置換、`%model%` 等の解決、CLIP Skip の負値、未対応トークンの中断、
   カスタム プレースホルダ、ワークフロー一覧の自己修復まで。
-- `node tools/e2e.js` — モック ComfyUI に対して headless Chrome で実際に走らせる（80件）。
+- `node tools/e2e.js` — モック ComfyUI に対して headless Chrome で実際に走らせる（152件）。
   手動生成・自動生成・手動で勝手に走らない・履歴復元・本編保持・CORS 判別・
   不正ワークフロー・連打・SW 登録に加えて、
   **SillyTavern 系トークンが全て差し替わること**、`!/%[a-z_]+%/` で**未差し込みを送っていないこと**、
@@ -231,3 +231,43 @@ Anima / SDXL 系でそのまま使える値を既定にしている（`DEFAULT_C
 解像度プリセットの既定は `DEFAULT_COMFY_RESOLUTION_PRESET` が持つ。プリセットは `custom` 以外を選ぶと幅・高さへ
 反映されるだけなので、既定の 1024x1024 と幅・高さの既定値は同じ値で揃っている。
 既定値が変わるのは新規／未保存の設定だけで、IndexedDB に保存済みの値はそのまま残る（設定の移行処理は無い）。
+
+## 7. 挿絵生成に送る履歴の往復数制限（2026-10-09）
+
+### 問題
+`buildIllustrationPrompt` は対象応答までの履歴を**全件** quiet 生成へ渡していた。
+本家 SillyTavern は Chat Completion 側にトークン予算（`openai_max_context` − `openai_max_tokens`）を持ち、
+`ChatCompletion.canAfford()` が落ちた時点で古い方を捨てる（`public/scripts/openai.js` の `populateChatHistory`、
+`insertAtStart` で新しい方から埋めるので**古い方が落ちる**）。
+本アプリには入力側の上限設定が無い。`Max Tokens` は `maxOutputTokens`（出力側）だけで、
+横の「上限指定」欄はスライダーの目盛りを変えるだけなので、長い会話では挿絵1枚ごとの入力が
+会話長に比例して増え、context window を超えると 400 が返る。
+
+### 仕様
+- 単位は**往復**。AI応答1回とその直前のユーザー入力を1組として数える。
+- 既定 12 往復（`DEFAULT_ILLUSTRATION_HISTORY_ROUNDS`）。`0` で全件。空欄は 12 として扱う。
+- 設定キーは `state.settings.illustrationHistoryRounds`。UI は「設定 → 挿絵生成（ComfyUI）→ 挿絵生成用プロンプト」内の
+  `挿絵生成の推論に使う履歴の往復数`（number input、`min="0"`）。スライダーは付けない
+  （`0 = 全件` がスライダーの目盛りの意味と衝突するため）。
+- 内部ガードとして文字数上限 `ILLUSTRATION_HISTORY_CHAR_CAP = 24000` を併用する。設定画面には出さない。
+  最後の1件（挿絵の対象応答）は上限を超えても残す。
+
+### 実装
+`illustrationUtils.trimHistoryForIllustration(messages, rounds, charCap)` が
+`{ messages, totalRounds, keptRounds, cutByChars }` を返す。`buildIllustrationPrompt` は
+`slice(0, targetIndex + 1)` → role/content フィルタ → `trimHistoryForIllustration` の順で、
+**フィルタ後**に絞る（フィルタ前にやると空メッセージや添付のみで往復数がズレる）。
+末尾からユーザー発話を N 個数えて、そのうち最も古い位置から切り出す。
+同一応答の分岐（`model` が連続する）は数え上げずにそのまま末尾側へ残る。
+挿絵の対象応答は必ず末尾側にあるので、切り出しで落ちることはない。
+
+### デバッグ
+`illustrationUtils.lastDebug` に `historyRounds` / `historyTotalRounds` / `historyCutByChars` を入れ、
+「デバッグ（挿絵生成用プロンプト）」の先頭に `直近 N 往復（会話全体では M 往復）` を出す。
+文字数で追加省略した場合は行を足す。
+
+### 検証
+selftest に 12 件（既定値 / 往復数で切る / 残った往復数と全体 / `0` で全件 / 往復数が履歴より大きい /
+分岐 `model` を残す / 文字数上限で古い方を捨てる / 切ったフラグ / 上限超過でも最後の1件を残す /
+往復数と文字数の AND / 空履歴 / 負数は無制限）、e2e に入力欄の存在（`type=number`・`min=0`）と
+直近2往復だけ残す動作を追加した。
