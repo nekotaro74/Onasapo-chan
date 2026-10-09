@@ -4,7 +4,7 @@
 
 自前の API キーを用いて Chat AI とやりとりを行うためのアプリです。
 
-###VRAM の目安
+### VRAM の目安
 
 画像生成はモデルによりますが、既定の Anima Base系 なら **6GB**、読み上げは Irodori-TTS-v4.1-Small の int8 量子化で **4GB** が目安です。
 
