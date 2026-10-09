@@ -8027,16 +8027,16 @@ font-size: 1.142em !important;
                         </label>
                         <div style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 15px;">
                             ※ クラウドLLMの応答受信が完了した直後に、直近のシーンに合う挿絵を ComfyUI で生成します。<br>
-                            ※ ComfyUI の起動オプション（<code>{Tailscale IP}</code> は自宅PCの Tailscale IP）。全インターフェースではなく、このPCと Tailscale 側だけに開く指定です。ComfyUI に認証は無いため、ルーターで 8188 をインターネットへ転送しないでください。
+                            ※ ComfyUI に下記の起動オプションを追加してください。
                             <div class="copyable-cmd">
                                 <code id="comfy-launch-cmd">--listen 127.0.0.1,{Tailscale IP} --enable-cors-header</code>
                                 <button type="button" id="comfy-launch-cmd-copy-btn" class="settings-action-button copyable-cmd-btn"
                                     data-copy-source="comfy-launch-cmd">コピー</button>
                             </div>
-                            ※ 外出先のスマホや別PCから使うには、Tailscale を <b>PCとスマホの両方</b>に入れて同じアカウントでログインします。片方だけでは ComfyUI に届きません。<br>
+                            ※ スマホや別PCから使うには、Tailscale を <b>PCとスマホの両方</b>にインストールする必要があります。<br>
                             ※ base URL は、PCだけで使うなら <code>http://127.0.0.1:8188</code>、スマホや別PCから Tailscale 経由で使うなら <code>http://{Tailscale IP}:8188</code>。<br>
                             ※ Chrome 系では、公開ページからローカルアドレスへ接続するとき「ローカルネットワークへの接続」の許可が出ます。許可しないと接続確認は失敗します。<br>
-                            ※ 導入方法は <code>docs/挿絵生成と読み上げの導入手引き.md</code> をご覧ください（README 冒頭からもリンク）。ローカル起動（<code>__winlocal.bat</code>）でも同じ手順です。
+                            ※ 詳しい導入方法は <code>docs/挿絵生成と読み上げの導入手引き.md</code> をご覧ください（リポジトリトップからもリンク）。
                         </div>
                         <label for="illustration-mode-select">生成タイミング:</label>
                         <select id="illustration-mode-select" aria-label="挿絵の生成タイミング">
@@ -8297,20 +8297,21 @@ font-size: 1.142em !important;
                             自動読み上げ（クラウドLLMの応答受信が完了した直後に再生する）
                         </label>
                         <div style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 15px;">
-                            ※ プロバイダは <b>OpenAI Compatible のみ</b>です。<code>POST {{endpoint}}/audio/speech</code> に <code>{ model, voice, input }</code> を送ります。<br>
-                            ※ 応答全文の受信完了を待たず、<b>確定した段落</b>から順に TTS へ送ります（段落は空行区切り。空行が無い応答では改行区切り）。<br>
-                            ※ 再生はキューで順に鳴らし、重ねません。<b>停止</b>は未送信分も含めて破棄します。<br>
-                            ※ 読み上げはブラウザから直接叩くため、サーバー側で CORS が許可されている必要があります。<br>
-                            ※ Irodori TTS Server フォルダ直下の <code>.env</code> の「# Server」最終行へ次の 1 行を追加し、Irodori を再起動します（<code>{Tailscale IP}</code> は自宅PCの Tailscale IP）。
+                            ※ Irodori TTS Server フォルダ直下の <code>.env</code> の「# Server」項の最終行へ次の 1 行を追加し、Irodori TTS Server を起動してください。
+                            <code>{Tailscale IP}</code> = PC の Tailscale IP
                             <div class="copyable-cmd">
                                 <code id="tts-cors-env-line">IRODORI_CORS_ORIGINS=["http://localhost:8072","http://127.0.0.1:8072","http://{Tailscale IP}:8072","https://nekotaro74.github.io"]</code>
                                 <button type="button" id="tts-cors-env-copy-btn" class="settings-action-button copyable-cmd-btn"
                                     data-copy-source="tts-cors-env-line">コピー</button>
                             </div>
-                            ※ 外出先のスマホや別PCから使うには、Tailscale を <b>PCとスマホの両方</b>に入れて同じアカウントでログインします。片方だけでは TTS サーバーに届きません。<br>
-                            ※ エンドポイントは、PCだけで使うなら <code>http://127.0.0.1:8088/v1</code>、スマホや別PCから Tailscale 経由で使うなら <code>http://{Tailscale IP}:8088/v1</code>。APIキーは通常不要で、空なら <code>Authorization</code> を送りません。<br>
+                            <br>
+                            ※ プロバイダは <b>OpenAI 互換のみ</b>対応。<code>POST {{endpoint}}/audio/speech</code> に <code>{ model, voice, input }</code> を送ります。<br>
+                            ※ 応答全文の受信完了を待たず、<b>確定した段落</b>から順に TTS へ送ります（段落は空行区切り。空行が無い応答では改行区切り）。<br>
+                            ※ 再生はキューで順に鳴らし、重ねません。<b>停止</b>は未送信分も含めて破棄します。<br>
+                            ※ スマホや別PCから使うには、Tailscale を <b>PCとスマホの両方</b>にインストールする必要があります。<br>
+                            ※ エンドポイントは、PCだけで <code>http://127.0.0.1:8088/v1</code>、スマホや別PCで使うなら <code>http://{Tailscale IP}:8088/v1</code>。<br>
                             ※ Chrome 系では、公開ページからローカルアドレスへ接続するとき「ローカルネットワークへの接続」の許可が出ます。許可しないと接続確認は失敗します。<br>
-                            ※ 導入方法は <code>docs/挿絵生成と読み上げの導入手引き.md</code> をご覧ください（README 冒頭からもリンク）。APIキーはこのアプリの IndexedDB にだけ保存し、ファイル書き出しやコミットには出しません。
+                            ※ 詳しい導入方法は <code>docs/挿絵生成と読み上げの導入手引き.md</code> をご覧ください（リポジトリトップからもリンク）。
                         </div>
                         <label for="tts-endpoint" style="margin-top: 15px;">OpenAI Compatible エンドポイント:</label>
                         <input type="text" id="tts-endpoint"
@@ -8367,7 +8368,7 @@ font-size: 1.142em !important;
                             </summary>
                             <div style="padding: 10px; padding-top: 5px;">
                                 <p style="font-size: 11px; color: var(--text-secondary); margin-top: 0; margin-bottom: 6px;">
-                                    ※ 本文中のセリフの表記は、セリフ部分の前に話者名が出るように調整してください。例：美咲「こんにちは」　となるようにプロンプトを調整してください。
+                                    ※ 本文中のセリフの表記は、セリフ部分の前に話者名が出るようにプロンプトを調整してください。例：美咲「こんにちは」
                                 </p>
                                 <label for="tts-default-voice">デフォルトボイス（地の文）:</label>
                                 <select id="tts-default-voice" aria-label="地の文のボイス"></select>
