@@ -8260,8 +8260,8 @@ font-size: 1.142em !important;
                                     ※ <code>%lora1%</code>〜<code>%lora4%</code> と <code>%lora_str1%</code>〜<code>%lora_str4%</code> は、ワークフローに書かれている場合だけ使います。<code>%lora_strN%</code> は <code>strength_model</code> と <code>strength_clip</code> の両方に同じ値を入れます。<br>
                                     ※ 対応 LoRA は <b>4 個まで</b>です。さらに、そのワークフローが受け取れる数（<code>%loraN%</code> を参照する LoraLoader ノードの数、または rgthree の <code>lora_1</code>〜<code>lora_4</code> の数）を超える番号のスロットは<b>選べません</b>。LoRA ノードの無いワークフローでは 4 つとも無効になります。<br>
                                     ※ rgthree の Power Lora Loader を使ったワークフローを自分で追加するときは、各スロットに <code>%loraN%</code> と <code>%lora_strN%</code> を書いてください（ComfyUI の画面では入力できないので、API形式でエクスポート後に JSON を編集します）。<b>プレースホルダの無いスロットには触らず</b>、ワークフローに書かれた LoRA 名と強度がそのまま送られます。設定画面でもそのスロットは選べなくなり、理由が行に表示されます。<br>
-                                    ※ <b>使わないスロット</b>で一覧にファイルがあるときは、ノードの形は変えず、一覧の先頭の実在ファイル名と強度 0 を入れます。標準 LoraLoader は両方の強度が 0 ならファイルを読まず素通しし、LoraLoaderModelOnly は <code>strength_model</code> が 0 なら同じです。<br>
-                                    ※ <b>使わないスロット</b>で loras フォルダが空のときは空文字を送りません。その LoraLoader ノードだけを外して <code>model</code> と <code>clip</code>を受け先へ直結し、ワークフロー全体は書き換えません。
+                                    ※ <b>ComfyUI 標準の LoraLoader ノードを複数使うワークフロー</b>では、ノードは ID の若い順に LoRA1〜4 へ対応します。<b>使わないスロット</b>で一覧にファイルがあるときは、ノードの形は変えず、一覧の先頭の実在ファイル名と強度 0 を入れます。標準 LoraLoader は両方の強度が 0 ならファイルを読まず素通しし、<code>LoraLoaderModelOnly</code> は <code>strength_model</code> が 0 なら同じです（rgthree の Power Lora Loader を使うワークフローでは、使わないスロットは <code>on: false</code> になるだけで、ノードの形も強度も変えません）。<br>
+                                    ※ <b>標準の LoraLoader ノードを複数使うワークフロー</b>で、<b>使わないスロット</b>の loras フォルダが空のときは空文字を送りません。その LoraLoader ノードだけを外して <code>model</code> と <code>clip</code> を受け先へ直結し、ワークフロー全体は書き換えません。
                                 </p>
                             </div>
                         </details>
