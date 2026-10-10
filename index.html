@@ -8256,12 +8256,12 @@ font-size: 1.142em !important;
                                 <span id="comfy-lora-status" style="font-size: 12px; color: var(--text-secondary);"></span>
                                 <div id="comfy-lora-rows" style="margin-top: 10px;"></div>
                                 <p style="font-size: 11px; color: var(--text-secondary); margin-top: 10px; margin-bottom: 0;">
+                                    <span style="color: var(--text-error);">※ アプリが管理するのは <code>%loraN%</code> を参照する ComfyUI 標準の LoraLoader ノードと rgthree の Power Lora Loader カスタムノードだけです。<b>固定のファイル名を書いた LoRA ノードには触りません</b>。Anima用デフォルト② LoRA x 4 を使うには rgthree-comfy カスタムノードパックが必要です。<br></span>
                                     ※ LoRA の一覧は、<b>LoRA を受け取るワークフローを「使用中」にした時点で裏から取得しに行きます</b>（<code>GET {base}/models/loras</code>。接続先が入力済みであることが条件です）。<b>「接続確認＆モデル一覧取得」でも一緒に取得</b>します（<code>GET {base}/object_info</code> の LoraLoader から取り、そこに一覧が無い環境では <code>GET {base}/models/loras</code> を使います）。既定はすべて「使わない」です。<br>
                                     ※ 同梱の Anima 用 ① は公式 Turbo LoRA をノードへ固定済みで、<b>アプリの LoRA 1〜4 は触りません</b>。② は rgthree の Power Lora Loader を使い、<b>選んだスロットだけ <code>on: true</code></b> にします（使わないスロットは <code>on: false</code> のまま送ります）。<br>
                                     ※ <code>%lora1%</code>〜<code>%lora4%</code> と <code>%lora_str1%</code>〜<code>%lora_str4%</code> は、ワークフローに書かれている場合だけ使います。<code>%lora_strN%</code> は <code>strength_model</code> と <code>strength_clip</code> の両方に同じ値を入れます。<br>
                                     ※ 対応 LoRA は <b>4 個まで</b>です。さらに、そのワークフローが受け取れる数（<code>%loraN%</code> を参照する LoraLoader ノードの数、または rgthree の <code>lora_1</code>〜<code>lora_4</code> の数）を超える番号のスロットは<b>選べません</b>。LoRA ノードの無いワークフローでは 4 つとも無効になります。<br>
                                     ※ LoRA の選択と強度は <b>ワークフローごとに</b>覚えます。<code>%loraN%</code> の無いワークフローで「使わない」へ戻ったあと、<code>%loraN%</code> のあるワークフローへ戻すと、そのワークフローで最後に選んだ LoRA と強度が戻ります。未設定なら「使わない」のままです。<br>
-                                    ※ アプリが管理するのは <code>%loraN%</code> を参照する LoraLoader ノードと rgthree の Power Lora Loader だけです。<b>固定のファイル名を書いた LoRA ノードには触りません</b>。<br>
                                     ※ rgthree の Power Lora Loader を自分で追加するときは、各スロットに <code>%loraN%</code> と <code>%lora_strN%</code> を書いてください（ComfyUI の画面では入力できないので、保存後に JSON を編集します）。<b>プレースホルダの無いスロットには触らず</b>、ワークフローに書かれた LoRA 名と強度がそのまま送られます。設定画面でもそのスロットは選べなくなり、理由が行に表示されます。<br>
                                     ※ <b>使うスロット</b>は、選んだファイル名と入力した強度をそのまま入れます。フォルダが空のときは送らず「LoRAを使うには ComfyUI の loras フォルダにファイルが必要です」と表示します。<br>
                                     ※ <b>使わないスロット</b>で一覧にファイルがあるときは、ノードの形は変えず、一覧の先頭の実在ファイル名と強度 0 を入れます。標準 LoraLoader は両方の強度が 0 ならファイルを読まず素通しし、LoraLoaderModelOnly は <code>strength_model</code> が 0 なら同じです。<br>
