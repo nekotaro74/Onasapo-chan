@@ -268,37 +268,32 @@ Anima / SDXL 系でそのまま使える値を既定にしている（`DEFAULT_C
   `character.description` を直接結合する
 
 ### 仕様
-- 既定は**全件送信**で、古い方は**上限の文字数**で省略する。
-- 設定キーは `state.settings.illustrationHistoryRounds`（既定 0 = 全件）と
-  `state.settings.illustrationHistoryCharCap`（既定 24000、0 = 無制限）。
-  定数は `DEFAULT_ILLUSTRATION_HISTORY_ROUNDS` / `DEFAULT_ILLUSTRATION_HISTORY_CHAR_CAP`
+- 既定は**全件送信**（`DEFAULT_ILLUSTRATION_HISTORY_CHAR_CAP = 0`）。数を入れると古い方から省略する。
+- 設定キーは `state.settings.illustrationHistoryCharCap`（0 = 全件、空欄は既定の 0）。
 - UI は「設定 → 挿絵生成（ComfyUI）→ 挿絵生成用プロンプト」内の
-  `挿絵生成の推論に使う履歴の往復(入力→応答)数` と `挿絵生成の推論に使う履歴の上限(文字数)`。
-  どちらも number input で `min="0"`。スライダーは付けない
-  （`0` が「全件 / 無制限」でスライダーの目盛りの意味と衝突するため）。
-- 往復数と文字数は AND。既定は往復数が 0 なので、実質は文字数だけで絞る。
+  `挿絵生成の推論に使う履歴の上限(文字数)` **1つだけ**。number input で `min="0"`、スライダーは付けない
+  （`0` が「全件」でスライダーの目盛りの意味と衝突するため）。
+  注釈は `※ 設定値0でチャット履歴全てを画像生成の推論に使います。（通常チャット1回と同じ消費トークン）`
 - 最後の1件（挿絵の対象応答）は上限を超えても残す。
-- 設定の移行処理は無い方針はそのまま。2026-10-09 以降に 12 往復を保存した人へはそのまま 12 が残るので、
-  全件送信に戻すには 0 を入れてもらう（`illustrationHistoryCharCap` は未保存なので既定の 24000 が効く）。
+- 2026-10-09 に入れた往復数の仕組み（`illustrationHistoryRounds` / `DEFAULT_ILLUSTRATION_HISTORY_ROUNDS` /
+  `comfy-history-rounds`）は設定キーごと撤去した。保存済みの `illustrationHistoryRounds` は読まれなくなるので放置。
 
 ### 実装
-`illustrationUtils.trimHistoryForIllustration(messages, rounds, charCap)` が
+`illustrationUtils.trimHistoryForIllustration(messages, charCap)` が
 `{ messages, totalRounds, keptRounds, cutByChars }` を返す。`buildIllustrationPrompt` は
 `slice(0, targetIndex + 1)` → role/content フィルタ → `trimHistoryForIllustration` の順で、
-**フィルタ後**に絞る（フィルタ前にやると空メッセージや添付のみで往復数がズレる）。
-末尾からユーザー発話を N 個数えて、そのうち最も古い位置から切り出す。
-同一応答の分岐（`model` が連続する）は数え上げずにそのまま末尾側へ残る。
+**フィルタ後**に絞る（フィルタ前にやると空メッセージや添付のみで件数がズレる）。
+末尾から1件ずつ文字数を足し、上限を超える位置より古い方を捨てる。
 挿絵の対象応答は必ず末尾側にあるので、切り出しで落ちることはない。
 
 ### デバッグ
-`illustrationUtils.lastDebug` に `historyRounds` / `historyTotalRounds` / `historyRoundsLimit` /
-`historyCharCap` / `historyCutByChars` を入れ、「デバッグ（挿絵生成用プロンプト）」の先頭に
-`直近 N 往復（会話全体では M 往復）` と `上限: 往復数 … / 文字数 …` を出す。
-上限が 0 の項目は「なし（0）」と表示し、文字数で省略した場合は行を足す。
+`illustrationUtils.lastDebug` に `historyRounds` / `historyTotalRounds` / `historyCharCap` /
+`historyCutByChars` を入れ、「デバッグ（挿絵生成用プロンプト）」の先頭に
+`直近 N 往復（会話全体では M 往復）` と `上限: 文字数 …` を出す。
+上限が 0 の場合は「なし（0）」と表示し、文字数で省略した場合は行を足す。
 
 ### 検証
-selftest に 15 件（既定の往復数 0 / 既定の上限文字数 24000 / 往復数で切る / 残った往復数と全体 /
-`0` で全件 / 往復数が履歴より大きい / 分岐 `model` を残す / 文字数上限で古い方を捨てる / 切ったフラグ /
-上限 0 は無制限 / 上限 0 でフラグが立たない / 上限超過でも最後の1件を残す / 往復数と文字数の AND /
-空履歴 / 負数は無制限）、e2e に両入力欄の存在（`type=number`・`min=0`）、直近2往復だけ残す動作、
-上限文字数だけで古い方を捨てる動作を追加した。
+selftest に 11 件（既定の上限文字数 0 / 往復数の設定項目が無い / 上限 0 は全件 / 切ったフラグが立たない /
+残った往復数と全体 / 上限文字数で古い方を捨てる / 切ったフラグ / 切った後の往復数 /
+上限超過でも最後の1件を残す / 空履歴 / 負数は無制限）、e2e に上限文字数の入力欄の存在
+（`type=number`・`min=0`）、上限文字数で古い方を捨てる動作、上限 0 で全件送る動作を追加した。

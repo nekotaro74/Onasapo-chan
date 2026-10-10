@@ -607,7 +607,7 @@ const jsonResponse = (body, status) => ({
     check('既定のプリセットと幅・高さが一致',
         JSON.stringify(presetPair), JSON.stringify([constValues.DEFAULT_COMFY_WIDTH, constValues.DEFAULT_COMFY_HEIGHT]));
 
-    // ── 挿絵生成に送る履歴の切り捨て（往復数と文字数）─────────────
+    // ── 挿絵生成に送る履歴の切り捨て（上限の文字数）─────────────
     // 1往復 = ユーザー入力1件 + その後の応答
     const rounds = (n) => {
         const list = [];
@@ -625,54 +625,32 @@ const jsonResponse = (body, status) => ({
         if (at === -1) throw new Error('見つかりません: ' + marker);
         return eval(html.slice(at + marker.length, html.indexOf(';', at)));
     };
-    check('既定の往復数（0 で全件）', historyDefault('DEFAULT_ILLUSTRATION_HISTORY_ROUNDS'), 0);
-    check('既定の上限文字数', historyDefault('DEFAULT_ILLUSTRATION_HISTORY_CHAR_CAP'), 24000);
+    check('既定の上限文字数（0 で全件）', historyDefault('DEFAULT_ILLUSTRATION_HISTORY_CHAR_CAP'), 0);
+    check('往復数の設定項目は無い', html.indexOf('comfy-history-rounds'), -1);
 
-    let trimmed = illustrationUtils.trimHistoryForIllustration(fiveRounds, 2, 0);
-    check('2往復だけ残す', trimmed.messages.map(m => m.content), ['u4', 'm4', 'u5', 'm5']);
-    check('残った往復数と全体の往復数', [trimmed.keptRounds, trimmed.totalRounds], [2, 5]);
+    let trimmed = illustrationUtils.trimHistoryForIllustration(fiveRounds, 0);
+    check('上限 0 は全件', [trimmed.messages.length, trimmed.keptRounds], [10, 5]);
+    check('切ったフラグが立たない', trimmed.cutByChars, false);
+    check('残った往復数と全体の往復数', [trimmed.keptRounds, trimmed.totalRounds], [5, 5]);
 
-    trimmed = illustrationUtils.trimHistoryForIllustration(fiveRounds, 0, 0);
-    check('0 は全件', [trimmed.messages.length, trimmed.keptRounds], [10, 5]);
-
-    trimmed = illustrationUtils.trimHistoryForIllustration(fiveRounds, 99, 0);
-    check('往復数が履歴より大きければ全件', [trimmed.messages.length, trimmed.keptRounds], [10, 5]);
-
-    // 同一応答の分岐（model が連続する）は、数え上げずにそのまま末尾側へ残す
-    const withSiblings = [
-        { role: 'user', content: 'u1' }, { role: 'model', content: 'm1' },
-        { role: 'user', content: 'u2' }, { role: 'model', content: 'm2' },
-        { role: 'model', content: 'm2-分岐' },
-    ];
-    trimmed = illustrationUtils.trimHistoryForIllustration(withSiblings, 1, 0);
-    check('1往復なら最後のユーザー入力以降', trimmed.messages.map(m => m.content), ['u2', 'm2', 'm2-分岐']);
-
-    // 文字数上限は新しい方を残し、古い方を捨てる
+    // 上限の文字数は新しい方を残し、古い方を捨てる
     const longHistory = [
         { role: 'user', content: 'a'.repeat(100) }, { role: 'model', content: 'b'.repeat(100) },
         { role: 'user', content: 'c'.repeat(100) }, { role: 'model', content: 'd'.repeat(100) },
     ];
-    trimmed = illustrationUtils.trimHistoryForIllustration(longHistory, 0, 250);
-    check('文字数上限で古い方を捨てる', trimmed.messages.map(m => m.content[0]), ['c', 'd']);
+    trimmed = illustrationUtils.trimHistoryForIllustration(longHistory, 250);
+    check('上限文字数で古い方を捨てる', trimmed.messages.map(m => m.content[0]), ['c', 'd']);
     check('文字数で切ったフラグ', trimmed.cutByChars, true);
-
-    // 上限文字数 0 は無制限（既定の往復数 0 と組み合わせると全件送信）
-    trimmed = illustrationUtils.trimHistoryForIllustration(longHistory, 0, 0);
-    check('上限文字数 0 は無制限', trimmed.messages.map(m => m.content[0]), ['a', 'b', 'c', 'd']);
-    check('上限文字数 0 では切ったフラグが立たない', trimmed.cutByChars, false);
+    check('切った後の往復数', trimmed.keptRounds, 1);
 
     // 最後の1件（挿絵の対象応答）は上限を超えても残す
-    trimmed = illustrationUtils.trimHistoryForIllustration(longHistory, 0, 50);
+    trimmed = illustrationUtils.trimHistoryForIllustration(longHistory, 50);
     check('最後の1件は上限超過でも残す', trimmed.messages.map(m => m.content[0]), ['d']);
 
-    // 往復数と文字数は AND。往復数内でも文字数でさらに削れる
-    trimmed = illustrationUtils.trimHistoryForIllustration(longHistory, 2, 250);
-    check('往復数と文字数の両方で絞る', trimmed.messages.map(m => m.content[0]), ['c', 'd']);
-
-    trimmed = illustrationUtils.trimHistoryForIllustration([], 12, 24000);
+    trimmed = illustrationUtils.trimHistoryForIllustration([], 24000);
     check('空の履歴', [trimmed.messages.length, trimmed.totalRounds, trimmed.keptRounds], [0, 0, 0]);
 
-    trimmed = illustrationUtils.trimHistoryForIllustration(fiveRounds, -5, 0);
+    trimmed = illustrationUtils.trimHistoryForIllustration(fiveRounds, -5);
     check('負数は無制限扱い', trimmed.messages.length, 10);
 
     console.log('passed: ' + passed + ', failed: ' + failures.length);
