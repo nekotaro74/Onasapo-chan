@@ -211,7 +211,7 @@ object_info は取らない）。ワークフローの切り替え・追加・�
 
 生成は止めない（固定強度は正当な設定）。`loraSlotCapacity` はスロット数だけを見る設計のまま制御可否を別立てにし、
 ワークフローごとの記憶（`clampSlotsToCapacity`）へ影響させない。ComfyUI の画面では rgthree の欄に
-`%loraN%` を入力できない（実ファイル名のドロップダウン）ので、自作する場合は保存後に JSON を編集する必要がある。
+`%loraN%` を入力できない（実ファイル名のドロップダウン）ので、自作する場合は API 形式でエクスポート後に JSON を編集する必要がある。
 
 `%loraN%` / `%lora_strN%` は `buildTokenValues` で常に値を用意するので未対応トークンエラーにはならず、
 LoraLoader ノードには後段の `applyLoraNodes` が実際の値を上書きする。
