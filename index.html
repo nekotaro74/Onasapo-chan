@@ -8132,10 +8132,16 @@ font-size: 1.142em !important;
                                 <hr style="margin: 12px 0; border-top: 1px dashed var(--border-secondary);">
                             <div style="margin-bottom: 6px;">
                                 <label for="comfy-history-rounds">挿絵生成の推論に使う履歴の往復(入力→応答)数:</label>
-                                <input type="number" id="comfy-history-rounds" min="0" step="1" placeholder="例:12" aria-label="挿絵生成の推論に使う履歴の往復(入力→応答)数" style="width: 90px; margin-left: 6px;">
+                                <input type="number" id="comfy-history-rounds" min="0" step="1" placeholder="例:0" aria-label="挿絵生成の推論に使う履歴の往復(入力→応答)数" style="width: 90px; margin-left: 6px;">
+                            </div>
+                            <div style="margin-bottom: 6px;">
+                                <label for="comfy-history-char-cap">挿絵生成の推論に使う履歴の上限(文字数):</label>
+                                <input type="number" id="comfy-history-char-cap" min="0" step="1000" placeholder="例:24000" aria-label="挿絵生成の推論に使う履歴の上限(文字数)" style="width: 90px; margin-left: 6px;">
                             </div>
                             <p style="font-size: 11px; color: var(--text-secondary); margin-top: -2px; margin-bottom: 10px;">
-                                ※ 0 を入れると全件送ります（長い会話では料金が増えます）。空欄は 12 として扱います。
+                                ※ 既定は往復数が 0（全件送る）で、上限文字数が 24000 です。長い会話では上限文字数だけで古い方を省略します。空欄はそれぞれ 0 と 24000 として扱います。<br>
+                                ※ 往復数に 0 以外を入れると、その往復数の内側でも上限文字数でさらに絞ります。どちらも 0 にすると無制限で、長い会話ではモデルの context window を超えて失敗する場合があります。<br>
+                                ※ 挿絵を付ける応答そのものは、必ず送られます。
                             </p>
                             <label class="checkbox-label">
                                 <input type="checkbox" id="comfy-edit-prompt-toggle">
@@ -8681,10 +8687,11 @@ Format exactly:
 The person in the foreground is [name] from [series]. They have [hair], [eyes], and wear [top], [bottom], and [footwear]. They [expression] and [their action].
 The person in the midground is [name] from [series]. They have [hair], [eyes], and wear [top], [bottom], and [footwear]. They [expression] and [their action].
 [name or hair color] [action], while [other name or hair color] [action]. [place], [light], [camera].`;
-        // 挿絵生成用プロンプトの生成に送る履歴の既定往復数（0 で全件）。
-        // 文字数上限は context 超過防止の内部ガードで、設定画面には出さない。
-        const DEFAULT_ILLUSTRATION_HISTORY_ROUNDS = 12;
-        const ILLUSTRATION_HISTORY_CHAR_CAP = 24000;
+        // 挿絵生成用プロンプトの生成に送る履歴の既定値。
+        // 往復数は 0 で全件送信。文字数上限が context 超過の安全弁で、0 は無制限
+        // （本家 SillyTavern が Chat Completion 側で持つトークン予算と同じ役割）。
+        const DEFAULT_ILLUSTRATION_HISTORY_ROUNDS = 0;
+        const DEFAULT_ILLUSTRATION_HISTORY_CHAR_CAP = 24000;
         const DEFAULT_COMFY_BASE_URL = 'http://127.0.0.1:8188';
         const DEFAULT_COMFY_WIDTH = 1024;
         const DEFAULT_COMFY_HEIGHT = 1024;
@@ -9358,6 +9365,7 @@ elevationHoverOption: document.getElementById('elevation-hover-option'),
             comfyImagePromptTemplateTextarea: document.getElementById('comfy-image-prompt-template'),
             comfyTemplateResetBtn: document.getElementById('comfy-template-reset-btn'),
             comfyHistoryRoundsInput: document.getElementById('comfy-history-rounds'),
+            comfyHistoryCharCapInput: document.getElementById('comfy-history-char-cap'),
             comfyWidthInput: document.getElementById('comfy-width'),
             comfyHeightInput: document.getElementById('comfy-height'),
             comfyStepsInput: document.getElementById('comfy-steps'),
@@ -9621,8 +9629,9 @@ geminiIncludeThoughts: false,
                 comfyUseCharacterPrefix: true,
                 comfyNegativePrompt: 'worst quality, low quality, score_1, score_2, score_3, artist name, blurry, jpeg artifacts, chromatic aberration',
                 comfyImagePromptTemplate: DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE,
-                // 挿絵生成用プロンプトの生成に送る履歴の往復数。0 で全件
+                // 挿絵生成用プロンプトの生成に送る履歴。往復数は 0 で全件、文字数上限は 0 で無制限
                 illustrationHistoryRounds: DEFAULT_ILLUSTRATION_HISTORY_ROUNDS,
+                illustrationHistoryCharCap: DEFAULT_ILLUSTRATION_HISTORY_CHAR_CAP,
                 // 接続先 ComfyUI の object_info から選ぶ項目（保存値はサーバーの生の名前）
                 comfyModel: '',
                 comfyVae: '',
@@ -16220,6 +16229,7 @@ elements.footerTapScrollToBottomToggle.checked = state.settings.footerTapScrollT
                 elements.comfyNegativePromptTextarea.value = state.settings.comfyNegativePrompt || '';
                 elements.comfyImagePromptTemplateTextarea.value = state.settings.comfyImagePromptTemplate || DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE;
                 elements.comfyHistoryRoundsInput.value = state.settings.illustrationHistoryRounds ?? DEFAULT_ILLUSTRATION_HISTORY_ROUNDS;
+                elements.comfyHistoryCharCapInput.value = state.settings.illustrationHistoryCharCap ?? DEFAULT_ILLUSTRATION_HISTORY_CHAR_CAP;
                 this.fillComfyResolutionPresets();
                 elements.comfyResolutionPresetSelect.value = state.settings.comfyResolutionPreset || DEFAULT_COMFY_RESOLUTION_PRESET;
                 elements.comfyWidthInput.value = state.settings.comfyWidth ?? DEFAULT_COMFY_WIDTH;
@@ -16271,9 +16281,13 @@ elements.footerTapScrollToBottomToggle.checked = state.settings.footerTapScrollT
                     return;
                 }
                 const fallbackNote = debug.fellBack ? '\n（厳格な整形では空になったため、最小限の整形に切り替えました）' : '';
+                const unlimitedRounds = !(debug.historyRoundsLimit > 0);
+                const unlimitedChars = !(debug.historyCharCap > 0);
                 const historyNote = typeof debug.historyRounds === 'number'
                     ? `--- 送った会話履歴 ---\n直近 ${debug.historyRounds} 往復（会話全体では ${debug.historyTotalRounds} 往復）`
-                        + `${debug.historyCutByChars ? '\n（文字数の上限で、往復数内でもさらに古い方を省略しました）' : ''}\n\n`
+                        + `\n上限: 往復数 ${unlimitedRounds ? 'なし（0）' : debug.historyRoundsLimit}`
+                        + ` / 文字数 ${unlimitedChars ? 'なし（0）' : debug.historyCharCap}`
+                        + `${debug.historyCutByChars ? '\n（上限の文字数で古い方を省略しました）' : ''}\n\n`
                     : '';
                 elements.comfyDebugOutput.textContent =
                     `${historyNote}--- 指示テンプレート（{{char}}/{{user}} 置換後）---\n${debug.template}\n\n--- LLM の返文（整形前）---\n${debug.rawReply}\n\n--- 整形後キーワード ---${fallbackNote}\n${debug.processedPrompt}\n\n--- ComfyUI に送った prompt ---\n${debug.finalPrompt || '（画像送信していません）'}`;
@@ -20336,11 +20350,9 @@ helpIcons.forEach(icon => {
                 if (history.length === 0) throw new Error('挿絵の生成に使える会話履歴がありません。');
 
                 // 往復数と文字数で古い方を捨てる。対象応答（末尾）は必ず残る。
-                const trimmed = illustrationUtils.trimHistoryForIllustration(
-                    history,
-                    state.settings.illustrationHistoryRounds ?? DEFAULT_ILLUSTRATION_HISTORY_ROUNDS,
-                    ILLUSTRATION_HISTORY_CHAR_CAP
-                );
+                const historyRounds = state.settings.illustrationHistoryRounds ?? DEFAULT_ILLUSTRATION_HISTORY_ROUNDS;
+                const historyCharCap = state.settings.illustrationHistoryCharCap ?? DEFAULT_ILLUSTRATION_HISTORY_CHAR_CAP;
+                const trimmed = illustrationUtils.trimHistoryForIllustration(history, historyRounds, historyCharCap);
 
                 const credentials = this.resolveSessionApiCredentials();
                 const context = {
@@ -20372,6 +20384,8 @@ helpIcons.forEach(icon => {
                     at: Date.now(),
                     historyRounds: trimmed.keptRounds,
                     historyTotalRounds: trimmed.totalRounds,
+                    historyRoundsLimit: historyRounds,
+                    historyCharCap: historyCharCap,
                     historyCutByChars: trimmed.cutByChars,
                     template: quietTemplate,
                     rawReply: rawReply,
@@ -22846,6 +22860,10 @@ newSettings.footerTapScrollToBottom = elements.footerTapScrollToBottomToggle.che
                 // 往復数: 空欄は既定値、0 は全件、負数と小数は丸める
                 newSettings.illustrationHistoryRounds = Math.round(
                     getComfyNumber(elements.comfyHistoryRoundsInput, DEFAULT_ILLUSTRATION_HISTORY_ROUNDS, 0, Number.MAX_SAFE_INTEGER)
+                );
+                // 上限文字数: 空欄は既定値、0 は無制限
+                newSettings.illustrationHistoryCharCap = Math.round(
+                    getComfyNumber(elements.comfyHistoryCharCapInput, DEFAULT_ILLUSTRATION_HISTORY_CHAR_CAP, 0, Number.MAX_SAFE_INTEGER)
                 );
                 newSettings.comfyModel = elements.comfyModelSelect ? elements.comfyModelSelect.value : '';
                 newSettings.comfyVae = elements.comfyVaeSelect ? elements.comfyVaeSelect.value : '';

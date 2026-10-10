@@ -132,10 +132,10 @@ API キー・モデル名は呼び出し側で渡す（`state.settings.apiProvid
 
 ## 5. 検証
 
-- `node tools/selftest.js` — 抜き出した純ロジック（144件）。
+- `node tools/selftest.js` — 抜き出した純ロジック（147件）。
   文中埋め込みの置換、`%model%` 等の解決、CLIP Skip の負値、未対応トークンの中断、
   カスタム プレースホルダ、ワークフロー一覧の自己修復まで。
-- `node tools/e2e.js` — モック ComfyUI に対して headless Chrome で実際に走らせる（152件）。
+- `node tools/e2e.js` — モック ComfyUI に対して headless Chrome で実際に走らせる（158件）。
   手動生成・自動生成・手動で勝手に走らない・履歴復元・本編保持・CORS 判別・
   不正ワークフロー・連打・SW 登録に加えて、
   **SillyTavern 系トークンが全て差し替わること**、`!/%[a-z_]+%/` で**未差し込みを送っていないこと**、
@@ -245,25 +245,41 @@ Anima / SDXL 系でそのまま使える値を既定にしている（`DEFAULT_C
 反映されるだけなので、既定の 1024x1024 と幅・高さの既定値は同じ値で揃っている。
 既定値が変わるのは新規／未保存の設定だけで、IndexedDB に保存済みの値はそのまま残る（設定の移行処理は無い）。
 
-## 7. 挿絵生成に送る履歴の往復数制限（2026-10-09）
+## 7. 挿絵生成に送る履歴の範囲（2026-10-10 改訂）
 
 ### 問題
 `buildIllustrationPrompt` は対象応答までの履歴を**全件** quiet 生成へ渡していた。
-本家 SillyTavern は Chat Completion 側にトークン予算（`openai_max_context` − `openai_max_tokens`）を持ち、
-`ChatCompletion.canAfford()` が落ちた時点で古い方を捨てる（`public/scripts/openai.js` の `populateChatHistory`、
-`insertAtStart` で新しい方から埋めるので**古い方が落ちる**）。
 本アプリには入力側の上限設定が無い。`Max Tokens` は `maxOutputTokens`（出力側）だけで、
 横の「上限指定」欄はスライダーの目盛りを変えるだけなので、長い会話では挿絵1枚ごとの入力が
 会話長に比例して増え、context window を超えると 400 が返る。
+2026-10-09 に往復数で絞る設定を入れたが、範囲外へ出た登場人物の外見の記述が効かず絵が崩れるため、
+既定は全件に戻し、上限を文字数で設定する形へ改めた。
+
+### 本家 SillyTavern の仕様（2026-10-10 にソースで確認）
+本家に「履歴の往復数」に相当する設定は無い。範囲はすべてトークン予算の残りで決まる。
+- Chat Completion: `setTokenBudget(openai_max_context, openai_max_tokens)` で `tokenBudget = context - response`。
+  `populateChatHistory()` が `canAfford()` を通る分だけ新しい方から積んで古い方を落とす（`public/scripts/openai.js`）。
+  `Chat History` プロンプト項目は ON/OFF と挿入位置だけで、範囲を示す数値設定は無い
+- Text Completion: `checkPromptSize()` が `mesSend.shift()` で最古から落とす（`public/script.js`）
+- 画像生成拡張（`/sd last` など）は `generateQuietPrompt({ quietPrompt })` を呼ぶだけで `responseLength` も渡さず、
+  拡張側にトークン関連の設定も無い。予算は本編生成と同一の `Context Size` / `Response Size`
+  （Chat Completion Preset に保存される）
+- 外見は履歴から復元させない。`getRawLastMessage()` は LLM を呼ばず `character.scenario` と
+  `character.description` を直接結合する
 
 ### 仕様
-- 単位は**往復**。AI応答1回とその直前のユーザー入力を1組として数える。
-- 既定 12 往復（`DEFAULT_ILLUSTRATION_HISTORY_ROUNDS`）。`0` で全件。空欄は 12 として扱う。
-- 設定キーは `state.settings.illustrationHistoryRounds`。UI は「設定 → 挿絵生成（ComfyUI）→ 挿絵生成用プロンプト」内の
-  `挿絵生成の推論に使う履歴の往復(入力→応答)数`（number input、`min="0"`）。スライダーは付けない
-  （`0 = 全件` がスライダーの目盛りの意味と衝突するため）。
-- 内部ガードとして文字数上限 `ILLUSTRATION_HISTORY_CHAR_CAP = 24000` を併用する。設定画面には出さない。
-  最後の1件（挿絵の対象応答）は上限を超えても残す。
+- 既定は**全件送信**で、古い方は**上限の文字数**で省略する。
+- 設定キーは `state.settings.illustrationHistoryRounds`（既定 0 = 全件）と
+  `state.settings.illustrationHistoryCharCap`（既定 24000、0 = 無制限）。
+  定数は `DEFAULT_ILLUSTRATION_HISTORY_ROUNDS` / `DEFAULT_ILLUSTRATION_HISTORY_CHAR_CAP`
+- UI は「設定 → 挿絵生成（ComfyUI）→ 挿絵生成用プロンプト」内の
+  `挿絵生成の推論に使う履歴の往復(入力→応答)数` と `挿絵生成の推論に使う履歴の上限(文字数)`。
+  どちらも number input で `min="0"`。スライダーは付けない
+  （`0` が「全件 / 無制限」でスライダーの目盛りの意味と衝突するため）。
+- 往復数と文字数は AND。既定は往復数が 0 なので、実質は文字数だけで絞る。
+- 最後の1件（挿絵の対象応答）は上限を超えても残す。
+- 設定の移行処理は無い方針はそのまま。2026-10-09 以降に 12 往復を保存した人へはそのまま 12 が残るので、
+  全件送信に戻すには 0 を入れてもらう（`illustrationHistoryCharCap` は未保存なので既定の 24000 が効く）。
 
 ### 実装
 `illustrationUtils.trimHistoryForIllustration(messages, rounds, charCap)` が
@@ -275,12 +291,14 @@ Anima / SDXL 系でそのまま使える値を既定にしている（`DEFAULT_C
 挿絵の対象応答は必ず末尾側にあるので、切り出しで落ちることはない。
 
 ### デバッグ
-`illustrationUtils.lastDebug` に `historyRounds` / `historyTotalRounds` / `historyCutByChars` を入れ、
-「デバッグ（挿絵生成用プロンプト）」の先頭に `直近 N 往復（会話全体では M 往復）` を出す。
-文字数で追加省略した場合は行を足す。
+`illustrationUtils.lastDebug` に `historyRounds` / `historyTotalRounds` / `historyRoundsLimit` /
+`historyCharCap` / `historyCutByChars` を入れ、「デバッグ（挿絵生成用プロンプト）」の先頭に
+`直近 N 往復（会話全体では M 往復）` と `上限: 往復数 … / 文字数 …` を出す。
+上限が 0 の項目は「なし（0）」と表示し、文字数で省略した場合は行を足す。
 
 ### 検証
-selftest に 12 件（既定値 / 往復数で切る / 残った往復数と全体 / `0` で全件 / 往復数が履歴より大きい /
-分岐 `model` を残す / 文字数上限で古い方を捨てる / 切ったフラグ / 上限超過でも最後の1件を残す /
-往復数と文字数の AND / 空履歴 / 負数は無制限）、e2e に入力欄の存在（`type=number`・`min=0`）と
-直近2往復だけ残す動作を追加した。
+selftest に 15 件（既定の往復数 0 / 既定の上限文字数 24000 / 往復数で切る / 残った往復数と全体 /
+`0` で全件 / 往復数が履歴より大きい / 分岐 `model` を残す / 文字数上限で古い方を捨てる / 切ったフラグ /
+上限 0 は無制限 / 上限 0 でフラグが立たない / 上限超過でも最後の1件を残す / 往復数と文字数の AND /
+空履歴 / 負数は無制限）、e2e に両入力欄の存在（`type=number`・`min=0`）、直近2往復だけ残す動作、
+上限文字数だけで古い方を捨てる動作を追加した。

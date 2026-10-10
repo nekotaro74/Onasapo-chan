@@ -619,12 +619,14 @@ const jsonResponse = (body, status) => ({
     };
     const fiveRounds = rounds(5);
 
-    check('既定の往復数', (() => {
-        const marker = 'const DEFAULT_ILLUSTRATION_HISTORY_ROUNDS = ';
+    const historyDefault = (name) => {
+        const marker = 'const ' + name + ' = ';
         const at = html.indexOf(marker);
         if (at === -1) throw new Error('見つかりません: ' + marker);
         return eval(html.slice(at + marker.length, html.indexOf(';', at)));
-    })(), 12);
+    };
+    check('既定の往復数（0 で全件）', historyDefault('DEFAULT_ILLUSTRATION_HISTORY_ROUNDS'), 0);
+    check('既定の上限文字数', historyDefault('DEFAULT_ILLUSTRATION_HISTORY_CHAR_CAP'), 24000);
 
     let trimmed = illustrationUtils.trimHistoryForIllustration(fiveRounds, 2, 0);
     check('2往復だけ残す', trimmed.messages.map(m => m.content), ['u4', 'm4', 'u5', 'm5']);
@@ -653,6 +655,11 @@ const jsonResponse = (body, status) => ({
     trimmed = illustrationUtils.trimHistoryForIllustration(longHistory, 0, 250);
     check('文字数上限で古い方を捨てる', trimmed.messages.map(m => m.content[0]), ['c', 'd']);
     check('文字数で切ったフラグ', trimmed.cutByChars, true);
+
+    // 上限文字数 0 は無制限（既定の往復数 0 と組み合わせると全件送信）
+    trimmed = illustrationUtils.trimHistoryForIllustration(longHistory, 0, 0);
+    check('上限文字数 0 は無制限', trimmed.messages.map(m => m.content[0]), ['a', 'b', 'c', 'd']);
+    check('上限文字数 0 では切ったフラグが立たない', trimmed.cutByChars, false);
 
     // 最後の1件（挿絵の対象応答）は上限を超えても残す
     trimmed = illustrationUtils.trimHistoryForIllustration(longHistory, 0, 50);

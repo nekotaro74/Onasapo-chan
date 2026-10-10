@@ -325,19 +325,29 @@ const PAGE_SCRIPT = `(async () => {
     await appLogic.generateIllustration();
     appLogic.handleSend = originalHandleSend;
 
-    // 往復数で送る履歴を絞る動作（実会話の添字を壊さないよう、別配列で関数を見る）
+    // 往復数と上限文字数で送る履歴を絞る動作（実会話の添字を壊さないよう、別配列で関数を見る）
     const longChat = [];
     for (let i = 1; i <= 4; i++) {
         longChat.push({ role: 'user', content: 'u' + i, timestamp: Date.now() });
         longChat.push({ role: 'model', content: 'm' + i, timestamp: Date.now() });
     }
     const savedRounds = state.settings.illustrationHistoryRounds;
+    const savedCharCap = state.settings.illustrationHistoryCharCap;
     state.settings.illustrationHistoryRounds = 2;
     const trimProbe = illustrationUtils.trimHistoryForIllustration(
-        longChat, state.settings.illustrationHistoryRounds, 24000);
+        longChat, state.settings.illustrationHistoryRounds, savedCharCap);
     state.settings.illustrationHistoryRounds = savedRounds;
 
+    // 既定と同じ「往復数 0（全件）＋上限文字数」で、文字数だけ古い方を捨てる
+    const wideChat = [];
+    for (let i = 1; i <= 4; i++) {
+        wideChat.push({ role: 'user', content: ('u' + i).repeat(30), timestamp: Date.now() });
+        wideChat.push({ role: 'model', content: ('m' + i).repeat(30), timestamp: Date.now() });
+    }
+    const charCapProbe = illustrationUtils.trimHistoryForIllustration(wideChat, 0, 100);
+
     const historyRoundsInput = document.getElementById('comfy-history-rounds');
+    const historyCharCapInput = document.getElementById('comfy-history-char-cap');
 
     const target = state.currentMessages[1];
     const renderedImage = document.querySelector('.message-illustration-image');
@@ -373,8 +383,14 @@ const PAGE_SCRIPT = `(async () => {
             keptRounds: trimProbe.keptRounds,
             totalRounds: trimProbe.totalRounds,
         },
+        charCapProbe: {
+            contents: charCapProbe.messages.map(m => m.content),
+            cutByChars: charCapProbe.cutByChars,
+        },
         historyRoundsInput: historyRoundsInput
             ? { min: historyRoundsInput.min, type: historyRoundsInput.type } : null,
+        historyCharCapInput: historyCharCapInput
+            ? { min: historyCharCapInput.min, type: historyCharCapInput.type } : null,
         // 導入手引きへのリンク（挿絵生成と TTS の注釈に1つずつ、別タブで開く）
         guideLinks: Array.from(document.querySelectorAll('a'))
             .filter(a => {
@@ -1696,14 +1712,20 @@ async function main() {
         const checks = [
             ['ページエラーが無い', pageResult.pageErrors.length === 0],
             ['quiet 生成は背景実行で、履歴を文脈にしている', pageResult.quietRequest && pageResult.quietRequest.isBackground && pageResult.quietRequest.historyLength === 2],
-            ['挿絵の履歴往復数の入力欄がある（0 以上を受け付ける）', !!pageResult.historyRoundsInput
-                && pageResult.historyRoundsInput.type === 'number' && pageResult.historyRoundsInput.min === '0'],
+            ['挿絵の履歴往復数と上限文字数の入力欄がある（どちらも 0 以上を受け付ける）', !!pageResult.historyRoundsInput
+                && pageResult.historyRoundsInput.type === 'number' && pageResult.historyRoundsInput.min === '0'
+                && !!pageResult.historyCharCapInput
+                && pageResult.historyCharCapInput.type === 'number' && pageResult.historyCharCapInput.min === '0'],
             ['導入手引きへのリンクが2か所にあり、新しいタブで開く',
                 pageResult.guideLinks.length === 2 && pageResult.guideLinks.every(l => l.target === '_blank'
                     && l.rel.includes('noopener') && l.text.length > 0)],
             ['往復数で挿絵に送る履歴を絞る（直近2往復だけ残す）',
                 JSON.stringify(pageResult.trimProbe && pageResult.trimProbe.contents) === JSON.stringify(['u3', 'm3', 'u4', 'm4'])
                 && pageResult.trimProbe.keptRounds === 2 && pageResult.trimProbe.totalRounds === 4],
+            ['上限文字数だけでも古い方を捨て、挿絵の対象応答は残す',
+                !!pageResult.charCapProbe && pageResult.charCapProbe.cutByChars === true
+                && pageResult.charCapProbe.contents.length === 1
+                && String(pageResult.charCapProbe.contents[0]).indexOf('m4') === 0],
             ['quiet 指示はシステムプロンプトではなく発話として送る', pageResult.quietRequest && pageResult.quietRequest.systemPrompt === '' && pageResult.quietRequest.inputText === pageResult.quietTemplate],
             ['表示名がテンプレートに置換されている', pageResult.quietRequest && /詩織/.test(pageResult.quietRequest.inputText || '')],
             ['挿絵が完了状態になる', pageResult.illustrationStatus === 'done'],
