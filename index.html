@@ -6144,6 +6144,7 @@ font-size: 1.142em !important;
                                 ※ <code>temperature</code> … <b>Thinking OFF のときだけ効きます</b>。Thinking ON ではエラーにはなりませんが効果はありません。<br>
                                 ※ <code>top_p</code> … <b>Thinking ON のときだけ効きます</b>。有効範囲は 0.95〜1.0 で、0.95 未満は 0.95 として扱われます。Thinking OFF では 1.0 に固定され値は無視されます。<br>
                                 ※ <code>presence_penalty</code> / <code>frequency_penalty</code> … ON・OFF どちらでも効果はありません（公式に廃止済み扱い）。<br>
+                                ※ Max Tokens の横の「上限指定」はスライダーの目盛りの上限で、既定は 32768 です。空にするとこの値に戻ります（公式の出力上限は 384K なので、それまで使いたいときは数字を大きくしてください）。<br>
                                 ※ <b>「API エンドポイントURL」で互換 API を指定したときは上記が当てはまりません</b>。接続先の仕様に従います。
                             </p>
                             <div class="param-grid" style="padding-left: 15px;">
@@ -6160,7 +6161,7 @@ font-size: 1.142em !important;
                                                 data-target-id="deepseek-max-tokens"></label>
                                     </div>
                                     <div class="param-slider-wrapper" style="margin-top: 5px;">
-                                        <input type="range" id="deepseek-max-tokens-slider" step="1" min="1">
+                                        <input type="range" id="deepseek-max-tokens-slider" step="1" min="1" max="32768">
                                     </div>
                                 </div>
                                 <div class="param-slider-container">
@@ -8355,7 +8356,11 @@ font-size: 1.142em !important;
                         </details>
 
                         <label for="tts-speed" style="margin-top: 15px;">速度: <span id="tts-speed-value">1.00</span> 倍</label>
-                        <input type="range" id="tts-speed" min="0.25" max="4" step="0.05" value="1" aria-label="読み上げ速度">
+                        <div class="param-slider-wrapper">
+                            <input type="range" id="tts-speed" min="0.25" max="4" step="0.05" value="1" aria-label="読み上げ速度">
+                            <input type="number" id="tts-speed-number" min="0.25" max="4" step="0.05" placeholder="例:1.25"
+                                aria-label="読み上げ速度の直接入力">
+                        </div>
                         <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px; margin-bottom: 10px;">
                             ※ 本文には <code>model</code> / <code>voice</code> / <code>input</code> だけを送り、速度は再生側（<code>playbackRate</code>）で掛けます。サーバー非依存で効きます。
                         </p>
@@ -9317,6 +9322,7 @@ elevationHoverOption: document.getElementById('elevation-hover-option'),
             ttsModelInput: document.getElementById('tts-model'),
             ttsVoicesInput: document.getElementById('tts-voices'),
             ttsSpeedInput: document.getElementById('tts-speed'),
+            ttsSpeedNumberInput: document.getElementById('tts-speed-number'),
             ttsSpeedValue: document.getElementById('tts-speed-value'),
             ttsDefaultVoiceSelect: document.getElementById('tts-default-voice'),
             ttsGenericVoiceSelect: document.getElementById('tts-generic-voice'),
@@ -9672,6 +9678,8 @@ deepSeekModelName: DEFAULT_DEEPSEEK_MODEL,
                 deepSeekEnableSystemPromptDefault: true,
                 deepSeekTemperature: null,
                 deepSeekMaxTokens: null,
+                // Max Tokens のスライダー目盛りの上限（「上限指定」欄の既定値）
+                deepSeekMaxTokensSliderMax: 32768,
                 deepSeekTopP: null,
                 deepSeekPresencePenalty: null,
                 deepSeekFrequencyPenalty: null,
@@ -15603,7 +15611,7 @@ elements.deepSeekModelNameSelect.value = state.settings.deepSeekModelName || DEF
 
                 elements.deepSeekSystemPromptDefaultTextarea.value = state.settings.deepSeekSystemPrompt || '';
                 elements.deepSeekEnableSystemPromptDefaultCheckbox.checked = state.settings.deepSeekEnableSystemPromptDefault;
-                setupParamUI('deepseek-max-tokens', 'deepseekMaxTokensSliderMax');
+                setupParamUI('deepseek-max-tokens', 'deepSeekMaxTokensSliderMax');
                 setupParamUI('deepseek-temperature');
                 setupParamUI('deepseek-top-p');
                 setupParamUI('deepseek-presence-penalty');
@@ -15947,6 +15955,7 @@ elements.footerTapScrollToBottomToggle.checked = state.settings.footerTapScrollT
                 elements.ttsVoicesInput.value = state.settings.ttsVoices || '';
                 const speed = Number(state.settings.ttsSpeed);
                 elements.ttsSpeedInput.value = isFinite(speed) ? Math.min(4, Math.max(0.25, speed)) : 1;
+                if (elements.ttsSpeedNumberInput) elements.ttsSpeedNumberInput.value = elements.ttsSpeedInput.value;
                 elements.ttsSpeedValue.textContent = Number(elements.ttsSpeedInput.value).toFixed(2);
                 elements.ttsDialogueOnlyToggle.checked = !!state.settings.ttsNarrateDialogueOnly;
                 elements.ttsRegexEnabledToggle.checked = !!state.settings.ttsRegexEnabled;
@@ -17512,7 +17521,8 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
 
             const handleMaxInputChange = () => {
                 const maxValStr = maxInput.value.trim();
-                const maxVal = maxValStr === '' ? 99999999999999999 : parseFloat(maxValStr);
+                // 空欄のときはスライダー自体に書かれた上限（既定値）へ戻す。上限を書いていない欄は従来どおり実質無制限
+                const maxVal = maxValStr === '' ? (parseFloat(sliderInput.getAttribute('max')) || 99999999999999999) : parseFloat(maxValStr);
                 
                 if (!isNaN(maxVal) && maxVal > parseFloat(sliderInput.min)) {
                     sliderInput.max = maxVal;
@@ -17968,9 +17978,31 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                     });
                 }
                 if (elements.ttsSpeedInput && elements.ttsSpeedValue) {
-                    elements.ttsSpeedInput.addEventListener('input', () => {
-                        elements.ttsSpeedValue.textContent = Number(elements.ttsSpeedInput.value).toFixed(2);
-                    });
+                    const showTtsSpeed = (value) => {
+                        elements.ttsSpeedValue.textContent = Number(value).toFixed(2);
+                    };
+                    const syncTtsSpeedNumber = () => {
+                        if (elements.ttsSpeedNumberInput) elements.ttsSpeedNumberInput.value = elements.ttsSpeedInput.value;
+                        showTtsSpeed(elements.ttsSpeedInput.value);
+                    };
+                    elements.ttsSpeedInput.addEventListener('input', syncTtsSpeedNumber);
+                    if (elements.ttsSpeedNumberInput) {
+                        // 直接入力欄：入力中はスライダーが追従し、確定時に 0.25〜4 へ丸める（保存時の丸めと同じ）
+                        elements.ttsSpeedNumberInput.addEventListener('input', () => {
+                            const typed = parseFloat(elements.ttsSpeedNumberInput.value);
+                            if (!isFinite(typed)) return;
+                            elements.ttsSpeedInput.value = typed;
+                            showTtsSpeed(elements.ttsSpeedInput.value);
+                        });
+                        elements.ttsSpeedNumberInput.addEventListener('change', () => {
+                            const typed = parseFloat(elements.ttsSpeedNumberInput.value);
+                            const clamped = isFinite(typed) ? Math.min(4, Math.max(0.25, typed)) : 1;
+                            elements.ttsSpeedNumberInput.value = clamped;
+                            elements.ttsSpeedInput.value = clamped;
+                            showTtsSpeed(clamped);
+                        });
+                    }
+                    syncTtsSpeedNumber();
                 }
                 if (elements.comfyConnectionTestBtn) {
                     elements.comfyConnectionTestBtn.addEventListener('click', async () => {
@@ -18467,7 +18499,7 @@ _setupParamSlider(paramId, defaultValue, storageKey) {
                 this._setupParamSlider('gemini-thinking-budget', 8192, 'geminiThinkingBudgetSliderMax');
 
                 // DeepSeek Params
-                this._setupParamSlider('deepseek-max-tokens', 4096, 'deepseekMaxTokensSliderMax');
+                this._setupParamSlider('deepseek-max-tokens', 4096, 'deepSeekMaxTokensSliderMax');
                 this._setupParamSlider('deepseek-temperature', 0.9, null);
                 this._setupParamSlider('deepseek-top-p', 0.95, null);
                 this._setupParamSlider('deepseek-presence-penalty', 0.0, null);
@@ -22520,6 +22552,7 @@ newSettings.deepSeekModelName = elements.deepSeekModelNameSelect.value;
                 newSettings.deepSeekSystemPrompt = elements.deepSeekSystemPromptDefaultTextarea.value.trim();
                 newSettings.deepSeekEnableSystemPromptDefault = elements.deepSeekEnableSystemPromptDefaultCheckbox.checked;
                 newSettings.deepSeekMaxTokens = getParamValue('deepseek-max-tokens', true, 1);
+                newSettings.deepSeekMaxTokensSliderMax = getSliderMaxValue('deepseek-max-tokens');
                 newSettings.deepSeekTemperature = getParamValue('deepseek-temperature', false, 0, 2);
                 newSettings.deepSeekTopP = getParamValue('deepseek-top-p', false, 0, 1);
                 newSettings.deepSeekPresencePenalty = getParamValue('deepseek-presence-penalty', false, -2.0, 2.0);
