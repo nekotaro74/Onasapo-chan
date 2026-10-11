@@ -13000,12 +13000,13 @@ const dbUtils = {
                 try {
                     response = await this.postSpeech(base, buildBody(wantSse), signal);
                 } catch (error) {
-                    // stream_format を嫌うサーバーは 400/422。本文に field 名が現れたら 1 発 POST でやり直す
-                    const rejected = (error.status === 400 || error.status === 422)
-                        && /stream_format/i.test(String(error.detail || ''));
+                    // 400 / 422 は stream_format を嫌った可能性もある。本文に field 名が出ないサーバーもあるので、
+                    // 理由を問わず 1 回は field を外してやり直す（OpenAI 互換を名乗るサーバーで読み上げが失敗しないため）
+                    const rejected = error.status === 400 || error.status === 422;
                     if (!rejected || !wantSse) throw error;
-                    this.sseUnsupportedEndpoints.add(base.url);
                     response = await this.postSpeech(base, buildBody(false), signal);
+                    // field を外して通った = 嫌われていた原因は field。以後はこのエンドポイントに付けない
+                    this.sseUnsupportedEndpoints.add(base.url);
                 }
 
                 const contentType = String(response.headers.get('content-type') || '').toLowerCase();
@@ -13016,29 +13017,39 @@ const dbUtils = {
                     onAudioUrl(URL.createObjectURL(blob));
                     return;
                 }
+                // SSE として読む。音声断片を 1 つでも受け取ったかを数えておく
+                let clips = 0;
+                const emit = (objectUrl) => {
+                    clips++;
+                    onAudioUrl(objectUrl);
+                };
                 if (!response.body || typeof response.body.getReader !== 'function') {
                     // 分割読み取りに非対応のブラウザは本文全体をまとめてパースする
                     const tail = await response.text();
                     const split = this.splitSseFrames(`${tail}\n\n`);
-                    for (const frame of split.frames) this.handleSseFrame(frame, onAudioUrl);
-                    return;
+                    for (const frame of split.frames) this.handleSseFrame(frame, emit);
+                } else {
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+                    while (true) {
+                        const chunk = await reader.read();
+                        if (chunk.done) break;
+                        buffer += decoder.decode(chunk.value, { stream: true });
+                        const split = this.splitSseFrames(buffer);
+                        buffer = split.next;
+                        for (const frame of split.frames) this.handleSseFrame(frame, emit);
+                    }
+                    buffer += decoder.decode();
+                    if (buffer.trim()) {
+                        const split = this.splitSseFrames(`${buffer}\n\n`);
+                        for (const frame of split.frames) this.handleSseFrame(frame, emit);
+                    }
                 }
-
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-                while (true) {
-                    const chunk = await reader.read();
-                    if (chunk.done) break;
-                    buffer += decoder.decode(chunk.value, { stream: true });
-                    const split = this.splitSseFrames(buffer);
-                    buffer = split.next;
-                    for (const frame of split.frames) this.handleSseFrame(frame, onAudioUrl);
-                }
-                buffer += decoder.decode();
-                if (buffer.trim()) {
-                    const split = this.splitSseFrames(`${buffer}\n\n`);
-                    for (const frame of split.frames) this.handleSseFrame(frame, onAudioUrl);
+                // SSE を返したのに音声が 1 つも無い = Irodori 以外の SSE の形。
+                // 無音で終わると何が起きたか分からないので、はっきり失敗させる
+                if (!clips) {
+                    throw new Error('TTS サーバーは SSE で応答しましたが、音声が 1 つも届きませんでした。このサーバーの SSE の形には対応していません。');
                 }
             },
 

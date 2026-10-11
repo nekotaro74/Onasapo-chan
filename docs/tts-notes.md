@@ -35,7 +35,8 @@ data: {"chunks":2}
 **中止用 API はサーバー側に無い**。非 stream の 1 発 POST はサーバーが全文を合成してから応答を返し、クライアント切断を一切見ないため、fetch を切っても GPU 合成は走り切る。SSE 経路だけが chunk ごとに合成し、接続が閉じた時点で**まだ合成していない文を作らない**（進行中の 1 chunk は `asyncio.shield` で完了する）。つまり「接続を閉じる」ことが唯一の停止指示になる。
 
 - 判定は `Content-Type` を主役にする。`text/event-stream` でなければ、`stream_format` を無視して音声バイトを返したサーバー（Kokoro 形式など）として 1 本まとめて受け取る。
-- HTTP 400 / 422 の本文に `stream_format` が出たら、そのエンドポイントを `sseUnsupportedEndpoints`（メモリ専用。settings キーは作らない）へ覚えて、以後は field を付けずに 1 発 POST で送る。同じ job 内でもすぐ field を外してやり直す。
+- HTTP 400 / 422 なら**本文の文言を問わず** `stream_format` を外して 1 回やり直す。未知の field を嫌うサーバーはエラー本文に field 名を書くと限らないため、本文に `stream_format` が出る場合だけに絞ると OpenAI 互換を名乗るサーバーで読み上げが失敗する。field を外して通ったら原因は field なので、そのエンドポイントを `sseUnsupportedEndpoints`（メモリ専用。settings キーは作らない）へ覚えて以後は付けない。**外しても 400 ならそのまま投げる**（ボイス名違いなどを field のせいにしない）。
+- SSE を返したのに `audio_chunk` を 1 つも受け取らなかったら `Error` を投げる。Irodori 以外の SSE の形（`audio.delta` 等）だと無音で終わり、何が起きたか分からなくなるため。
 - `Accept` ヘッダーは送らない（preflight を増やさないため）。
 - パースは `splitSseFrames()`（空行でフレーム分割、切りかけは `next` に残す）と `parseSseFrame()`（`event` / `data`、複数行 `data` は連結、コメント行は無視）の純粋関数 2 本。`handleSseFrame()` が `audio_chunk` を base64 → Blob → objectURL にして呼び出し側へ渡し、`error` イベントは投げる。
 
@@ -140,14 +141,14 @@ APIキーは `ttsApiKey` として IndexedDB の `settings` にだけ保存す�
 ## 8. テスト
 
 ```
-node tools/tts-selftest.js   # 話者検出・整形・chunk・段落送り・削除時の停止・SSE パース・一覧の純粋関数をブラウザなしで（109 件）
+node tools/tts-selftest.js   # 話者検出・整形・chunk・段落送り・削除時の停止・SSE パース・一覧の純粋関数をブラウザなしで（118 件）
 node tools/selftest.js       # 挿絵生成（143 件）
-node tools/e2e.js            # 実ブラウザ + モックサーバー（165 件）
+node tools/e2e.js            # 実ブラウザ + モックサーバー（167 件）
 ```
 
 `tools/e2e.js` には OpenAI Compatible な `audio/speech` もどきを `/mock-tts/v1/audio/speech` に立ててある。送られた body のキー集合、`Authorization`、話者ごとの `voice`、`input` の中身をサーバー側で記録して検証する。再生の重複は `window.Audio` を包んで同時再生数を数え、最大 1 であることを確認している。Chrome には `--autoplay-policy=no-user-gesture-required --mute-audio` を渡す。
 
-SSE と停止は `/mock-tts-sse/v1/audio/speech`（`text/event-stream` で `audio_chunk` を 3 個、200ms 間隔で送る）で見る。**レスポンス側の `close` を `writableEnded` で判定**して、クライアントが切れた時点までに送れた chunk 数を記録する（`req` の `close` は本文を読み終えただけでも発火するので、それを abort として数えると誤る）。読み上げ中に `deleteMessage()` を呼ぶと、① `playing` とキューが空になり、② 新しい `Audio` がこれ以上作られず、③ サーバー側の記録が `chunksSent < 3`（以降の文を合成していない）ことを確認する。`/mock-tts-plain/v1/audio/speech` は `stream_format` を無視して音声を返すサーバー（Kokoro 形式）、`/mock-tts-strict/v1/audio/speech` は `stream_format` を 400 で嫌うサーバーで、それぞれ 1 本まとめての再生と field を外した送り直しを見る。同時再生数の最大 1 は**削除で pause した音声の `ended` が発火しない**ので、削除が走る前の値で検査する。
+SSE と停止は `/mock-tts-sse/v1/audio/speech`（`text/event-stream` で `audio_chunk` を 3 個、200ms 間隔で送る）で見る。**レスポンス側の `close` を `writableEnded` で判定**して、クライアントが切れた時点までに送れた chunk 数を記録する（`req` の `close` は本文を読み終えただけでも発火するので、それを abort として数えると誤る）。読み上げ中に `deleteMessage()` を呼ぶと、① `playing` とキューが空になり、② 新しい `Audio` がこれ以上作られず、③ サーバー側の記録が `chunksSent < 3`（以降の文を合成していない）ことを確認する。`/mock-tts-plain/v1/audio/speech` は `stream_format` を無視して音声を返すサーバー（Kokoro 形式）、`/mock-tts-strict/v1/audio/speech` は `stream_format` を 400 で嫌うサーバーで、それぞれ 1 本まとめての再生と field を外した送り直しを見る。`/mock-tts-opaque/v1/audio/speech` は 400 の本文に field 名を書かないサーバー（`{"error":{"message":...}}`）で、本文の文言を問わず field を外して再生できることを見る。`/mock-tts-sse-empty/v1/audio/speech` は `text/event-stream` を返すが `audio_chunk` を寄越さないサーバーで、無音にならず `elements.ttsStatus` へ失敗が出ることを見る。`streamSpeech` 自体は `tools/tts-selftest.js` でも `speechRequestBase` と `postSpeech` だけを差し替えて検証する（`response.body` を `null` にすると `text()` 経由の経路を通る）。同時再生数の最大 1 は**削除で pause した音声の `ended` が発火しない**ので、削除が走る前の値で検査する。
 
 一覧は `/mock-tts/v1/audio/voices`（Irodori 形）、`/mock-tts-alt/v1/audio/voices`→404 ＋ `/mock-tts-alt/v1/voices`（Kokoro 形）、`/mock-tts-auth/v1/audio/voices`→401、`/mock-tts-missing/*`→404 を立てて、フォールバック順・401 で全候補を回さないこと・非対応でも詳細欄の入力が話者選択へ反映されること・キャッシュ（`force` の有无）・GET に `Content-Type` を付けないことを確認する。**一覧取得は入力欄の URL を優先するので、テストも `state.settings.ttsEndpoint` だけでなく `elements.ttsEndpointInput.value` を切り替える**（state だけ変えると同じ接続先を叩き続ける）。
 

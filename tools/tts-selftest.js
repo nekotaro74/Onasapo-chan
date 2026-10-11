@@ -406,5 +406,86 @@ try {
 } catch (error) { sseThrew = error.message; }
 check('error イベントは投げる', sseThrew, 'voice not found');
 
-console.log(`passed: ${passed}, failed: ${failed}`);
-process.exit(failed ? 1 : 0);
+// ── streamSpeech: 未知の field を嫌うサーバー / SSE の形が違うサーバー ──
+// fetch は使わず、speechRequestBase と postSpeech だけを差し替える
+(async () => {
+    const baseOriginal = ttsUtils.speechRequestBase;
+    const postOriginal = ttsUtils.postSpeech;
+    ttsUtils.speechRequestBase = () => ({ url: 'http://x/v1/audio/speech', headers: {}, model: 'm' });
+
+    // 1. 本文に stream_format が出ない 400 でも、field を外してやり直す
+    ttsUtils.sseUnsupportedEndpoints.clear();
+    const bodies = [];
+    ttsUtils.postSpeech = async (base, body) => {
+        bodies.push(Object.keys(body).sort().join(','));
+        if (bodies.length === 1) {
+            const error = new Error('bad request');
+            error.status = 400;
+            error.detail = '{"error":{"message":"Invalid request body"}}';
+            throw error;
+        }
+        return { ok: true, headers: { get: () => 'audio/wav' }, body: null, blob: async () => ({ size: 7 }) };
+    };
+    const clipsA = [];
+    await ttsUtils.streamSpeech('あ', 'voice', (url) => clipsA.push(url));
+    await ttsUtils.streamSpeech('い', 'voice', (url) => clipsA.push(url));
+    check('400 は本文の文言を問わず field を外して再送する', bodies,
+        ['input,model,stream_format,voice', 'input,model,voice', 'input,model,voice']);
+    check('再送で音声を受け取る', clipsA.length, 2);
+    check('嫌ったエンドポイントには以後付けない',
+        ttsUtils.sseUnsupportedEndpoints.has('http://x/v1/audio/speech'), true);
+
+    // 2. field を外しても 400 なら、そのまま失敗（原因が field でないので記憶しない）
+    ttsUtils.sseUnsupportedEndpoints.clear();
+    let attempts = 0;
+    ttsUtils.postSpeech = async () => {
+        attempts++;
+        const error = new Error('bad voice');
+        error.status = 400;
+        error.detail = 'voice not found';
+        throw error;
+    };
+    let messageB = '';
+    try { await ttsUtils.streamSpeech('あ', 'voice', () => {}); } catch (error) { messageB = error.message; }
+    check('2 回目も 400 ならエラー', messageB, 'bad voice');
+    check('試行は 2 回まで', attempts, 2);
+    check('field 由来でないので以後も付けたまま', ttsUtils.sseUnsupportedEndpoints.size, 0);
+
+    // 3. SSE を返したが audio_chunk が無い（Irodori 以外の SSE の形）
+    ttsUtils.postSpeech = async () => ({
+        ok: true,
+        headers: { get: () => 'text/event-stream' },
+        body: null,
+        text: async () => 'event: done\ndata: {"chunks":0}\n\n',
+    });
+    let messageC = '';
+    try { await ttsUtils.streamSpeech('あ', 'voice', () => {}); } catch (error) { messageC = error.message; }
+    check('SSE で音声が 1 つも無ければ失敗', messageC,
+        'TTS サーバーは SSE で応答しましたが、音声が 1 つも届きませんでした。このサーバーの SSE の形には対応していません。');
+
+    // 4. SSE の形が合っていれば鳴る。error イベントはそのまま投げる
+    ttsUtils.postSpeech = async () => ({
+        ok: true,
+        headers: { get: () => 'text/event-stream' },
+        body: null,
+        text: async () => 'event: audio_chunk\ndata: {"audio_base64":"aGk=","media_type":"audio/wav"}\n\nevent: done\ndata: {"chunks":1}\n\n',
+    });
+    const clipsD = [];
+    await ttsUtils.streamSpeech('あ', 'voice', (url) => clipsD.push(url));
+    check('SSE の形が合っていれば音声を受け取る', clipsD.length, 1);
+    ttsUtils.postSpeech = async () => ({
+        ok: true,
+        headers: { get: () => 'text/event-stream' },
+        body: null,
+        text: async () => 'event: error\ndata: {"error":{"message":"voice not found"}}\n\n',
+    });
+    let messageE = '';
+    try { await ttsUtils.streamSpeech('あ', 'voice', () => {}); } catch (error) { messageE = error.message; }
+    check('SSE の error イベントはそのまま投げる', messageE, 'voice not found');
+
+    ttsUtils.speechRequestBase = baseOriginal;
+    ttsUtils.postSpeech = postOriginal;
+
+    console.log(`passed: ${passed}, failed: ${failed}`);
+    process.exit(failed ? 1 : 0);
+})();

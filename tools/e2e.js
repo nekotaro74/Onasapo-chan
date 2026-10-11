@@ -64,6 +64,9 @@ let ttsSseAborts = [];
 // stream_format を無視するサーバー / 400 で嫌うサーバー
 let ttsPlainRequests = [];
 let ttsStrictRequests = [];
+// 400 の本文に field 名を出さないサーバー / SSE を返すが音声断片を寄越さないサーバー
+let ttsOpaqueRequests = [];
+let ttsSseEmptyRequests = [];
 let historyPolls = 0;
 let promptPosts = 0;
 let objectInfoRequests = 0;
@@ -194,6 +197,54 @@ function createServer() {
             if (req.method === 'DELETE') { ttsStrictRequests = []; }
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify({ requests: ttsStrictRequests }));
+            return;
+        }
+
+        // 未知の field を 400 で嫌うが、本文に field 名を書かないサーバー。
+        // 本文の文言を問わず field を外して再送できることを見る
+        if (url.pathname === '/mock-tts-opaque/v1/audio/speech' && req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => { body += chunk; });
+            req.on('end', () => {
+                let parsed = null;
+                try { parsed = JSON.parse(body); } catch (_) { /* 非 JSON */ }
+                ttsOpaqueRequests.push({ body: parsed });
+                if (parsed && parsed.stream_format) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: { message: 'Invalid request body.' } }));
+                    return;
+                }
+                res.setHeader('Content-Type', 'audio/wav');
+                res.end(makeWav(20));
+            });
+            return;
+        }
+        if (url.pathname === '/mock-tts-opaque/state') {
+            if (req.method === 'DELETE') { ttsOpaqueRequests = []; }
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ requests: ttsOpaqueRequests }));
+            return;
+        }
+
+        // SSE を返すが Irodori の audio_chunk 形式ではないサーバー。
+        // 無音で終わらず、失敗として分かることを見る
+        if (url.pathname === '/mock-tts-sse-empty/v1/audio/speech' && req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => { body += chunk; });
+            req.on('end', () => {
+                let parsed = null;
+                try { parsed = JSON.parse(body); } catch (_) { /* 非 JSON */ }
+                ttsSseEmptyRequests.push({ body: parsed });
+                res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+                res.write('event: message\ndata: {"type":"audio.delta"}\n\n');
+                res.end('event: done\ndata: {"chunks":0}\n\n');
+            });
+            return;
+        }
+        if (url.pathname === '/mock-tts-sse-empty/state') {
+            if (req.method === 'DELETE') { ttsSseEmptyRequests = []; }
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ requests: ttsSseEmptyRequests }));
             return;
         }
 
@@ -1446,6 +1497,24 @@ const TTS_STOP_SCRIPT = `(async () => {
     const strictState2 = await readState('/mock-tts-strict/state');
     const laterKeys = strictState2.requests.slice(strictKeys.length).map(r => Object.keys(r.body || {}).sort().join(','));
 
+    // 5. 400 の本文に field 名を書かないサーバーでも、field を外して再生できる
+    await fetch('/mock-tts-opaque/state', { method: 'DELETE' });
+    state.settings.ttsEndpoint = location.origin + '/mock-tts-opaque/v1';
+    ttsUtils.enqueueMessage(freshIndex, false);
+    const opaqueDrained = await drain();
+    const opaqueState = await readState('/mock-tts-opaque/state');
+    const opaqueKeys = opaqueState.requests.map(r => Object.keys(r.body || {}).sort().join(','));
+    const flaggedOpaque = ttsUtils.sseUnsupportedEndpoints.has(location.origin + '/mock-tts-opaque/v1/audio/speech');
+
+    // 6. SSE を返すが audio_chunk を寄越さないサーバーは、無音で終わらず失敗として分かる
+    await fetch('/mock-tts-sse-empty/state', { method: 'DELETE' });
+    state.settings.ttsEndpoint = location.origin + '/mock-tts-sse-empty/v1';
+    const clipsBeforeEmpty = audioClips;
+    ttsUtils.enqueueMessage(freshIndex, false);
+    const emptyDrained = await drain();
+    const emptyClips = audioClips - clipsBeforeEmpty;
+    const emptyStatus = String(elements.ttsStatus ? elements.ttsStatus.textContent : '');
+
     window.Audio = RealAudio;
     state.currentMessages[freshIndex].content = originalContent;
     state.settings.ttsEnabled = previous.enabled;
@@ -1462,6 +1531,8 @@ const TTS_STOP_SCRIPT = `(async () => {
         plainDrained: plainDrained,
         plainKeys: plainState.requests.map(r => Object.keys(r.body || {}).sort().join(',')),
         strictDrained: strictDrained, strictKeys: strictKeys, flaggedStrict: flaggedStrict, laterKeys: laterKeys,
+        opaqueDrained: opaqueDrained, opaqueKeys: opaqueKeys, flaggedOpaque: flaggedOpaque,
+        emptyDrained: emptyDrained, emptyClips: emptyClips, emptyStatus: emptyStatus,
     };
 })()`;
 
@@ -2101,6 +2172,14 @@ async function main() {
                     === JSON.stringify(['input,model,stream_format,voice', 'input,model,voice'])
                 && ttsStopResult.laterKeys.length === 2
                 && ttsStopResult.laterKeys.every(key => key === 'input,model,voice')],
+            ['読み上げ: 400 の本文に field 名が無いサーバーでも field を外して再生できる',
+                ttsStopResult.opaqueDrained === true && ttsStopResult.flaggedOpaque === true
+                && JSON.stringify(ttsStopResult.opaqueKeys)
+                    === JSON.stringify(['input,model,stream_format,voice', 'input,model,voice', 'input,model,voice'])],
+            ['読み上げ: SSE で音声が来ないサーバーは失敗として分かる（無音で終わらない）',
+                ttsStopResult.emptyDrained === true && ttsStopResult.emptyClips === 0
+                && /SSE/.test(ttsStopResult.emptyStatus)
+                && /音声が 1 つも届きませんでした/.test(ttsStopResult.emptyStatus)],
 
             ['TTS 接続確認ボタンの名称が「接続確認＆ボイス一覧取得」',
                 ttsVoicesResult.label === '接続確認＆ボイス一覧取得'],
