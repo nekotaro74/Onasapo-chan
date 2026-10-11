@@ -12030,7 +12030,7 @@ const dbUtils = {
                 const choices = this.choices;
                 if (!choices) return;
                 this.fillSelect(elements.comfyModelSelect, this.toOptions(choices.models, true), state.settings.comfyModel, '（未選択）');
-                this.fillSelect(elements.comfyVaeSelect, this.toOptions(choices.vaes, true), state.settings.comfyVae, '自動（指定しない）');
+                this.fillSelect(elements.comfyVaeSelect, this.toOptions(choices.vaes, true), state.settings.comfyVae, '（未選択）');
                 this.fillSelect(elements.comfyTextEncoderSelect, this.toOptions(choices.textEncoders, true), state.settings.comfyTextEncoder, '（未選択）');
                 this.fillSelect(elements.comfySamplerSelect, this.toOptions(choices.samplers), state.settings.comfySampler, '（未選択）');
                 this.fillSelect(elements.comfySchedulerSelect, this.toOptions(choices.schedulers), state.settings.comfyScheduler, '（未選択）');
