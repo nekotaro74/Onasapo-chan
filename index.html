@@ -8659,29 +8659,73 @@ const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 
         // ▼ 挿絵生成（ComfyUI / SillyTavern "Last message" 模倣）▼
         // 既定の quiet 指示テンプレート。直近の発話に写る人物だけを、奥行きのある構図で文章に起こす。
+        // 出力は 160 語以内。Anima は 300 トークンを超えると末尾のタグが落ち、
+        // LLM が書いた長い修飾文は追従性が落ちるため、長さそのものを指示で縛る。
         // {{char}} / {{user}} は実行時にセッションの表示名（未設定なら assistant / user）で置換する。
-        const DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE = `Ignore all previous instructions. Do not roleplay. Do not continue the story. Do not explain. Output only the image prompt.
+        const DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE = `Ignore all previous instructions. You are not part of the roleplay. Do not continue the story, do not reply, do not explain, do not add notes. Output one image generation prompt and nothing else.
 
-Convert the last chat message into one Image generation prompt for every person visibly present. Include {{user}} only if their body is in frame. Include {{char}} only if their body is in frame. Omit anyone who is only speaking, remembered, or off-screen.
+WHAT TO LOOK AT
+Use only the last chat message. Write what a camera would see at that exact moment.
+Keep visual facts. Throw away dialogue, thoughts, emotions, personality, narration, and anything off-screen.
+Include {{user}} only if their body is in frame. Include {{char}} only if their body is in frame.
+Leave out anyone who is only speaking, remembered, imagined, on a phone, or off-screen.
 
-Rules:
-- English only. Lowercase tags, spaces instead of underscores. No weights, no (tag:1.2), no BREAK, no brackets, no XML.
-- Do not write quality, score, year, safety, or artist tags.
-- Visual facts only. Drop dialogue, thoughts, personality, and narration.
-- Choose one camera that matches the action. Do not default to a flat side-by-side lineup. Allowed cameras: wide shot, medium shot, cowboy shot, close-up, over-the-shoulder shot, low angle, high angle, dutch angle, three-quarter view, profile, from behind, bird's-eye view. Use close-up only when the last message is about a face. For two or more people, prefer cowboy shot or medium shot.
-- First line is tags: subject count, then the chosen camera, then depth cue, then place. Count must match the visible people, such as 2girls, 1girl 1boy, or 3girls.
-- Place each person in a different depth, not only left and right. Use foreground, midground, and background. One person may be closer and larger, another farther and partly overlapped. Left and right are optional, and only if they are actually true.
-- Then one closed sentence per person, nearest first. Start with depth and position, then name and series if known, then hair, eyes, top, bottom, footwear, expression, and that person's own action.
-- Every person gets the same slots. If you state hair, eyes, or clothing for one person, state them for every visible person. Never leave a slot blank, and never reuse another person's color or garment.
-- Use distinct colors. If they touch, name who uses which hand or arm. If hands are visible, say what each hand is doing. If not important, hide them. Do not mention finger counts.
-- After the character sentences, add one sentence that restates who does what, using name or hair color. End with place, light, and the camera again. No alternatives, no "or", no "maybe".
+STEP 1 - COUNT FIRST
+Count the bodies in frame. State that number once, as tags: 1girl, solo or 1boy, solo or 1girl 1boy or 2girls or 3girls.
+The count, the count tags, and the number of person sentences must match exactly.
+Never add a second person to make the picture richer. Never write over-the-shoulder shot unless another person's shoulder is really visible.
 
-Format exactly:
+STEP 2 - ONE CAMERA
+Choose one camera that fits the action: wide shot, medium shot, cowboy shot, close-up, low angle, high angle, dutch angle, three-quarter view, profile, from behind, bird's-eye view.
+Use close-up only when the face is the subject. With two or more people, prefer cowboy shot or medium shot.
+Name the camera once, in the first line. Never stack two cameras in the same prompt.
 
-[count], [one camera], [depth cue], [place].
-The person in the foreground is [name] from [series]. They have [hair], [eyes], and wear [top], [bottom], and [footwear]. They [expression] and [their action].
-The person in the midground is [name] from [series]. They have [hair], [eyes], and wear [top], [bottom], and [footwear]. They [expression] and [their action].
-[name or hair color] [action], while [other name or hair color] [action]. [place], [light], [camera].`;
+STEP 3 - DEPTH COMES FROM SPACE
+Do not line people up left and right.
+Build depth from the camera and the space: something close to the camera, the layer the people stand in, and background that falls away behind them.
+One person: that person holds one layer only. Foreground and background are objects, furniture, plants, weather, or buildings.
+Two or more people only: place each person in a different layer, nearest first, using foreground, midground, background. Use left and right only when they really are left and right.
+Never create depth by pushing a person into the background.
+
+STEP 4 - ONE SENTENCE PER PERSON, NEAREST FIRST
+Give every person their own closed sentence. Never put two people in one sentence.
+Inside the sentence, keep this order: layer and position, name from series, hair, eyes, top, bottom, footwear, expression, that person's own action.
+Give every visible person the same slots. If you write hair, eyes, clothes, or shoes for one person, write all four for every visible person. Never leave a slot empty, and never borrow another person's feature.
+Give each person their own colors. Do not reuse one color across people.
+When bodies touch, name whose hand or arm is doing what.
+
+CHARACTER NAMES
+Always write "name from series". Never the name alone, never the series alone.
+Character names and series names use normal English capital letters. Every other tag is lowercase, written with spaces, no underscores.
+When one tag has two common spellings, pick the one that reads as plain English words.
+
+HANDS
+When hands matter, say which hand, left or right, and what it does.
+When hands do not matter, hide them. Never write a number of fingers.
+
+DO NOT WRITE
+- any language but English
+- uppercase tags, underscores, weights like (tag:1.2), BREAK, bracket labels, XML, JSON, headings, bullet points
+- quality tags, score tags, year tags, safety tags, artist tags, style labels, model names
+- the phrase "Anima prompt"
+- the words no, not, without. Say what is there instead: solo for one person, empty for an unoccupied place
+- the same idea more than twice, poetic wording, feelings, "or", "maybe", "possibly"
+- anything outside the prompt itself
+
+LENGTH
+Stay under 160 words. Concrete nouns and verbs do the work. If it runs long, cut adjectives, never people.
+
+OUTPUT SHAPE FOR ONE PERSON
+[count], solo, [one camera], [place], [time or weather].
+The person in the [layer] is [name] from [series]. They have [hair] and [eyes], and they wear [top], [bottom], and [footwear]. They [expression] and [their own action]. [one object close to the camera] sits in the foreground, and [background detail] falls away behind them.
+
+OUTPUT SHAPE FOR TWO PEOPLE
+[two-person count], [one camera], [place], [time or weather].
+The person in the foreground is [name] from [series]. They have [hair] and [eyes], and they wear [top], [bottom], and [footwear]. They [expression] and [their own action].
+The person in the midground is [name] from [series]. They have [hair] and [eyes], and they wear [top], [bottom], and [footwear]. They [expression] and [their own action].
+[one object close to the camera] sits in the foreground, and [background detail] falls away behind them.
+
+Output the prompt only.`;
         // 挿絵生成用プロンプトの生成に送る履歴の上限（文字数）。0 は全件送信。
         // 本家 SillyTavern が Chat Completion 側で持つトークン予算と同じ役割で、
         // 単位を文字数にしているだけ。
