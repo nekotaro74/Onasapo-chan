@@ -58,6 +58,12 @@ let voicesRequests = [];
 
 let lastPromptBody = null;
 let ttsRequests = [];
+// SSE もどき。送信できた chunk 数と、クライアントが切れた記録
+let ttsSseRequests = [];
+let ttsSseAborts = [];
+// stream_format を無視するサーバー / 400 で嫌うサーバー
+let ttsPlainRequests = [];
+let ttsStrictRequests = [];
 let historyPolls = 0;
 let promptPosts = 0;
 let objectInfoRequests = 0;
@@ -94,6 +100,100 @@ function createServer() {
         if (url.pathname === '/mock-tts/requests') {
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify(ttsRequests));
+            return;
+        }
+
+        // stream_format:"sse" の SSE もどき（Irodori 形）。1 文ぶんの audio_chunk を順に送り、
+        // クライアントが接続を閉じた時点で「送れた chunk 数」を記録する。
+        // 以降の chunk が送られていないこと = サーバー側の生成が止まったことの検証になる
+        if (url.pathname === '/mock-tts-sse/v1/audio/speech' && req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => { body += chunk; });
+            req.on('end', () => {
+                let parsed = null;
+                try { parsed = JSON.parse(body); } catch (_) { /* 非 JSON */ }
+                ttsSseRequests.push({ body: parsed, auth: req.headers['authorization'] || null });
+                res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+                const total = 3;
+                let sent = 0;
+                let aborted = false;
+                // req の close は本文を読み終えただけでも発火する。
+                // レスポンス側の close で、かつ writableEnded でないものだけをクライアント切断として記録する
+                res.on('close', () => {
+                    if (res.writableEnded || aborted) return;
+                    aborted = true;
+                    ttsSseAborts.push({ chunksSent: sent });
+                });
+                const sendNext = () => {
+                    if (aborted || !res.writable) return;
+                    if (sent >= total) {
+                        try {
+                            res.write(`event: done\ndata: {"chunks":${total}}\n\n`);
+                            res.end();
+                        } catch (_) { /* 切断済み */ }
+                        return;
+                    }
+                    const wav = makeWav(20).toString('base64');
+                    const data = { index: sent, text: `文${sent}`, format: 'wav', media_type: 'audio/wav', audio_base64: wav };
+                    try {
+                        res.write(`event: audio_chunk\ndata: ${JSON.stringify(data)}\n\n`);
+                    } catch (_) { /* 切断済み */ }
+                    sent++;
+                    setTimeout(sendNext, 200);
+                };
+                sendNext();
+            });
+            return;
+        }
+        if (url.pathname === '/mock-tts-sse/state') {
+            if (req.method === 'DELETE') { ttsSseRequests = []; ttsSseAborts = []; }
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ requests: ttsSseRequests, aborts: ttsSseAborts }));
+            return;
+        }
+
+        // stream_format を無視して音声を返すサーバー（Kokoro 形式）。1 本まとめての従来動作で再生できること
+        if (url.pathname === '/mock-tts-plain/v1/audio/speech' && req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => { body += chunk; });
+            req.on('end', () => {
+                let parsed = null;
+                try { parsed = JSON.parse(body); } catch (_) { /* 非 JSON */ }
+                ttsPlainRequests.push({ body: parsed });
+                res.setHeader('Content-Type', 'audio/wav');
+                res.end(makeWav(20));
+            });
+            return;
+        }
+        if (url.pathname === '/mock-tts-plain/state') {
+            if (req.method === 'DELETE') { ttsPlainRequests = []; }
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ requests: ttsPlainRequests }));
+            return;
+        }
+
+        // stream_format を 400 で嫌うサーバー。嫌ったら以後は field 無しで再送すること
+        if (url.pathname === '/mock-tts-strict/v1/audio/speech' && req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => { body += chunk; });
+            req.on('end', () => {
+                let parsed = null;
+                try { parsed = JSON.parse(body); } catch (_) { /* 非 JSON */ }
+                ttsStrictRequests.push({ body: parsed });
+                if (parsed && parsed.stream_format) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ detail: "stream_format must be 'sse' when specified." }));
+                    return;
+                }
+                res.setHeader('Content-Type', 'audio/wav');
+                res.end(makeWav(20));
+            });
+            return;
+        }
+        if (url.pathname === '/mock-tts-strict/state') {
+            if (req.method === 'DELETE') { ttsStrictRequests = []; }
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ requests: ttsStrictRequests }));
             return;
         }
 
@@ -1239,6 +1339,132 @@ const TTS_PLAY_SCRIPT = `(async () => {
     };
 })()`;
 
+// 読み上げ中の削除: 再生を止め、SSE サーバーには以降の文を作らせない。SSE 非対応サーバーのフォールバックも見る
+const TTS_STOP_SCRIPT = `(async () => {
+    const RealAudio = window.Audio;
+    let audioClips = 0;
+    let concurrent = 0;
+    let maxConcurrent = 0;
+    window.Audio = function (src) {
+        audioClips++;
+        const a = new RealAudio(src);
+        const origPlay = a.play.bind(a);
+        a.play = () => {
+            concurrent++;
+            if (concurrent > maxConcurrent) maxConcurrent = concurrent;
+            const done = () => { concurrent = Math.max(0, concurrent - 1); };
+            a.addEventListener('ended', done);
+            a.addEventListener('error', done);
+            return origPlay();
+        };
+        return a;
+    };
+
+    const drain = async () => {
+        let waited = 0;
+        while ((ttsUtils.queue.length > 0 || ttsUtils.playing) && waited < 10000) {
+            await new Promise(r => setTimeout(r, 50));
+            waited += 50;
+        }
+        return ttsUtils.queue.length === 0 && !ttsUtils.playing;
+    };
+    const readState = async (path) => await (await fetch(path)).json();
+
+    const previous = {
+        enabled: state.settings.ttsEnabled,
+        endpoint: state.settings.ttsEndpoint,
+        speakers: state.settings.ttsSpeakers,
+        disableDeleteConfirm: state.settings.disableDeleteMessageConfirmation,
+    };
+    state.settings.ttsEnabled = true;
+    state.settings.ttsMode = 'manual';
+    state.settings.ttsEndpoint = location.origin + '/mock-tts-sse/v1';
+    state.settings.ttsApiKey = 'mock-tts-key';
+    state.settings.ttsModel = 'mock-tts-model';
+    state.settings.ttsVoices = 'alloy, echo';
+    state.settings.ttsDefaultVoice = 'alloy';
+    state.settings.ttsGenericVoice = 'echo';
+    state.settings.ttsSpeakers = [{ name: 'まゆみ', voice: 'echo' }];
+    state.settings.ttsNarrateDialogueOnly = false;
+    state.settings.ttsRegexEnabled = false;
+    state.settings.ttsSpeed = 1;
+    state.settings.disableDeleteMessageConfirmation = true;
+    ttsUtils.sseUnsupportedEndpoints.clear();
+    ttsUtils.stopAll();
+
+    const modelIndex = state.currentMessages.findIndex(m => m.role === 'model');
+    const originalContent = state.currentMessages[modelIndex].content;
+
+    // 1. SSE で 1 文ずつ受け取り、重ねずに順に鳴らす
+    await fetch('/mock-tts-sse/state', { method: 'DELETE' });
+    state.currentMessages[modelIndex].content = 'まゆみ「いち」';
+    const sseDrained = await (async () => {
+        ttsUtils.enqueueMessage(modelIndex, false);
+        return await drain();
+    })();
+    const sseState = await readState('/mock-tts-sse/state');
+    const sseKeySets = Array.from(new Set(sseState.requests.map(r => Object.keys(r.body || {}).sort().join(','))));
+    const sseClips = audioClips;
+    // 削除で pause した音声は ended が発火しないので、重ねていないことは削除前に測る
+    const sseMaxConcurrent = maxConcurrent;
+
+    // 2. 読み上げ中に削除 → 再生が止まり、サーバーは以降の文を送ってこない
+    await fetch('/mock-tts-sse/state', { method: 'DELETE' });
+    audioClips = 0;
+    state.currentMessages[modelIndex].content = 'まゆみ「いち」';
+    ttsUtils.enqueueMessage(modelIndex, false);
+    let waited = 0;
+    while (audioClips === 0 && waited < 8000) { await new Promise(r => setTimeout(r, 50)); waited += 50; }
+    const startedPlaying = audioClips > 0;
+    await appLogic.deleteMessage(modelIndex);
+    const stoppedAtDelete = ttsUtils.playing === false && ttsUtils.queue.length === 0;
+    const clipsAtDelete = audioClips;
+    await new Promise(r => setTimeout(r, 900));   // 以降の chunk が送られてこないか見る
+    const sseAfterDelete = await readState('/mock-tts-sse/state');
+    const clipsAfterDelete = audioClips;
+
+    // 3. stream_format を無視するサーバー（Kokoro 形式）は 1 本まとめてで再生できる
+    await fetch('/mock-tts-plain/state', { method: 'DELETE' });
+    state.settings.ttsEndpoint = location.origin + '/mock-tts-plain/v1';
+    state.currentMessages.push({ role: 'model', content: 'まゆみ「いち」', timestamp: Date.now() });
+    const freshIndex = state.currentMessages.length - 1;
+    ttsUtils.enqueueMessage(freshIndex, false);
+    const plainDrained = await drain();
+    const plainState = await readState('/mock-tts-plain/state');
+
+    // 4. stream_format を 400 で嫌うサーバーは、field を外して送り直し、以後付けない
+    await fetch('/mock-tts-strict/state', { method: 'DELETE' });
+    state.settings.ttsEndpoint = location.origin + '/mock-tts-strict/v1';
+    ttsUtils.enqueueMessage(freshIndex, false);
+    const strictDrained = await drain();
+    const strictState = await readState('/mock-tts-strict/state');
+    const strictKeys = strictState.requests.map(r => Object.keys(r.body || {}).sort().join(','));
+    const flaggedStrict = ttsUtils.sseUnsupportedEndpoints.has(location.origin + '/mock-tts-strict/v1/audio/speech');
+    state.currentMessages[freshIndex].content = 'まゆみ「いち」\\n\\nまゆみ「に」';
+    ttsUtils.enqueueMessage(freshIndex, false);
+    await drain();
+    const strictState2 = await readState('/mock-tts-strict/state');
+    const laterKeys = strictState2.requests.slice(strictKeys.length).map(r => Object.keys(r.body || {}).sort().join(','));
+
+    window.Audio = RealAudio;
+    state.currentMessages[freshIndex].content = originalContent;
+    state.settings.ttsEnabled = previous.enabled;
+    state.settings.ttsEndpoint = previous.endpoint;
+    state.settings.ttsSpeakers = previous.speakers;
+    state.settings.disableDeleteMessageConfirmation = previous.disableDeleteConfirm;
+    ttsUtils.stopAll();
+
+    return {
+        sseDrained: sseDrained, sseClips: sseClips, sseKeySets: sseKeySets, sseMaxConcurrent: sseMaxConcurrent,
+        startedPlaying: startedPlaying, stoppedAtDelete: stoppedAtDelete,
+        clipsAtDelete: clipsAtDelete, clipsAfterDelete: clipsAfterDelete,
+        sseAborts: sseAfterDelete.aborts, sseRequestsAfterDelete: sseAfterDelete.requests.length,
+        plainDrained: plainDrained,
+        plainKeys: plainState.requests.map(r => Object.keys(r.body || {}).sort().join(',')),
+        strictDrained: strictDrained, strictKeys: strictKeys, flaggedStrict: flaggedStrict, laterKeys: laterKeys,
+    };
+})()`;
+
 // 送信前編集: オンのときだけ初回生成後に編集でき、キャンセルなら送らない
 const EDIT_PROMPT_SCRIPT = `(async () => {
     state.settings.illustrationEnabled = true;
@@ -1650,6 +1876,7 @@ async function main() {
         const footerResult = await evaluate(FOOTER_BUTTON_SCRIPT);
         const ttsUiResult = await evaluate(TTS_UI_SCRIPT);
         const ttsPlayResult = await evaluate(TTS_PLAY_SCRIPT);
+        const ttsStopResult = await evaluate(TTS_STOP_SCRIPT);
         const ttsVoicesResult = await evaluate(TTS_VOICES_SCRIPT);
         const editResult = await evaluate(EDIT_PROMPT_SCRIPT);
         const streamScrollResult = await evaluate(STREAM_SCROLL_SCRIPT);
@@ -1835,8 +2062,9 @@ async function main() {
             ['応答ごとにメガホンボタンが付く', ttsUiResult.megaphoneForModel === true],
 
             ['読み上げ: audio/speech へ実際に送る', ttsPlayResult.requestCount === 2 && ttsPlayResult.drained === true],
-            ['読み上げ: body は model / voice / input のみ',
-                JSON.stringify(ttsPlayResult.keySets) === JSON.stringify(['input,model,voice'])],
+            // 受信を SSE にしたため、body は model / voice / input に stream_format を添える
+            ['読み上げ: body は model / voice / input に stream_format を添える',
+                JSON.stringify(ttsPlayResult.keySets) === JSON.stringify(['input,model,stream_format,voice'])],
             ['読み上げ: model 名を送る', ttsPlayResult.models[0] === 'mock-tts-model'],
             ['読み上げ: APIキーを Bearer で送る', ttsPlayResult.auths[0] === 'Bearer mock-tts-key'],
             ['読み上げ: 話者ごとにボイスを切り替える',
@@ -1852,6 +2080,27 @@ async function main() {
                 ttsPlayResult.corsAlerts.length === 1
                 && /CORS/.test(ttsPlayResult.corsAlerts[0])
                 && /TTS サーバーに届きませんでした/.test(ttsPlayResult.corsAlerts[0])],
+
+            // SSE 受信と、削除時の停止（PWA 側とサーバー側の両方）
+            ['読み上げ: SSE で 1 文ずつ受け取り、重ねずに順に鳴らす',
+                ttsStopResult.sseDrained === true && ttsStopResult.sseClips === 3 && ttsStopResult.sseMaxConcurrent === 1],
+            ['読み上げ: SSE を送るとき body に stream_format が入る',
+                JSON.stringify(ttsStopResult.sseKeySets) === JSON.stringify(['input,model,stream_format,voice'])],
+            ['読み上げ: 削除した時点で再生が止まる',
+                ttsStopResult.startedPlaying === true && ttsStopResult.stoppedAtDelete === true],
+            ['読み上げ: 削除後は新しい音声が再生されない',
+                ttsStopResult.clipsAfterDelete === ttsStopResult.clipsAtDelete],
+            ['読み上げ: 削除で接続を切るとサーバーは以降の文を合成しない',
+                ttsStopResult.sseAborts.length === 1 && ttsStopResult.sseAborts[0].chunksSent < 3],
+            ['読み上げ: stream_format を無視するサーバーは 1 本まとめてで再生できる',
+                ttsStopResult.plainDrained === true
+                && JSON.stringify(ttsStopResult.plainKeys) === JSON.stringify(['input,model,stream_format,voice'])],
+            ['読み上げ: stream_format を嫌うサーバーは field を外して送り直し、以後付けない',
+                ttsStopResult.strictDrained === true && ttsStopResult.flaggedStrict === true
+                && JSON.stringify(ttsStopResult.strictKeys)
+                    === JSON.stringify(['input,model,stream_format,voice', 'input,model,voice'])
+                && ttsStopResult.laterKeys.length === 2
+                && ttsStopResult.laterKeys.every(key => key === 'input,model,voice')],
 
             ['TTS 接続確認ボタンの名称が「接続確認＆ボイス一覧取得」',
                 ttsVoicesResult.label === '接続確認＆ボイス一覧取得'],

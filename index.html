@@ -12864,65 +12864,216 @@ const dbUtils = {
                     + ' GitHub Pages 上の公開オリジンからは、利用者自身のローカルや Tailscale のサーバーへは届かない場合があります。';
             },
 
-            async synthesize(text, voice) {
+            // audio/speech を叩く共通部分。synthesize と streamSpeech が同じ検証・同じヘッダーを使う
+            speechRequestBase() {
                 const settings = state.settings;
                 const url = this.normalizeEndpoint(settings.ttsEndpoint);
                 if (!url) throw new Error('TTS のエンドポイントが設定されていません。');
                 if (!String(settings.ttsModel || '').trim()) throw new Error('TTS のモデル名が設定されていません。');
-                if (!String(voice || '').trim()) throw new Error('読み上げに使うボイスが設定されていません。');
                 const apiKey = String(settings.ttsApiKey || '').trim();
-
                 const headers = { 'Content-Type': 'application/json' };
                 if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+                return {
+                    url: url,
+                    headers: headers,
+                    model: String(settings.ttsModel || '').trim(),
+                };
+            },
 
-                let response;
-                try {
-                    response = await fetch(url, {
-                        method: 'POST',
-                        headers,
-                        body: JSON.stringify({
-                            model: String(settings.ttsModel || '').trim(),
-                            voice,
-                            input: text,
-                        }),
-                    });
-                } catch (error) {
-                    throw new Error(this.corsErrorMessage(error));
-                }
-
-                if (!response.ok) {
-                    let detail = '';
-                    try { detail = (await response.text()).slice(0, 300); } catch (_) { /* 本文なし */ }
-                    throw new Error(`TTS サーバーがエラーを返しました (HTTP ${response.status})${detail ? `: ${detail}` : ''}`);
-                }
+            // 1 発 POST で音声バイトをまとめて受け取る経路（テスト再生はこれを使う）
+            async synthesize(text, voice, signal) {
+                if (!String(voice || '').trim()) throw new Error('読み上げに使うボイスが設定されていません。');
+                const base = this.speechRequestBase();
+                const response = await this.postSpeech(base, {
+                    model: base.model,
+                    voice,
+                    input: text,
+                }, signal);
                 const blob = await response.blob();
                 if (!blob || blob.size === 0) throw new Error('TTS から返された音声空でした。');
                 return URL.createObjectURL(blob);
             },
 
+            // POST までをまとめて、HTTP エラーは同じ文言で投げる
+            async postSpeech(base, body, signal) {
+                let response;
+                try {
+                    response = await fetch(base.url, {
+                        method: 'POST',
+                        headers: base.headers,
+                        body: JSON.stringify(body),
+                        signal: signal,
+                    });
+                } catch (error) {
+                    // 停止で切ったものは CORS の失敗として扱わない（呼び出し側で generation を見る）
+                    if (error && error.name === 'AbortError') throw error;
+                    throw new Error(this.corsErrorMessage(error));
+                }
+                if (!response.ok) {
+                    let detail = '';
+                    try { detail = (await response.text()).slice(0, 300); } catch (_) { /* 本文なし */ }
+                    const httpError = new Error(`TTS サーバーがエラーを返しました (HTTP ${response.status})${detail ? `: ${detail}` : ''}`);
+                    httpError.status = response.status;
+                    httpError.detail = detail;
+                    throw httpError;
+                }
+                return response;
+            },
+
+            // ── SSE（文ごとに届く音声）──────────────────────
+            // Irodori TTS Server は stream_format:"sse" で 1 文ぶんの audio_chunk を順に返し、
+            // クライアントが接続を閉すと**まだ合成していない文を作らない**。
+            // 中止用 API は無いので、サーバー側へ生成を止める指示はこれしかない。
+            // stream_format を知らないサーバー（Kokoro 形式など）はそのまま音声を返すか 400 にする。
+            // 400 で弾かれたエンドポイントはメモリ上に覚えて、以後は 1 発 POST で送る。
+            sseUnsupportedEndpoints: new Set(),
+
+            // 受信バッファから、空行で区切られた完成済みのフレームだけを取り出す。
+            // 途中で切れた残りは next に返して次の受信と連結する（1 回の受信に複数フレームあってもよい）
+            splitSseFrames(buffer) {
+                const source = String(buffer || '');
+                const frames = [];
+                const delimiter = /\r?\n\r?\n/g;
+                let cut = 0;
+                let match;
+                while ((match = delimiter.exec(source)) !== null) {
+                    frames.push(source.slice(cut, match.index));
+                    cut = match.index + match[0].length;
+                }
+                return { frames: frames, next: source.slice(cut) };
+            },
+
+            // 1 フレームを event 名と data に分ける。data が JSON で読めなければ null
+            parseSseFrame(frame) {
+                let event = 'message';
+                const dataLines = [];
+                for (const line of String(frame || '').split(/\r?\n/)) {
+                    if (!line || line.startsWith(':')) continue;      // 空行とコメント行
+                    const colon = line.indexOf(':');
+                    const field = colon === -1 ? line : line.slice(0, colon);
+                    let value = colon === -1 ? '' : line.slice(colon + 1);
+                    if (value.startsWith(' ')) value = value.slice(1);
+                    if (field === 'event') event = value;
+                    else if (field === 'data') dataLines.push(value);
+                }
+                if (!dataLines.length) return null;
+                let data = null;
+                try { data = JSON.parse(dataLines.join('\n')); } catch (_) { return null; }
+                return { event: event, data: data };
+            },
+
+            base64ToBlob(base64Text, mediaType) {
+                const binary = atob(String(base64Text || ''));
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                return new Blob([bytes], { type: mediaType || 'audio/wav' });
+            },
+
+            // フレームを 1 本処理する。audio_chunk は object URL にして onAudioUrl へ渡す。
+            // error イベントはここで投げる（done とそれ以外は無視）
+            handleSseFrame(frame, onAudioUrl) {
+                const parsed = this.parseSseFrame(frame);
+                if (!parsed) return;
+                if (parsed.event === 'error') {
+                    const detail = parsed.data && parsed.data.error ? parsed.data.error.message : '';
+                    throw new Error(detail || 'TTS サーバーがエラーを送りました。');
+                }
+                if (parsed.event !== 'audio_chunk') return;
+                const data = parsed.data || {};
+                if (!data.audio_base64) return;
+                onAudioUrl(URL.createObjectURL(this.base64ToBlob(data.audio_base64, data.media_type)));
+            },
+
+            // 音声断片を 1 本ずつ onAudioUrl(objectUrl) で受け取る。受け取り終りで解決。
+            // 停止による切断は AbortError をそのまま投げる（呼び出し側で失敗にしない）
+            async streamSpeech(text, voice, onAudioUrl, signal) {
+                if (!String(voice || '').trim()) throw new Error('読み上げに使うボイスが設定されていません。');
+                const base = this.speechRequestBase();
+                const wantSse = !this.sseUnsupportedEndpoints.has(base.url);
+                const buildBody = (withStreamFormat) => {
+                    const body = { model: base.model, voice, input: text };
+                    if (withStreamFormat) body.stream_format = 'sse';
+                    return body;
+                };
+
+                let response;
+                try {
+                    response = await this.postSpeech(base, buildBody(wantSse), signal);
+                } catch (error) {
+                    // stream_format を嫌うサーバーは 400/422。本文に field 名が現れたら 1 発 POST でやり直す
+                    const rejected = (error.status === 400 || error.status === 422)
+                        && /stream_format/i.test(String(error.detail || ''));
+                    if (!rejected || !wantSse) throw error;
+                    this.sseUnsupportedEndpoints.add(base.url);
+                    response = await this.postSpeech(base, buildBody(false), signal);
+                }
+
+                const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+                if (!contentType.includes('text/event-stream')) {
+                    // サーバーが stream_format を無視して音声バイトを返した。従来どおり 1 本で受け取る
+                    const blob = await response.blob();
+                    if (!blob || blob.size === 0) throw new Error('TTS から返された音声空でした。');
+                    onAudioUrl(URL.createObjectURL(blob));
+                    return;
+                }
+                if (!response.body || typeof response.body.getReader !== 'function') {
+                    // 分割読み取りに非対応のブラウザは本文全体をまとめてパースする
+                    const tail = await response.text();
+                    const split = this.splitSseFrames(`${tail}\n\n`);
+                    for (const frame of split.frames) this.handleSseFrame(frame, onAudioUrl);
+                    return;
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                while (true) {
+                    const chunk = await reader.read();
+                    if (chunk.done) break;
+                    buffer += decoder.decode(chunk.value, { stream: true });
+                    const split = this.splitSseFrames(buffer);
+                    buffer = split.next;
+                    for (const frame of split.frames) this.handleSseFrame(frame, onAudioUrl);
+                }
+                buffer += decoder.decode();
+                if (buffer.trim()) {
+                    const split = this.splitSseFrames(`${buffer}\n\n`);
+                    for (const frame of split.frames) this.handleSseFrame(frame, onAudioUrl);
+                }
+            },
+
             // ── 再生キュー ──────────────────────────────────
             queue: [],
             currentAudio: null,
+            currentJob: null,          // 再生中の job。削除した応答の分だけ止めるのに使う
             playing: false,
             generation: 0,   // 停止のたびに増やし、実行中の取得結果を捨てる
             lastManual: false,
+            // 送信中のリクエスト。停止時に abort してサーバー側の合成も止める
+            inflightControllers: new Set(),
+            // 再生中の音声を停止から起こす関数（pause すると play() が止まらないため）
+            currentClipSettler: null,
 
             // manual = ボタン発。失敗時に設定欄だけでなくダイアログでも案内する
             enqueueMessage(index, manual) {
                 const message = state.currentMessages[index];
                 if (!message || message.role !== 'model') return 0;
-                return this.enqueueText(message.content, manual);
+                return this.enqueueText(message.content, manual, message);
             },
 
-            // 渡された文章を段落順に分解してキューへ足す。追加した chunk 数を返す
-            enqueueText(rawText, manual) {
+            // 渡された文章を段落順に分解してキューへ足す。追加した chunk 数を返す。
+            // message はどの応答の断片か（削除時にこれを見て止める）。
+            // collect を渡すと、作った job を呼び出し側でも保持できる（後から message を付けるため）
+            enqueueText(rawText, manual, message, collect) {
                 this.lastManual = !!manual;
                 const segments = this.buildSegments(rawText);
                 if (!segments.length) return 0;
                 let added = 0;
                 for (const segment of segments) {
                     for (const chunk of this.chunkText(segment.text)) {
-                        this.queue.push({ text: chunk, voice: segment.voice });
+                        const job = { text: chunk, voice: segment.voice, message: message || null };
+                        this.queue.push(job);
+                        if (collect) collect.push(job);
                         added++;
                     }
                 }
@@ -12932,10 +13083,22 @@ const dbUtils = {
 
             // ── 受信しながらの段落送り ──────────────────────
             // fed = 送信済みの原文（先頭から）。suppressed = 停止で以後送らない
+            // message / jobRefs = 読み上げている応答。送信開始時はメッセージオブジェクトがまだ無いので、
+            // 作った job を jobRefs に覚えておき、応答が確定してから attachStreamMessage で付ける
             stream: null,
 
-            beginStream() {
-                this.stream = { fed: '', suppressed: false };
+            beginStream(message) {
+                this.stream = { fed: '', suppressed: false, message: message || null, jobRefs: [] };
+            },
+
+            // 受信しながら送った job に応答参照を後から付ける（削除時に止めるため）
+            attachStreamMessage(message) {
+                if (!this.stream || !message) return;
+                this.stream.message = message;
+                for (const job of (this.stream.jobRefs || [])) {
+                    if (!job.message) job.message = message;
+                }
+                this.stream.jobRefs = [];
             },
 
             // 受信済みの本文から、確定した段落だけをキューへ送る。
@@ -12954,7 +13117,7 @@ const dbUtils = {
                 if (endOffset <= this.stream.fed.length) return 0;
                 const piece = source.slice(this.stream.fed.length, endOffset);
                 this.stream.fed = source.slice(0, endOffset);
-                return this.enqueueText(piece, manual);
+                return this.enqueueText(piece, manual, this.stream.message, this.stream.jobRefs);
             },
 
             // 受信完了。末尾の未完了段落も含めて残りを送る（停止済みなら送らない）
@@ -12972,54 +13135,113 @@ const dbUtils = {
                 if (from >= source.length) return 0;
                 const piece = source.slice(from);
                 this.stream.fed = source;
-                return this.enqueueText(piece, manual);
+                return this.enqueueText(piece, manual, this.stream.message, this.stream.jobRefs);
             },
 
-            // 再生はキューで順に鳴らし、重ねない
-            async pump() {
-                if (this.playing) return;
-                const job = this.queue.shift();
-                if (!job) { this.updateStatus(''); return; }
-                this.playing = true;
-                const generation = this.generation;
-                try {
-                    const objectUrl = await this.synthesize(job.text, job.voice);
-                    if (generation !== this.generation) {
-                        URL.revokeObjectURL(objectUrl);
-                        this.playing = false;
-                        return;
-                    }
+            // 音声 1 本を鳴らし終るまで待つ。重ねない。
+            // 停止で pause されると play() は AbortError になるが、generation が変わっていれば中断とみなす
+            playClip(objectUrl, generation) {
+                return new Promise((resolve, reject) => {
                     const audio = new Audio(objectUrl);
                     const speed = Number(state.settings.ttsSpeed);
                     if (isFinite(speed) && speed > 0) {
                         audio.playbackRate = Math.min(4, Math.max(0.25, speed));
                         try { audio.preservesPitch = true; } catch (_) { /* 未対応ブラウザあり */ }
                     }
-                    this.currentAudio = audio;
-                    this.updateStatus(`読み上げ中…（残り ${this.queue.length} 件）`);
-                    audio.onended = audio.onerror = () => {
-                        URL.revokeObjectURL(objectUrl);
+                    const settle = (error) => {
                         if (this.currentAudio === audio) this.currentAudio = null;
-                        this.playing = false;
-                        if (generation === this.generation) this.pump();
+                        if (this.currentClipSettler === settle) this.currentClipSettler = null;
+                        URL.revokeObjectURL(objectUrl);
+                        if (error) reject(error); else resolve();
                     };
-                    await audio.play();
-                } catch (error) {
+                    audio.onended = () => settle(null);
+                    audio.onerror = () => settle(null);
+                    this.currentAudio = audio;
+                    // stopPlayback() はこの settle を呼んで待ちを解放する
+                    this.currentClipSettler = () => settle(null);
+                    audio.play().then(() => {
+                        this.updateStatus(`読み上げ中…（残り ${this.queue.length} 件）`);
+                    }).catch((error) => {
+                        settle(generation === this.generation ? error : null);
+                    });
+                });
+            },
+
+            // job 1 件ぶんを受け取り、届いた音声断片を順に鳴らす。
+            // 受信は再生を待たずに先へ進む（サーバーの合成を止めないため）。再生は重ねない。
+            async playJob(job, generation, controller) {
+                const received = [];      // 受信済みで未再生の object URL
+                let streamError = null;
+                let streamDone = false;
+                let wake = null;          // 再生待ちのループを起こす
+
+                const receiving = this.streamSpeech(job.text, job.voice, (objectUrl) => {
+                    if (generation !== this.generation) { URL.revokeObjectURL(objectUrl); return; }
+                    received.push(objectUrl);
+                    if (wake) { const resume = wake; wake = null; resume(); }
+                }, controller.signal).catch((error) => {
+                    // 停止で切ったものは失敗にしない
+                    if (error && error.name === 'AbortError') return;
+                    streamError = error;
+                }).finally(() => {
+                    streamDone = true;
+                    if (wake) { const resume = wake; wake = null; resume(); }
+                });
+
+                while (true) {
+                    if (generation !== this.generation) break;
+                    if (received.length) {
+                        await this.playClip(received.shift(), generation);
+                        continue;
+                    }
+                    if (streamDone || streamError) break;
+                    await new Promise((resume) => { wake = resume; });
+                }
+                // 停止時は鳴らし残した音声も破棄する
+                while (received.length) URL.revokeObjectURL(received.shift());
+                await receiving;
+                if (streamError && generation === this.generation) throw streamError;
+            },
+
+            // 再生はキューで順に鳴らし、重ねない。1 件ぶんは SSE なら複数断片届く
+            async pump() {
+                if (this.playing) return;
+                const job = this.queue.shift();
+                if (!job) { this.updateStatus(''); return; }
+                this.playing = true;
+                this.currentJob = job;
+                const generation = this.generation;
+                const controller = new AbortController();
+                this.inflightControllers.add(controller);
+                try {
+                    await this.playJob(job, generation, controller);
+                    // 停止済みなら playing は stopPlayback が落としている。触らない（後続の再生と競う）
+                    if (generation !== this.generation) return;
                     this.playing = false;
-                    this.currentAudio = null;
+                    this.currentJob = null;
+                    this.pump();
+                } catch (error) {
+                    if (generation !== this.generation) return;   // 停止による中断を失敗として出さない
+                    this.playing = false;
+                    this.currentJob = null;
                     this.queue.length = 0;
                     this.updateStatus(`読み上げに失敗: ${error.message}`, true);
                     console.error('[TTS]', error);
                     // 挿絵生成と同じく、CORS 系の失敗は対処法をそのまま出す
                     if (this.lastManual) uiUtils.showCustomAlert(`読み上げに失敗しました: ${error.message}`);
+                } finally {
+                    this.inflightControllers.delete(controller);
                 }
             },
 
-            // 停止はキューを破棄し、まだ TTS へ送っていない段落も破棄する
-            stopAll() {
+            // 再生中の音声を止め、送信中のリクエストを abort する。
+            // Irodori は接続が閉じた時点で**まだ合成していない文を作らない**（サーバー側への停止指示はこれ）
+            stopPlayback() {
                 this.generation++;
-                this.queue.length = 0;
-                if (this.stream) this.stream.suppressed = true;
+                for (const controller of this.inflightControllers) {
+                    try { controller.abort(); } catch (_) { /* すでに完了済み */ }
+                }
+                this.inflightControllers.clear();
                 if (this.currentAudio) {
                     try {
                         this.currentAudio.onended = null;
@@ -13029,8 +13251,41 @@ const dbUtils = {
                     if (this.currentAudio.src) URL.revokeObjectURL(this.currentAudio.src);
                     this.currentAudio = null;
                 }
+                // pause しただけでは playClip の待ちが残るので起こす
+                if (this.currentClipSettler) {
+                    const settle = this.currentClipSettler;
+                    this.currentClipSettler = null;
+                    settle();
+                }
                 this.playing = false;
+                this.currentJob = null;
+            },
+
+            // 停止はキューを破棄し、まだ TTS へ送っていない段落も破棄する
+            stopAll() {
+                this.stopPlayback();
+                this.queue.length = 0;
+                if (this.stream) this.stream.suppressed = true;
                 this.updateStatus('停止しました');
+            },
+
+            // 指定した応答の読み上げだけ止める。別の応答の再生はそのまま続ける
+            stopForMessages(messages) {
+                const targets = (Array.isArray(messages) ? messages : [messages]).filter(Boolean);
+                if (!targets.length) return false;
+                const isTarget = (job) => !!job && targets.indexOf(job.message) !== -1;
+                let stopped = false;
+                for (let i = this.queue.length - 1; i >= 0; i--) {
+                    if (isTarget(this.queue[i])) { this.queue.splice(i, 1); stopped = true; }
+                }
+                if (isTarget(this.currentJob)) {
+                    this.stopPlayback();
+                    stopped = true;
+                }
+                if (!stopped) return false;
+                this.updateStatus('この応答の読み上げを中止しました');
+                if (!this.playing) this.pump();   // 別の応答の残りがあれば続ける
+                return true;
             },
 
             // isOk は接続確認の成功（挿絵生成側の「接続OK」と同じ色）。既存の 2 引数呼び出しはそのまま通る
@@ -19831,6 +20086,8 @@ helpIcons.forEach(icon => {
                 uiUtils.showScreen('chat');
             },
             startNewChat() {
+                // 前のチャットの読み上げを続けない（新規・最終メッセージ削除後・セッション削除後もここを通る）
+                ttsUtils.stopAll();
                 state.currentChatId = null;
                 state.currentMessages = [];
                 state.currentChatBaseUrl = null;
@@ -19883,6 +20140,9 @@ helpIcons.forEach(icon => {
                     state.pendingAttachments = [];
                     uiUtils.updateAttachmentBadgeVisibility();
                 }
+
+                // 別のチャットへ移るので、前の応答の読み上げはここで止める
+                ttsUtils.stopAll();
 
                 try {
                     const chat = await dbUtils.getChat(id);
@@ -20293,6 +20553,8 @@ helpIcons.forEach(icon => {
                 if (!state.settings.ttsEnabled) return;
                 const message = state.currentMessages[index];
                 if (!message || message.role !== 'model') return;
+                // 受信しながらキューへ入れた分にも応答参照を付ける（削除時に止めるため）
+                ttsUtils.attachStreamMessage(message);
                 ttsUtils.finishStream(message.content, false);
             },
             stopTts() {
@@ -22954,6 +23216,7 @@ newSettings.footerTapScrollToBottom = elements.footerTapScrollToBottomToggle.che
             async confirmClearAllData() {
                 const confirmed = await uiUtils.showCustomConfirm("本当にすべてのデータ（チャット履歴と設定）を削除しますか？この操作は元に戻せません。");
                 if (confirmed) {
+                    ttsUtils.stopAll();
                     try {
                         uiUtils.revokeExistingObjectUrl();
                         uiUtils.revokeExistingIconUrls();
@@ -22975,6 +23238,7 @@ newSettings.footerTapScrollToBottom = elements.footerTapScrollToBottomToggle.che
             async confirmClearAllHistory() {
                 const confirmed = await uiUtils.showCustomConfirm("本当にすべてのチャット履歴を削除しますか？\nこの操作は元に戻せません。設定は保持されます。");
                 if (confirmed) {
+                    ttsUtils.stopAll();
                     try {
                         await dbUtils.clearAllChatsStore();
                         await uiUtils.showCustomAlert("すべてのチャット履歴が削除されました。画面をリロードします。");
@@ -23372,6 +23636,9 @@ newSettings.footerTapScrollToBottom = elements.footerTapScrollToBottomToggle.che
                 if (confirmedDelete) {
                     const originalFirstUserMsgIndex = state.currentMessages.findIndex(m => m.role === 'user');
 
+                    // 読み上げ中なら削除を確定したこの場で止める（splice や保存より先。送信中のリクエストも abort する）
+                    ttsUtils.stopForMessages(indicesToDelete.map(idx => state.currentMessages[idx]));
+
                     indicesToDelete.sort((a, b) => b - a).forEach(idx => {
                         state.currentMessages.splice(idx, 1);
                         state.messageCollapsedStates.delete(idx);
@@ -23517,6 +23784,8 @@ newSettings.footerTapScrollToBottom = elements.footerTapScrollToBottomToggle.che
                             state.messageCollapsedStates.delete(i);
                             state.thoughtSummaryOpenStates.delete(i);
                         }
+                        // 未来側へ捨てられる応答の読み上げを止める（残る応答は読み続けさせる）
+                        ttsUtils.stopForMessages(state.currentMessages.slice(deleteStartIndex));
                         state.currentMessages.splice(deleteStartIndex);
                     }
 
@@ -23629,6 +23898,9 @@ newSettings.footerTapScrollToBottom = elements.footerTapScrollToBottomToggle.che
                 if (confirmed) {
                     const wasSelected = msgToDelete.isSelected;
                     const groupId = msgToDelete.siblingGroupId;
+
+                    // この応答の読み上げを止める（他の応答を読んでいればそのまま続ける）
+                    ttsUtils.stopForMessages(msgToDelete);
 
                     state.currentMessages.splice(indexToDelete, 1);
                     state.messageCollapsedStates.delete(indexToDelete);

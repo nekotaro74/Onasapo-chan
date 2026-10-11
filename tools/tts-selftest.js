@@ -343,5 +343,68 @@ check('手動読み上げは先頭の段落から同じ順', ttsUtils.enqueueMes
 check('キューの中身は段落順', ttsUtils.queue.map(j => j.text), ['あ', 'い', 'う']);
 ttsUtils.queue.length = 0;
 
+// ── job はどの応答の断片か持つ（削除時に止めるため）──────
+feedReset();
+const msgA = { role: 'model', content: 'まゆみ「あ」\n\nまゆみ「い」' };
+const msgB = { role: 'model', content: 'れな「う」' };
+state.currentMessages = [msgA, msgB];
+ttsUtils.enqueueMessage(0, true);
+ttsUtils.enqueueMessage(1, true);
+check('job は応答参照を持つ', ttsUtils.queue.map(j => j.message === msgA), [true, true, false]);
+check('A だけ止めたと返る', ttsUtils.stopForMessages(msgA), true);
+check('残るのは B の断片だけ', ttsUtils.queue.map(j => j.text), ['う']);
+check('該当が無ければ false', ttsUtils.stopForMessages(msgA), false);
+check('配列でも受け取る', ttsUtils.stopForMessages([msgB]), true);
+check('キューは空', ttsUtils.queue.length, 0);
+
+// 受信しながら送った分は、応答が確定してから参照を付ける
+feedReset();
+ttsUtils.feedStream('まゆみ「あ」\n\nまゆみ「い」');
+check('付けられる前は参照なし', ttsUtils.queue.map(j => j.message), [null]);
+const msgC = { role: 'model', content: 'まゆみ「あ」\n\nまゆみ「い」' };
+ttsUtils.attachStreamMessage(msgC);
+check('受信しながら送った分にも応答を付ける', ttsUtils.queue.map(j => j.message === msgC), [true]);
+check('その応答を止められる', ttsUtils.stopForMessages(msgC), true);
+check('キューは空', ttsUtils.queue.length, 0);
+
+// ── 停止は送信中のリクエストも切る（サーバー側の合成も止める）──
+let aborted = 0;
+feedReset();
+ttsUtils.inflightControllers.add({ abort: () => { aborted++; } });
+ttsUtils.inflightControllers.add({ abort: () => { aborted++; } });
+ttsUtils.queue.push({ text: 'あ', voice: 'echo', message: null });
+ttsUtils.stopAll();
+check('stopAll は送信中の fetch をすべて abort', aborted, 2);
+check('abort 後は追跡を空にする', ttsUtils.inflightControllers.size, 0);
+check('キューも破棄', ttsUtils.queue.length, 0);
+
+// ── SSE（Irodori が 1 文ずつ返す形）─────────────────────
+check('空行でフレームを分ける', ttsUtils.splitSseFrames('a\n\nb\n\nc').frames, ['a', 'b']);
+check('切りかけは next に残す', ttsUtils.splitSseFrames('a\n\nb\n').next, 'b\n');
+check('CRLF でも区切れる', ttsUtils.splitSseFrames('a\r\n\r\nb\r\n\r\n').frames, ['a', 'b']);
+check('フレームが無ければ frames は空', ttsUtils.splitSseFrames('a').frames, []);
+check('event と data を分ける',
+    ttsUtils.parseSseFrame('event: audio_chunk\ndata: {"index":0}'),
+    { event: 'audio_chunk', data: { index: 0 } });
+check('data が複数行なら連結', ttsUtils.parseSseFrame('data: {"a":\ndata: 1}'), { event: 'message', data: { a: 1 } });
+check('data が無ければ null', ttsUtils.parseSseFrame('event: done'), null);
+check('JSON で読めなければ null', ttsUtils.parseSseFrame('data: {broken'), null);
+check('コメント行は無視',
+    ttsUtils.parseSseFrame(': keep-alive\nevent: done\ndata: {}'), { event: 'done', data: {} });
+
+// audio_chunk は object URL に変えて渡す。error イベントは投げる
+const seenFrames = [];
+globalThis.URL = { createObjectURL: (blob) => `blob:${blob.type}:${blob.size}` };
+ttsUtils.handleSseFrame('event: audio_chunk\ndata: {"audio_base64":"aGk=","media_type":"audio/wav"}',
+    (url) => seenFrames.push(url));
+check('audio_chunk は object URL になる', seenFrames.length, 1);
+check('done は無視', ttsUtils.handleSseFrame('event: done\ndata: {"chunks":2}', () => { seenFrames.push('done'); }), undefined);
+check('done で増えない', seenFrames.length, 1);
+let sseThrew = '';
+try {
+    ttsUtils.handleSseFrame('event: error\ndata: {"error":{"message":"voice not found"}}', () => {});
+} catch (error) { sseThrew = error.message; }
+check('error イベントは投げる', sseThrew, 'voice not found');
+
 console.log(`passed: ${passed}, failed: ${failed}`);
 process.exit(failed ? 1 : 0);
