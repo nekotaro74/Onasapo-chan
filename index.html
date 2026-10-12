@@ -8128,7 +8128,8 @@ font-size: 1.142em !important;
                                 <textarea id="comfy-image-prompt-template" rows="12" aria-label="挿絵生成用プロンプト"></textarea>
                                 <p style="font-size: 11px; color: var(--text-secondary); margin-top: -5px;">
                                     ※ 本編のチャット履歴を文脈にしたうえで、この指示文でクラウドLLMに挿絵用の文を書かせます。その文はチャットには残さず、画像生成だけに使います。<br>
-                                    ※ <code>{{char}}</code> / <code>{{user}}</code> は表示名（未設定なら assistant / user）で置換します。
+                                    ※ <code>{{char}}</code> / <code>{{user}}</code> は表示名（未設定なら assistant / user）で置換します。既定の文章にはこれらが入っておらず、人物名はチャット履歴から読み取ります。<br>
+                                    ※ 指示文は日本語で書かれています。出てくる文章は英語のタグ文です。
                                 </p>
                                 <button id="comfy-template-reset-btn" class="settings-action-button" style="font-size: 12px;">既定に戻す</button>
                                 <hr style="margin: 12px 0; border-top: 1px dashed var(--border-secondary);">
@@ -8659,74 +8660,40 @@ const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
         const DEFAULT_AI_NAME = "AI";
 
         // ▼ 挿絵生成（ComfyUI / SillyTavern "Last message" 模倣）▼
-        // 既定の quiet 指示テンプレート。直近の発話に写る人物だけを、奥行きのある構図で文章に起こす。
-        // 出力は 160 語以内。Anima は 300 トークンを超えると末尾のタグが落ち、
-        // LLM が書いた長い修飾文は追従性が落ちるため、長さそのものを指示で縛る。
-        // {{char}} / {{user}} は実行時にセッションの表示名（未設定なら assistant / user）で置換する。
-        const DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE = `Ignore all previous instructions. You are not part of the roleplay. Do not continue the story, do not reply, do not explain, do not add notes. Output one image generation prompt and nothing else.
+        // 既定の quiet 指示テンプレート。最後のメッセージを象徴する1枚を、ユーザー視点で文章に起こす。
+        // 日本語で規則を書き、出力は英語のタグ文のみ。1人用と2人用の出力形をそれぞれ例示する。
+        // 既定文に {{char}} / {{user}} は無いが、自分で編集したテンプレートでは
+        // 実行時にセッションの表示名（未設定なら assistant / user）へ置換される。
+        const DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE = `これまでの指示は無視しなさい。ロールプレイするな。物語を止めなさい。説明するな。画像生成プロンプトだけを出力しなさい。
 
-WHAT TO LOOK AT
-Use only the last chat message. Write what a camera would see at that exact moment.
-Keep visual facts. Throw away dialogue, thoughts, emotions, personality, narration, and anything off-screen.
-Include {{user}} only if their body is in frame. Include {{char}} only if their body is in frame.
-Leave out anyone who is only speaking, remembered, imagined, on a phone, or off-screen.
+最後のチャットメッセージを象徴する瞬間を1枚の画像として切り取り、物語の挿絵としてふさわしい画像を生成するための画像生成プロンプトにしなさい。ユーザーの視点から画面内に見えている人、物だけを記述しなさい。
 
-STEP 1 - COUNT FIRST
-Count the bodies in frame. State that number once, as tags: 1girl, solo or 1boy, solo or 1girl 1boy or 2girls or 3girls.
-The count, the count tags, and the number of person sentences must match exactly.
-Never add a second person to make the picture richer. Never write over-the-shoulder shot unless another person's shoulder is really visible.
+規則:
+- 英語のみ。タグは小文字、アンダースコアではなくスペース。重み、(tag:1.2)、BREAK、括弧、XML は禁止。
+- 品質、スコア、年、安全性、作家タグは書かない。
+- 視覚情報だけ。台詞、思考、性格、地の文は捨てる。
+- 人物文の数は、見えている人数と一致させる。1人なら文は1つで、タグは 1girl, solo または 1boy, solo。2人なら文は2つ。peopleとひとまとめにせず、性別と人数を明らかにする。
+- 挿絵にふさわしい映画的なカメラアングルを必ず1つだけ書く。
+- 奥行きはカメラと場所で作る。手前の物や面、中間の人物、奥へ引く背景。1人なら、その人物がいる層は1つだけ。
+- 1行目はタグ。人数、1人なら solo、選んだカメラ、奥行き、場所。
+- 2人以上のときだけ、近い順に別の層へ置く。左右は実際にそうであるときだけ。一人は近くて大きく、もう一人は遠くて一部重なってよい。
+- 見えている人物ごとに1文。層、名前と作品、髪、目、上半身、下半身、靴、表情、その人だけの動作。版権キャラの名前は "name from series" の形式だけで書く。
+- 見えている全員に同じ項目を書く。空欄にせず、他人の色や服を流用しない。
+- 複数人なら色は被らせない。接触するなら、誰のどの手か腕かを書く。手が重要なら動作を書き、不要なら隠す。
+- 最後に動作を一文で言い、場所、光、カメラで終える。
 
-STEP 2 - ONE CAMERA
-Choose one camera that fits the action: wide shot, medium shot, cowboy shot, close-up, low angle, high angle, dutch angle, three-quarter view, profile, from behind, bird's-eye view.
-Use close-up only when the face is the subject. With two or more people, prefer cowboy shot or medium shot.
-Name the camera once, in the first line. Never stack two cameras in the same prompt.
+1人の形式:
 
-STEP 3 - DEPTH COMES FROM SPACE
-Do not line people up left and right.
-Build depth from the camera and the space: something close to the camera, the layer the people stand in, and background that falls away behind them.
-One person: that person holds one layer only. Foreground and background are objects, furniture, plants, weather, or buildings.
-Two or more people only: place each person in a different layer, nearest first, using foreground, midground, background. Use left and right only when they really are left and right.
-Never create depth by pushing a person into the background.
+[人数], solo, [カメラ1つ], [奥行き], [場所].
+The person in the midground is [名前] from [作品]. They have [髪], [目], and wear [上], [下], and [靴]. They [表情] and [動作].
+A [手前の物] sits in the foreground, and the [背景] recedes behind them. [場所], [光], [カメラ].
 
-STEP 4 - ONE SENTENCE PER PERSON, NEAREST FIRST
-Give every person their own closed sentence. Never put two people in one sentence.
-Inside the sentence, keep this order: layer and position, name from series, hair, eyes, top, bottom, footwear, expression, that person's own action.
-Give every visible person the same slots. If you write hair, eyes, clothes, or shoes for one person, write all four for every visible person. Never leave a slot empty, and never borrow another person's feature.
-Give each person their own colors. Do not reuse one color across people.
-When bodies touch, name whose hand or arm is doing what.
+2人の形式:
 
-CHARACTER NAMES
-Always write "name from series". Never the name alone, never the series alone.
-Character names and series names use normal English capital letters. Every other tag is lowercase, written with spaces, no underscores.
-When one tag has two common spellings, pick the one that reads as plain English words.
-
-HANDS
-When hands matter, say which hand, left or right, and what it does.
-When hands do not matter, hide them. Never write a number of fingers.
-
-DO NOT WRITE
-- any language but English
-- uppercase tags, underscores, weights like (tag:1.2), BREAK, bracket labels, XML, JSON, headings, bullet points
-- quality tags, score tags, year tags, safety tags, artist tags, style labels, model names
-- the phrase "Anima prompt"
-- the words no, not, without. Say what is there instead: solo for one person, empty for an unoccupied place
-- the same idea more than twice, poetic wording, feelings, "or", "maybe", "possibly"
-- anything outside the prompt itself
-
-LENGTH
-Stay under 160 words. Concrete nouns and verbs do the work. If it runs long, cut adjectives, never people.
-
-OUTPUT SHAPE FOR ONE PERSON
-[count], solo, [one camera], [place], [time or weather].
-The person in the [layer] is [name] from [series]. They have [hair] and [eyes], and they wear [top], [bottom], and [footwear]. They [expression] and [their own action]. [one object close to the camera] sits in the foreground, and [background detail] falls away behind them.
-
-OUTPUT SHAPE FOR TWO PEOPLE
-[two-person count], [one camera], [place], [time or weather].
-The person in the foreground is [name] from [series]. They have [hair] and [eyes], and they wear [top], [bottom], and [footwear]. They [expression] and [their own action].
-The person in the midground is [name] from [series]. They have [hair] and [eyes], and they wear [top], [bottom], and [footwear]. They [expression] and [their own action].
-[one object close to the camera] sits in the foreground, and [background detail] falls away behind them.
-
-Output the prompt only.`;
+[人数], [カメラ1つ], [奥行き], [場所].
+The person in the foreground is [名前] from [作品]. They have [髪], [目], and wear [上], [下], and [靴]. They [表情] and [動作].
+The person in the midground is [名前] from [作品]. They have [髪], [目], and wear [上], [下], and [靴]. They [表情] and [動作].
+[名前か髪色] [動作], while [もう一人] [動作]. The background recedes behind them. [場所], [光], [カメラ].`;
         // 挿絵生成用プロンプトの生成に送る履歴の上限（文字数）。0 は全件送信。
         // 本家 SillyTavern が Chat Completion 側で持つトークン予算と同じ役割で、
         // 単位を文字数にしているだけ。

@@ -211,15 +211,19 @@ check('最小限整形を明示できる', illustrationUtils.processReplyAuto('�
 state.settings.comfyMinimalPromptProcessing = false;
 
 // ── {{char}} / {{user}} 置換 ─────────────────────────────────
+// 既定テンプレートはマクロを含まないため、置換そのものはマクロ入りの文字列で見る。
+const macroTemplate = '{{char}} and {{user}} in the park';
 state.settings.aiName = '詩織';
 state.settings.userName = 'あなた';
-const substitutedTemplate = illustrationUtils.substituteSessionNames(DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE);
+const substitutedTemplate = illustrationUtils.substituteSessionNames(macroTemplate);
 checkTrue('テンプレートのマクロが置換される', !/\{\{(char|user)\}\}/.test(substitutedTemplate));
 checkTrue('表示名が挿入される', substitutedTemplate.includes('詩織') && substitutedTemplate.includes('あなた'));
 state.settings.aiName = '';
 state.settings.userName = '';
-const fallbackNames = illustrationUtils.substituteSessionNames(DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE);
+const fallbackNames = illustrationUtils.substituteSessionNames(macroTemplate);
 checkTrue('未設定なら assistant / user', /assistant/.test(fallbackNames) && /\buser\b/.test(fallbackNames));
+checkTrue('既定テンプレートはそのまま送れる（マクロが残らない）',
+    !/\{\{(char|user)\}\}/.test(illustrationUtils.substituteSessionNames(DEFAULT_ILLUSTRATION_PROMPT_TEMPLATE)));
 
 // ── LoRA（最大4個）─────────────────────────────────────────
 const loraWorkflow = () => ({

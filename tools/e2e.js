@@ -448,6 +448,9 @@ const PAGE_SCRIPT = `(async () => {
     state.settings.comfyPollIntervalMs = 50;
     state.settings.aiName = '詩織';
     state.settings.userName = 'あなた';
+    // 既定テンプレートは {{char}} / {{user}} を含まないため、
+    // 表示名の置換を実験的に見るここだけマクロ入りのテンプレを使う。
+    state.settings.comfyImagePromptTemplate = 'Draw the last message. {{char}} and {{user}} may be in frame.';
 
     // モーダルは待たない
     uiUtils.showCustomAlert = async () => {};
