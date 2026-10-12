@@ -937,12 +937,21 @@ body.turf-mode {
             display: flex;
             align-items: center;
             flex-shrink: 0;
+            flex-wrap: wrap;
             gap: 8px;
             padding: 10px 15px;
             background-color: var(--bg-header);
             color: var(--text-light);
             font-size: 14px;
             box-shadow: 0 2px 6px var(--shadow-secondary);
+        }
+
+        /* 更新内容へのリンク (GitHub Pages の docs/更新履歴.html を新しいタブで開く) */
+        .update-banner-link {
+            flex-shrink: 0;
+            color: var(--text-light);
+            font-size: 13px;
+            text-decoration: underline;
         }
 
         .update-banner-text {
@@ -5357,6 +5366,7 @@ font-size: 1.142em !important;
             <!-- 新しい版の Service Worker が待機中であることを知らせるバナー (更新がある時だけ表示) -->
             <div class="update-banner hidden" role="status" aria-live="polite">
                 <span class="update-banner-text">アプリの更新があります。</span>
+                <a class="update-banner-link" href="https://nekotaro74.github.io/Onasapo-chan/docs/%E6%9B%B4%E6%96%B0%E5%B1%A5%E6%AD%B4.html" target="_blank" rel="noopener noreferrer">更新内容</a>
                 <button class="update-banner-btn update-banner-apply-btn" title="新しい版を適用してページを再読み込みします">更新する</button>
                 <button class="update-banner-btn update-banner-dismiss-btn" title="再読み込みせずこのまま使う">あとで</button>
             </div>
@@ -5458,6 +5468,7 @@ font-size: 1.142em !important;
         <div id="history-screen" class="screen">
             <div class="update-banner hidden" role="status" aria-live="polite">
                 <span class="update-banner-text">アプリの更新があります。</span>
+                <a class="update-banner-link" href="https://nekotaro74.github.io/Onasapo-chan/docs/%E6%9B%B4%E6%96%B0%E5%B1%A5%E6%AD%B4.html" target="_blank" rel="noopener noreferrer">更新内容</a>
                 <button class="update-banner-btn update-banner-apply-btn" title="新しい版を適用してページを再読み込みします">更新する</button>
                 <button class="update-banner-btn update-banner-dismiss-btn" title="再読み込みせずこのまま使う">あとで</button>
             </div>
@@ -5509,6 +5520,7 @@ font-size: 1.142em !important;
         <div id="settings-screen" class="screen">
             <div class="update-banner hidden" role="status" aria-live="polite">
                 <span class="update-banner-text">アプリの更新があります。</span>
+                <a class="update-banner-link" href="https://nekotaro74.github.io/Onasapo-chan/docs/%E6%9B%B4%E6%96%B0%E5%B1%A5%E6%AD%B4.html" target="_blank" rel="noopener noreferrer">更新内容</a>
                 <button class="update-banner-btn update-banner-apply-btn" title="新しい版を適用してページを再読み込みします">更新する</button>
                 <button class="update-banner-btn update-banner-dismiss-btn" title="再読み込みせずこのまま使う">あとで</button>
             </div>

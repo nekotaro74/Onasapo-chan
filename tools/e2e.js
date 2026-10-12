@@ -530,11 +530,20 @@ const PAGE_SCRIPT = `(async () => {
         historyCharCapInput: historyCharCapInput
             ? { min: historyCharCapInput.min, type: historyCharCapInput.type } : null,
         // 導入手引きへのリンク（挿絵生成と TTS の注釈に1つずつ、別タブで開く）
+        // 更新バナーの「更新内容」リンクも /docs/*.html なので、ここでは除外して数える
         guideLinks: Array.from(document.querySelectorAll('a'))
             .filter(a => {
-                const href = a.getAttribute('href') || '';
-                return href.includes('/docs/') && href.endsWith('.html');
+                const href = decodeURIComponent(a.getAttribute('href') || '');
+                return href.includes('/docs/') && href.endsWith('.html') && !href.endsWith('/docs/更新履歴.html');
             })
+            .map(a => ({
+                target: a.getAttribute('target'),
+                rel: a.getAttribute('rel') || '',
+                text: a.textContent.trim(),
+            })),
+        // 更新バナーの「更新内容」リンク（チャット / 履歴 / 設定の各画面に1つずつ、別タブで開く）
+        changelogLinks: Array.from(document.querySelectorAll('a'))
+            .filter(a => decodeURIComponent(a.getAttribute('href') || '').endsWith('/docs/更新履歴.html'))
             .map(a => ({
                 target: a.getAttribute('target'),
                 rel: a.getAttribute('rel') || '',
@@ -2001,6 +2010,10 @@ async function main() {
                 && pageResult.historyCharCapInput.type === 'number' && pageResult.historyCharCapInput.min === '0'],
             ['導入手引きへのリンクが2か所にあり、新しいタブで開く',
                 pageResult.guideLinks.length === 2 && pageResult.guideLinks.every(l => l.target === '_blank'
+                    && l.rel.includes('noopener') && l.text.length > 0)],
+            // 更新バナーはチャット / 履歴 / 設定の3画面分が DOM にある (表示・非表示にかかわらず)
+            ['更新内容へのリンクが3か所（各画面1つ）にあり、新しいタブで開く',
+                pageResult.changelogLinks.length === 3 && pageResult.changelogLinks.every(l => l.target === '_blank'
                     && l.rel.includes('noopener') && l.text.length > 0)],
             ['上限文字数で古い方を捨て、挿絵の対象応答は残す',
                 !!pageResult.charCapProbe && pageResult.charCapProbe.cutByChars === true
