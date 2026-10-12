@@ -932,6 +932,40 @@ body.turf-mode {
             transition: background-color 0.3s ease;
         }
 
+        /* アプリ更新の通知バナー: 各画面のヘッダーの上 (通常フロー) に入り、ヘッダーを下へ押し出す */
+        .update-banner {
+            display: flex;
+            align-items: center;
+            flex-shrink: 0;
+            gap: 8px;
+            padding: 10px 15px;
+            background-color: var(--bg-header);
+            color: var(--text-light);
+            font-size: 14px;
+            box-shadow: 0 2px 6px var(--shadow-secondary);
+        }
+
+        .update-banner-text {
+            flex-grow: 1;
+        }
+
+        .update-banner-btn {
+            flex-shrink: 0;
+            padding: 5px 12px;
+            border: none;
+            border-radius: 4px;
+            background-color: var(--text-light);
+            color: var(--bg-header);
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .update-banner-dismiss-btn {
+            background-color: transparent;
+            color: var(--text-light);
+            border: 1px solid var(--text-light);
+        }
+
         .app-header {
             display: flex;
             align-items: center;
@@ -5212,6 +5246,12 @@ font-size: 1.142em !important;
             top: var(--header-height, 50px) !important;
             height: calc(100% - var(--header-height, 50px)) !important;
         }
+
+        /* 更新バナーが出ている間、absolute 配置のヘッダーをバナーの下へずらす
+           (このルールはスタイルシート末尾に置く。他の .app-header 指定と同じ特異度なので後勝ちが必要) */
+        body.update-banner-visible .app-header {
+            top: var(--update-banner-height, 50px);
+        }
     </style>
 
     <script src="marked.js"></script>
@@ -5314,6 +5354,12 @@ font-size: 1.142em !important;
     <div class="app-container">
 
         <div id="chat-screen" class="screen active">
+            <!-- 新しい版の Service Worker が待機中であることを知らせるバナー (更新がある時だけ表示) -->
+            <div class="update-banner hidden" role="status" aria-live="polite">
+                <span class="update-banner-text">アプリの更新があります。</span>
+                <button class="update-banner-btn update-banner-apply-btn" title="新しい版を適用してページを再読み込みします">更新する</button>
+                <button class="update-banner-btn update-banner-dismiss-btn" title="再読み込みせずこのまま使う">あとで</button>
+            </div>
             <header class="app-header">
                                 <button id="goto-history-btn" class="header-button" aria-label="履歴一覧へ">☰</button>
                 <h1 id="chat-title">新規チャット</h1>
@@ -5410,6 +5456,11 @@ font-size: 1.142em !important;
         </div>
 
         <div id="history-screen" class="screen">
+            <div class="update-banner hidden" role="status" aria-live="polite">
+                <span class="update-banner-text">アプリの更新があります。</span>
+                <button class="update-banner-btn update-banner-apply-btn" title="新しい版を適用してページを再読み込みします">更新する</button>
+                <button class="update-banner-btn update-banner-dismiss-btn" title="再読み込みせずこのまま使う">あとで</button>
+            </div>
             <div id="history-cryscroller-scroll-zone">
                 <div id="history-cryscroller-scroll-handle"></div>
             </div>
@@ -5456,6 +5507,11 @@ font-size: 1.142em !important;
         </div>
 
         <div id="settings-screen" class="screen">
+            <div class="update-banner hidden" role="status" aria-live="polite">
+                <span class="update-banner-text">アプリの更新があります。</span>
+                <button class="update-banner-btn update-banner-apply-btn" title="新しい版を適用してページを再読み込みします">更新する</button>
+                <button class="update-banner-btn update-banner-dismiss-btn" title="再読み込みせずこのまま使う">あとで</button>
+            </div>
             <div id="settings-cryscroller-scroll-zone">
                 <div id="settings-cryscroller-scroll-handle"></div>
             </div>
@@ -9277,6 +9333,8 @@ elevationHoverOption: document.getElementById('elevation-hover-option'),
     showSettingsScrollToTopButtonToggle: document.getElementById('show-settings-scroll-to-top-button-toggle'),
     showSettingsScrollToBottomButtonToggle: document.getElementById('show-settings-scroll-to-bottom-button-toggle'),
     appVersionSpan: document.getElementById('app-version'),
+            // 更新バナーはチャット / 履歴 / 設定の各画面に1つずつ (同じクラスでまとめて制御する)
+            updateBanners: Array.from(document.querySelectorAll('.update-banner')),
             backgroundImageInput: document.getElementById('background-image-input'),
             uploadBackgroundBtn: document.getElementById('upload-background-btn'),
             backgroundThumbnail: document.getElementById('background-thumbnail'),
@@ -10060,16 +10118,100 @@ enableCryscrollerScrollOpacity: true,
                 reader.readAsDataURL(file);
             });
         }
+        // ---- アプリ更新の通知バナー ----
+        // sw.js の CACHE_NAME を上げると新しい Service Worker がインストールされ、
+        // install で skipWaiting() を呼ばないため waiting 状態で待機する (開いているページは古い版のまま)。
+        // その瞬間を捕まえて画面上部にバナーを出し、「更新する」を押された時だけ SW へ skipWaiting を伝える。
+        const UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000; // 開きっぱなしのタブで sw.js を確認する間隔
+
+        let updateBannerWaitingSw = null;   // バナーを出した待機中 SW (同じ版で繰り返し出さないため)
+        let applyingUpdate = false;         // 「更新する」を押した印 (controllerchange で再読み込みしてよい)
+        let updateReloadStarted = false;    // 二重の再読み込みを防ぐ
+
+        function reloadForUpdate() {
+            if (updateReloadStarted) return;
+            updateReloadStarted = true;
+            window.location.reload();
+        }
+
+        function setUpdateBannerVisible(visible) {
+            const banners = elements.updateBanners || [];
+            banners.forEach(banner => {
+                banner.classList[visible ? 'remove' : 'add']('hidden');
+            });
+            // ヘッダーは position: absolute で top:0 に置かれているため、バナーの高さだけ下へずらす
+            if (visible && banners[0]) {
+                document.body.style.setProperty('--update-banner-height', banners[0].offsetHeight + 'px');
+            }
+            document.body.classList.toggle('update-banner-visible', visible);
+        }
+
+        function showUpdateBanner(registration) {
+            const waitingSw = registration.waiting;
+            const banners = elements.updateBanners || [];
+            if (!waitingSw || banners.length === 0 || waitingSw === updateBannerWaitingSw) return;
+            updateBannerWaitingSw = waitingSw;
+
+            banners.forEach(banner => {
+                const applyBtn = banner.querySelector('.update-banner-apply-btn');
+                const dismissBtn = banner.querySelector('.update-banner-dismiss-btn');
+                if (applyBtn) applyBtn.onclick = () => {
+                    applyingUpdate = true;
+                    // 「更新する」を押した時点で waiting が消えていれば (既にアクティブ化済みなど) そのまま再読み込み
+                    if (registration.waiting) {
+                        registration.waiting.postMessage({ action: 'skipWaiting' });
+                    } else {
+                        reloadForUpdate();
+                    }
+                };
+                if (dismissBtn) dismissBtn.onclick = () => setUpdateBannerVisible(false);
+            });
+            setUpdateBannerVisible(true);
+        }
+
+        function watchForServiceWorkerUpdate(registration) {
+            // 前のセッションでインストール済みだった場合 (今回はインストールされないが waiting にはいる)
+            showUpdateBanner(registration);
+
+            registration.addEventListener('updatefound', () => {
+                const newSw = registration.installing;
+                if (!newSw) return;
+                newSw.addEventListener('statechange', () => {
+                    // controller がいる = 古い版が既にこのページを動かしている = 新しい版は waiting に入っている
+                    // (初回インストール時は controller が null なのでバナーを出さない)
+                    if (newSw.state === 'installed' && navigator.serviceWorker.controller) {
+                        showUpdateBanner(registration);
+                    }
+                });
+            });
+
+            // ブラウザはナビゲーション時にしか sw.js を確認しないため、開きっぱなしのタブでも気づけるように定期確認する
+            setInterval(() => {
+                registration.update().catch(() => { });
+            }, UPDATE_CHECK_INTERVAL_MS);
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) registration.update().catch(() => { });
+            });
+        }
+
         function registerServiceWorker() {
             if ('serviceWorker' in navigator) {
                 window.addEventListener('load', () => {
                     navigator.serviceWorker.register('./sw.js')
                         .then(registration => {
+                            watchForServiceWorkerUpdate(registration);
+
                             navigator.serviceWorker.addEventListener('message', event => {
                                 if (event.data && event.data.action === 'reloadPage') {
                                     alert('アプリが更新されました。この表示の後、ページがロードされます。');
-                                    window.location.reload();
+                                    reloadForUpdate();
                                 }
+                            });
+
+                            // 「更新する」で SW が入れ替わった時だけ再読み込みする
+                            // (「アプリを更新 (キャッシュクリア)」など他の経路の controllerchange では再読み込みしない)
+                            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                                if (applyingUpdate) reloadForUpdate();
                             });
                         })
                         .catch(err => { });

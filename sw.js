@@ -1,6 +1,6 @@
 // sw.js
 
-const CACHE_NAME = 'onasapo-chan-cache-v40'; // キャッシュ名を変更すると強制的に更新がかかる場合がある
+const CACHE_NAME = 'onasapo-chan-cache-v41'; // この番号を上げることが「新しい版」の合図になる (上げると SW が再インストールされ、画面上部の更新バナーが出る)
 const urlsToCache = [
   './', // ルートパス (index.html を指すことが多い)
   './index.html',
@@ -22,11 +22,11 @@ self.addEventListener('install', (event) => {
           console.error('SW: Failed to cache initial resources during install:', error);
         });
       })
-      .then(() => {
-        // インストール完了後、すぐにアクティブにする (古いSWを待たない)
-        return self.skipWaiting();
-      })
   );
+  // skipWaiting() はここで呼ばない。
+  // 呼ぶと新しい SW が即アクティブになり、開いているページへ更新を通知する余地がなくなる。
+  // 新しい SW は waiting 状態で待機し、ページ側の更新バナーで「更新する」を押された時だけ
+  // 下の message リスナー経由で skipWaiting される。
 });
 
 // ループバック・プライベート・Tailscale (100.64.0.0/10) のホスト名か
@@ -142,6 +142,14 @@ self.addEventListener('activate', (event) => {
 
 // メッセージリスナー (キャッシュクリア用)
 self.addEventListener('message', (event) => {
+  // ページ側の更新バナーで「更新する」が押された: 待機中の SW をアクティブにする。
+  // アクティブになると activate の clients.claim() が走り、ページ側で controllerchange が発火して再読み込みされる。
+  if (event.data && event.data.action === 'skipWaiting') {
+    console.log('SW: skipWaiting requested from the page.');
+    event.waitUntil(self.skipWaiting());
+    return;
+  }
+
   if (event.data && event.data.action === 'clearCache') {
     console.log('SW: Clearing cache...');
     caches.keys().then((cacheNames) => {
