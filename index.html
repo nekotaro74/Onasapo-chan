@@ -10521,6 +10521,15 @@ const dbUtils = {
                 });
             },
 
+            // このタブ自身がセッションへ書き込んだ更新時刻を、競合検知の基準へ反映する。
+            // saveChat 以外の書き込み（送信直前の直接 put、タイトル変更）からも呼ぶ。
+            // 呼ばないと、自分の書き込みを「他のタブが保存した」と誤判定してしまう。
+            noteOwnWrite(id, updatedAt) {
+                if (id && id === state.currentChatId && typeof updatedAt === 'number') {
+                    state.loadedChatUpdatedAt = updatedAt;
+                }
+            },
+
             // このタブが読み込んだ時点より新しい更新が DB にあれば true。
             // 同じセッションを別タブで開いていて、そちらが保存したことを意味する。
             async chatUpdatedByOtherTab(id) {
@@ -10639,6 +10648,27 @@ const dbUtils = {
                 });
             },
 
+            // 送信の直前など、画面の状態ではなく作り渡した chatData をそのまま保存する。
+            // saveChat を通さないため、ここで updatedAt を競合検知の基準へ反映する。
+            // 反映しないと、この後の saveChat が自分の書き込みを他タブの保存と取り違える。
+            async putChatDirect(chatData) {
+                await this.openDB();
+                return new Promise((resolve, reject) => {
+                    try {
+                        const store = this._getStore(CHATS_STORE, 'readwrite');
+                        const request = chatData.id ? store.put(chatData) : store.add(chatData);
+                        request.onsuccess = (event) => {
+                            const savedId = event.target.result || chatData.id;
+                            this.noteOwnWrite(savedId, chatData.updatedAt);
+                            resolve(savedId);
+                        };
+                        request.onerror = (event) => reject(`チャット保存エラー: ${event.target.error.name} - ${event.target.error.message}`);
+                    } catch (error) {
+                        reject(error);
+                    }
+                });
+            },
+
             async updateChatTitleDb(id, newTitle) {
                 await this.openDB();
                 return new Promise((resolve, reject) => {
@@ -10648,10 +10678,16 @@ const dbUtils = {
                         getRequest.onsuccess = (event) => {
                             const chatData = event.target.result;
                             if (chatData) {
+                                const newUpdatedAt = Date.now();
                                 chatData.title = newTitle;
-                                chatData.updatedAt = Date.now();
+                                chatData.updatedAt = newUpdatedAt;
                                 const putRequest = store.put(chatData);
-                                putRequest.onsuccess = () => resolve();
+                                putRequest.onsuccess = () => {
+                                    // タイトル変更でも updatedAt が進む。自分のセッションなら
+                                    // 競合検知の基準へ反映しておかないと、次の保存で誤確認が出る。
+                                    this.noteOwnWrite(id, newUpdatedAt);
+                                    resolve();
+                                };
                                 putRequest.onerror = (e) => reject(`タイトル更新putエラー: ${e.target.error}`);
                             } else {
                                 reject(`チャットが見つかりません: ${id}`);
@@ -21802,12 +21838,8 @@ helpIcons.forEach(icon => {
                             chatToSave.collapsedStates = Object.fromEntries(state.messageCollapsedStates);
                         }
 
-                        const savedId = await new Promise((resolve, reject) => {
-                            const store = dbUtils._getStore(CHATS_STORE, 'readwrite');
-                            const request = chatToSave.id ? store.put(chatToSave) : store.add(chatToSave);
-                            request.onsuccess = (event) => resolve(event.target.result || chatToSave.id);
-                            request.onerror = (event) => reject(`チャット保存エラー: ${event.target.error.name} - ${event.target.error.message}`);
-                        });
+                        // saveChat を通さない直接保存。updatedAt の競合検知基準への反映は putChatDirect 側で行う
+                        const savedId = await dbUtils.putChatDirect(chatToSave);
 
                         if (!state.currentChatId && savedId) {
                             state.currentChatId = savedId;

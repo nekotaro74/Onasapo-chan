@@ -805,6 +805,34 @@ const CONFLICT_SCRIPT = `(async () => {
     await dbUtils.saveChat();
     uiUtils.showCustomConfirm = realConfirm;
 
+    // 5) 同じタブが saveChat 以外でセッションへ書き込んだ直後も確認を出さない。
+    //    タイトル変更は updatedAt を進めるだけなので、基準を合わせないと
+    //    リトライなど saveChat 前の書き込みがある経路で毎回確認が出ていた。
+    let ownWriteConfirm = false;
+    uiUtils.showCustomConfirm = async () => { ownWriteConfirm = true; return true; };
+    // 基準をわざと過去へ戻しておく。同期する実装ならこの後の保存で確認は出ない
+    state.loadedChatUpdatedAt = Date.now() - 60000;
+    await dbUtils.updateChatTitleDb(chatId, '競合テスト 改名');
+    state.currentMessages.push({ role: 'model', content: '競合テストE', timestamp: Date.now() });
+    await dbUtils.saveChat();
+    uiUtils.showCustomConfirm = realConfirm;
+
+    // 6) 送信直前の直接保存（リトライもここを通る）の直後も確認を出さない
+    let directPutConfirm = false;
+    uiUtils.showCustomConfirm = async () => { directPutConfirm = true; return true; };
+    state.loadedChatUpdatedAt = Date.now() - 60000;
+    const rawChat = await dbUtils.getChat(chatId);
+    rawChat.updatedAt = Date.now();
+    await dbUtils.putChatDirect(rawChat);
+    state.currentMessages.push({ role: 'model', content: '競合テストF', timestamp: Date.now() });
+    await dbUtils.saveChat();
+    uiUtils.showCustomConfirm = realConfirm;
+
+    // 7) 別のセッションIDの書き込みを基準へ反映しない（他タブの検知は生き続ける）
+    state.loadedChatUpdatedAt = Date.now() - 60000;
+    dbUtils.noteOwnWrite(chatId + '_other', Date.now() + 600000);
+    const stillDetected = await dbUtils.chatUpdatedByOtherTab(chatId);
+
     await dbUtils.deleteChat(chatId);
     return {
         confirmShown: confirmMessage.indexOf('他のタブ') !== -1,
@@ -812,6 +840,9 @@ const CONFLICT_SCRIPT = `(async () => {
         reloadedFromDb: shownAfterCancel.length === 1 && shownAfterCancel[0] === '競合テストA',
         overwriteApplied: overwriteChosen && afterOk.messages.length === 2,
         quietOnNormalSave: normalSaveConfirm === false,
+        quietAfterOwnWrite: ownWriteConfirm === false,
+        quietAfterDirectPut: directPutConfirm === false,
+        foreignWriteNotAdopted: stillDetected === true,
     };
 })()`;
 
@@ -2380,6 +2411,11 @@ async function main() {
                 conflictResult.keptOtherTabVersion && conflictResult.reloadedFromDb],
             ['確認で OK を選ぶと、このタブの内容で上書きされる', conflictResult.overwriteApplied],
             ['このタブが最新の通常の保存では確認が出ない', conflictResult.quietOnNormalSave],
+            ['このタブ自身の saveChat 外の書き込み（タイトル変更など）では確認が出ない',
+                conflictResult.quietAfterOwnWrite],
+            ['送信・リトライ直前の直接保存の後の保存では確認が出ない',
+                conflictResult.quietAfterDirectPut],
+            ['他のセッションの書き込みを検知基準へ取り込まない', conflictResult.foreignWriteNotAdopted],
         ];
         console.log('\n── 複数枚・再生成・LoRA の内訳 ──');
         console.log(JSON.stringify({
