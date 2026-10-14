@@ -1,6 +1,6 @@
 // sw.js
 
-const CACHE_NAME = 'onasapo-chan-cache-v41'; // この番号を上げることが「新しい版」の合図になる (上げると SW が再インストールされ、画面上部の更新バナーが出る)
+const CACHE_NAME = 'onasapo-chan-cache-v42'; // この番号を上げることが「新しい版」の合図になる (上げると SW が再インストールされ、画面上部の更新バナーが出る)
 const urlsToCache = [
   './', // ルートパス (index.html を指すことが多い)
   './index.html',

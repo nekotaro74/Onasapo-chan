@@ -9661,6 +9661,9 @@ elevationHoverOption: document.getElementById('elevation-hover-option'),
             db: null,
             illustrationJob: null, // 同時実行は1件に制限する
             currentChatId: null,
+            // このタブがセッションを読み込んだ時点の更新時刻。
+            // 別タブ（インストール版を含む）が先に保存した検知に使う。未読なら null。
+            loadedChatUpdatedAt: null,
             currentChatBaseUrl: null, // チャット固有のベースURLを保持
             currentMessages: [],
             settings: {
@@ -10518,10 +10521,39 @@ const dbUtils = {
                 });
             },
 
+            // このタブが読み込んだ時点より新しい更新が DB にあれば true。
+            // 同じセッションを別タブで開いていて、そちらが保存したことを意味する。
+            async chatUpdatedByOtherTab(id) {
+                try {
+                    const existing = await this.getChat(id);
+                    return !!(existing
+                        && typeof existing.updatedAt === 'number'
+                        && existing.updatedAt > state.loadedChatUpdatedAt);
+                } catch (error) {
+                    return false;
+                }
+            },
+
             async saveChat(optionalTitle = null) {
                 await this.openDB();
                 if ((!state.currentMessages || state.currentMessages.length === 0)) {
                     return Promise.resolve(state.currentChatId);
+                }
+                // 保存はセッション1件を丸ごと上書きする。別タブが先に保存していると、
+                // このタブの内容で上書きして、向こうで追加された挿絵などを消してしまう。
+                // 上書きする前に確かめ、キャンセルなら向こうの版を開き直す。
+                if (state.currentChatId && typeof state.loadedChatUpdatedAt === 'number') {
+                    if (await this.chatUpdatedByOtherTab(state.currentChatId)) {
+                        const overwrite = await uiUtils.showCustomConfirm(
+                            'このセッションは、他のタブ（またはインストール版）で先に保存されていました。<br><br>' +
+                            '「OK」はこのタブの内容で上書きします。他のタブで追加された挿絵や会話は消えます。<br>' +
+                            '「キャンセル」は上書きせず、他のタブが保存した内容を開き直します。このタブで未保存の編集は失われます。'
+                        );
+                        if (!overwrite) {
+                            await appLogic.loadChat(state.currentChatId);
+                            return state.currentChatId;
+                        }
+                    }
                 }
                 return new Promise((resolve, reject) => {
                     try {
@@ -10570,6 +10602,8 @@ const dbUtils = {
                             const putRequest = store.put(chatData);
                             putRequest.onsuccess = (event) => {
                                 const savedId = event.target.result;
+                                // このタブが持つ版が DB の最新になった
+                                state.loadedChatUpdatedAt = now;
                                 if (!state.currentChatId && savedId) {
                                     state.currentChatId = savedId;
                                 }
@@ -20276,6 +20310,7 @@ helpIcons.forEach(icon => {
                 // 前のチャットの読み上げを続けない（新規・最終メッセージ削除後・セッション削除後もここを通る）
                 ttsUtils.stopAll();
                 state.currentChatId = null;
+                state.loadedChatUpdatedAt = null;
                 state.currentMessages = [];
                 state.currentChatBaseUrl = null;
                 if (state.settings.commonSystemPrompt && state.settings.commonSystemPrompt.trim() !== '') {
@@ -20335,6 +20370,8 @@ helpIcons.forEach(icon => {
                     const chat = await dbUtils.getChat(id);
                     if (chat) {
                         state.currentChatId = chat.id;
+                        // このタブが読み込んだ版として記録（以後の保存で他タブの上書きを検知する）
+                        state.loadedChatUpdatedAt = typeof chat.updatedAt === 'number' ? chat.updatedAt : null;
                         state.currentMessages = chat.messages?.map(msg => ({
                             ...msg,
                             attachments: msg.attachments || [],

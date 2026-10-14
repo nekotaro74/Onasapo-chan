@@ -768,6 +768,53 @@ const RELOAD_VERIFY = `(async () => {
     };
 })()`;
 
+// 別タブ（インストール版を含む）が同じセッションを先に保存した状況の検知
+const CONFLICT_SCRIPT = `(async () => {
+    // 1) このタブでセッションを作って保存する
+    state.currentChatId = null;
+    state.loadedChatUpdatedAt = null;
+    state.currentMessages = [{ role: 'user', content: '競合テストA', timestamp: Date.now() }];
+    const chatId = await dbUtils.saveChat('競合テスト');
+
+    // 2) このタブが読み込んだ時点の時刻を過去へ戻す。
+    //    DB 側の updatedAt は 1) のままなので「他のタブが後から保存した」扱いになる
+    const realConfirm = uiUtils.showCustomConfirm;
+    let confirmMessage = '';
+    uiUtils.showCustomConfirm = async (message) => { confirmMessage = message; return false; };
+    state.loadedChatUpdatedAt = Date.now() - 60000;
+    state.currentMessages.push({ role: 'model', content: '競合テストB', timestamp: Date.now() });
+    await dbUtils.saveChat();
+    uiUtils.showCustomConfirm = realConfirm;
+    const afterCancel = await dbUtils.getChat(chatId);
+    // 開き直した直後の画面状態をここで控える（以後のケースで配列へ足されるため）
+    const shownAfterCancel = state.currentMessages.map(m => m.content);
+
+    // 3) 同じ状況で OK（上書きする）を選ぶと、このタブの内容が保存される
+    let overwriteChosen = false;
+    uiUtils.showCustomConfirm = async () => { overwriteChosen = true; return true; };
+    state.loadedChatUpdatedAt = Date.now() - 60000;
+    state.currentMessages.push({ role: 'model', content: '競合テストC', timestamp: Date.now() });
+    await dbUtils.saveChat();
+    uiUtils.showCustomConfirm = realConfirm;
+    const afterOk = await dbUtils.getChat(chatId);
+
+    // 4) このタブが最新のときは確認が出ない（通常の保存を邪魔しない）
+    let normalSaveConfirm = false;
+    uiUtils.showCustomConfirm = async () => { normalSaveConfirm = true; return true; };
+    state.currentMessages.push({ role: 'model', content: '競合テストD', timestamp: Date.now() });
+    await dbUtils.saveChat();
+    uiUtils.showCustomConfirm = realConfirm;
+
+    await dbUtils.deleteChat(chatId);
+    return {
+        confirmShown: confirmMessage.indexOf('他のタブ') !== -1,
+        keptOtherTabVersion: afterCancel.messages.length === 1,
+        reloadedFromDb: shownAfterCancel.length === 1 && shownAfterCancel[0] === '競合テストA',
+        overwriteApplied: overwriteChosen && afterOk.messages.length === 2,
+        quietOnNormalSave: normalSaveConfirm === false,
+    };
+})()`;
+
 // 一覧取得 → プルダウン反映、ワークフロー CRUD、挿絵削除ボタン
 const CHOICES_SCRIPT = `(async () => {
     uiUtils.applyIllustrationSettingsToUI();
@@ -1969,6 +2016,8 @@ async function main() {
         await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html` });
         await new Promise(r => setTimeout(r, 2500));
         const reloadResult = await evaluate(RELOAD_VERIFY.replace('__CHAT_ID__', JSON.stringify(savedChat.chatId)));
+        // 別タブによる上書きの検知（このタブが最後に開いた版より DB が新しいか）
+        const conflictResult = await evaluate(CONFLICT_SCRIPT);
         console.log('── ページ内の結果 ──');
         console.log(JSON.stringify(pageResult, null, 2));
 
@@ -2325,6 +2374,12 @@ async function main() {
             ['開き直後に保存済み挿絵が履歴へ表示される',
                 savedChat.status === 'done' && reloadResult.illustrationStatus === 'done'
                 && reloadResult.imageRendered && reloadResult.imageSrcIsDataUrl],
+
+            ['別タブが先に保存したセッションは、保存前に確認が出る', conflictResult.confirmShown],
+            ['確認でキャンセルすると、他のタブが保存した版へ開き直し上書きしない',
+                conflictResult.keptOtherTabVersion && conflictResult.reloadedFromDb],
+            ['確認で OK を選ぶと、このタブの内容で上書きされる', conflictResult.overwriteApplied],
+            ['このタブが最新の通常の保存では確認が出ない', conflictResult.quietOnNormalSave],
         ];
         console.log('\n── 複数枚・再生成・LoRA の内訳 ──');
         console.log(JSON.stringify({
