@@ -294,7 +294,7 @@ Irodori TTS Server での `IRODORI_CORS_ORIGINS` の設定と、PC用 / Tailscal
 - ※ DeepSeek が提供する API はすべて有料です。
 ## ■ 更新履歴
 
-Onasapo-chan での追加・改変の履歴は [docs/更新履歴.md](docs/更新履歴.md) にまとめました。PWA 内の「更新内容」リンクも同じページの GitHub Pages 版（<https://nekotaro74.github.io/Onasapo-chan/docs/更新履歴.html>）を開きます。更新を書くときは docs/更新履歴.md へ最新が上になるよう追記し、`sw.js` の `CACHE_NAME` を上げてください。
+Onasapo-chan での追加・改変の履歴は [docs/更新履歴.md](docs/更新履歴.md) にまとめました。PWA 内の「更新内容」リンクも同じページの GitHub Pages 版（<https://nekotaro74.github.io/Onasapo-chan/docs/更新履歴.html>）を開きます。ここには**ユーザー向けの案内だけ**を1項目1〜2行で書き、仕組み・関数名・`CACHE_NAME` などの開発向け詳細は [docs/開発変更履歴.md](docs/開発変更履歴.md) へ載せます。更新を書くときは両方へ最新が上になるよう追記し、`sw.js` の `CACHE_NAME` を上げてください（コミット本文にも仕組みを書いておきます）。
 
 以下はフォーク元リポジトリ Gemini PWA の更新履歴で、記載された機能はフォーク元による実装です。
 

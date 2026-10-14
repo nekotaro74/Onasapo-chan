@@ -932,7 +932,12 @@ body.turf-mode {
             transition: background-color 0.3s ease;
         }
 
-        /* アプリ更新の通知バナー: 各画面のヘッダーの上 (通常フロー) に入り、ヘッダーを下へ押し出す */
+        /* アプリ更新の通知バナー: 各画面のヘッダーの上 (通常フロー) に入り、ヘッダーを下へ押し出す
+           配色はテーマの色 (--bg-header / --text-light) を使わない。
+           ヘッダーと同じ色では境界が分からず、淡いテーマでは白文字が読めない
+           (既定テーマでコントラスト 3.3:1、pastel 系はさらに低い)。
+           通知なのでテーマから離し、どのテーマでも同じコントラストになる色で固定する
+           (背景 #fff4d6 と文字 #4a3400 で 10.7:1、ボタンは #8a6100 と白で 5.5:1)。 */
         .update-banner {
             display: flex;
             align-items: center;
@@ -940,18 +945,23 @@ body.turf-mode {
             flex-wrap: wrap;
             gap: 8px;
             padding: 10px 15px;
-            background-color: var(--bg-header);
-            color: var(--text-light);
+            background-color: #fff4d6;
+            color: #4a3400;
+            border-bottom: 1px solid #d8bd7a;
             font-size: 14px;
-            box-shadow: 0 2px 6px var(--shadow-secondary);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
         }
 
         /* 更新内容へのリンク (GitHub Pages の docs/更新履歴.html を新しいタブで開く) */
         .update-banner-link {
             flex-shrink: 0;
-            color: var(--text-light);
+            color: #6b4a00;
             font-size: 13px;
             text-decoration: underline;
+        }
+
+        .update-banner-link:hover {
+            color: #4a3400;
         }
 
         .update-banner-text {
@@ -963,16 +973,24 @@ body.turf-mode {
             padding: 5px 12px;
             border: none;
             border-radius: 4px;
-            background-color: var(--text-light);
-            color: var(--bg-header);
+            background-color: #8a6100;
+            color: #ffffff;
             font-size: 13px;
             cursor: pointer;
         }
 
+        .update-banner-btn:hover {
+            background-color: #6f4e00;
+        }
+
         .update-banner-dismiss-btn {
             background-color: transparent;
-            color: var(--text-light);
-            border: 1px solid var(--text-light);
+            color: #4a3400;
+            border: 1px solid #8a6100;
+        }
+
+        .update-banner-dismiss-btn:hover {
+            background-color: rgba(138, 97, 0, 0.14);
         }
 
         .app-header {
